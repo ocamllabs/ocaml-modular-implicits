@@ -333,6 +333,7 @@ let mkctf_attrs d attrs =
 %token GREATERRBRACE
 %token GREATERRBRACKET
 %token IF
+%token IMPLICIT
 %token IN
 %token INCLUDE
 %token <string> INFIXOP0
@@ -659,6 +660,8 @@ structure_item:
       { mkstr(Pstr_modtype (Mtd.mk (mkrhs $3 3)
                               ~typ:$5 ~attrs:$6 ~loc:(symbol_rloc()))) }
   | open_statement { mkstr(Pstr_open $1) }
+  | IMPLICIT MODULE module_binding
+      { mkstr(Pstr_implicit $3) }
   | CLASS class_declarations
       { mkstr(Pstr_class (List.rev $2)) }
   | CLASS TYPE class_type_declarations
@@ -742,6 +745,15 @@ signature_item:
       { mksig(Psig_module (Md.mk (mkrhs $2 2)
                              (Mty.alias ~loc:(rhs_loc 4) (mkrhs $4 4))
                              ~attrs:$5
+                             ~loc:(symbol_rloc())
+                          )) }
+  | IMPLICIT MODULE UIDENT module_declaration post_item_attributes
+      { mksig(Psig_module (Md.mk (mkrhs $3 3)
+                             $4 ~attrs:$5 ~loc:(symbol_rloc()))) }
+  | IMPLICIT MODULE UIDENT EQUAL mod_longident post_item_attributes
+      { mksig(Psig_module (Md.mk (mkrhs $3 3)
+                             (Mty.alias ~loc:(rhs_loc 5) (mkrhs $5 5))
+                             ~attrs:$6
                              ~loc:(symbol_rloc())
                           )) }
   | MODULE REC module_rec_declarations
@@ -1051,6 +1063,9 @@ labeled_simple_pattern:
       { (Parr_labelled (fst $2), None, snd $2) }
   | LABEL simple_pattern
       { (Parr_labelled $1, None, $2) }
+  | LPAREN IMPLICIT UIDENT COLON package_type RPAREN
+      { (Parr_simple, None, mkpat(Ppat_constraint(mkpat(Ppat_unpack (mkrhs $3 3)),
+                              ghtyp(Ptyp_package $5)))) }
   | simple_pattern
       { (Parr_simple, None, $1) }
 ;

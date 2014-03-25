@@ -80,6 +80,7 @@ module Pat:
     val lazy_: ?loc:loc -> ?attrs:attrs -> pattern -> pattern
     val unpack: ?loc:loc -> ?attrs:attrs -> str -> pattern
     val exception_: ?loc:loc -> ?attrs:attrs -> pattern -> pattern
+    val implicit_: ?loc:loc -> ?attrs:attrs -> str -> pattern
     val extension: ?loc:loc -> ?attrs:attrs -> extension -> pattern
   end
 
@@ -213,6 +214,7 @@ module Sig:
     val type_extension: ?loc:loc -> type_extension -> signature_item
     val exception_: ?loc:loc -> extension_constructor -> signature_item
     val module_: ?loc:loc -> module_declaration -> signature_item
+    val implicit_: ?loc:loc -> module_declaration -> signature_item
     val rec_module: ?loc:loc -> module_declaration list -> signature_item
     val modtype: ?loc:loc -> module_type_declaration -> signature_item
     val open_: ?loc:loc -> open_description -> signature_item
@@ -235,6 +237,7 @@ module Str:
     val type_extension: ?loc:loc -> type_extension -> structure_item
     val exception_: ?loc:loc -> extension_constructor -> structure_item
     val module_: ?loc:loc -> module_binding -> structure_item
+    val implicit_: ?loc:loc -> module_binding -> structure_item
     val rec_module: ?loc:loc -> module_binding list -> structure_item
     val modtype: ?loc:loc -> module_type_declaration -> structure_item
     val open_: ?loc:loc -> open_description -> structure_item

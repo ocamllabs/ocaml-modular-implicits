@@ -599,8 +599,8 @@ and transl_signature env sg =
             (if shadowed then rem else
                Sig_typext(ext.ext_id, ext.ext_type, Text_exception) :: rem),
             final_env
-        | Psig_module pmd ->
-            check_name "module" module_names pmd.pmd_name;
+        | Psig_module pmd | Psig_implicit pmd ->
+            check "module" item.psig_loc module_names pmd.pmd_name.txt;
             let tmty = transl_modtype env pmd.pmd_type in
             let md = {
               md_type=tmty.mty_type;
@@ -1259,7 +1259,11 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
         newenv
     | Pstr_module {pmb_name = name; pmb_expr = smodl; pmb_attributes = attrs;
                    pmb_loc;
-                  } ->
+                  }
+    | Pstr_implicit {pmb_name = name; pmb_expr = smodl; pmb_attributes = attrs;
+                   pmb_loc;
+                  }
+      ->
         check_name "module" module_names name;
         let modl =
           type_module ~alias:true true funct_body

@@ -334,6 +334,7 @@ module Analyser =
           | [] -> acc
           | types -> take_item (Parsetree.Psig_type types))
         | Parsetree.Psig_module {Parsetree.pmd_name=name}
+        | Parsetree.Psig_implicit {Parsetree.pmd_name=name}
         | Parsetree.Psig_modtype {Parsetree.pmtd_name=name} as m ->
           if Name.Set.mem name.txt erased then acc else take_item m
         | Parsetree.Psig_recmodule mods ->
@@ -826,7 +827,8 @@ module Analyser =
             in
             (0, env, ele_comments)
 
-        | Parsetree.Psig_module {Parsetree.pmd_name=name; pmd_type=module_type} ->
+        | Parsetree.Psig_module {Parsetree.pmd_name=name; pmd_type=module_type}
+        | Parsetree.Psig_implicit {Parsetree.pmd_name=name; pmd_type=module_type} ->
             let complete_name = Name.concat current_module_name name.txt in
             (* get the the module type in the signature by the module name *)
             let sig_module_type =

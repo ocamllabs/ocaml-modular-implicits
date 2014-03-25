@@ -189,6 +189,7 @@ let iter_expression f e =
     | Pstr_extension _ -> ()
     | Pstr_include {pincl_mod = me}
     | Pstr_module {pmb_expr = me} -> module_expr me
+    | Pstr_implicit {pmb_expr = me} -> module_expr me
     | Pstr_recmodule l -> List.iter (fun x -> module_expr x.pmb_expr) l
     | Pstr_class cdl -> List.iter (fun c -> class_expr c.pci_expr) cdl
 
@@ -925,6 +926,15 @@ let rec type_pat ~constrs ~labels ~no_existentials ~mode ~env sp expected_ty =
         pat_type = expected_ty;
         pat_attributes = [];
         pat_env = !env }
+  | Ppat_implicit name ->
+      let id = enter_variable loc name expected_ty ~is_module:true in
+      rp {
+        pat_desc = Tpat_var (id, name);
+        pat_loc = sp.ppat_loc;
+        pat_extra=[Tpat_unpack, loc, sp.ppat_attributes];
+        pat_type = expected_ty;
+        pat_attributes = [];
+        pat_env = !env }
   | Ppat_constraint({ppat_desc=Ppat_var name; ppat_loc=lloc},
                     ({ptyp_desc=Ptyp_poly _} as sty)) ->
       (* explicitly polymorphic type *)
@@ -1641,7 +1651,7 @@ let iter_ppat f p =
   match p.ppat_desc with
   | Ppat_any | Ppat_var _ | Ppat_constant _ | Ppat_interval _
   | Ppat_extension _
-  | Ppat_type _ | Ppat_unpack _ -> ()
+  | Ppat_type _ | Ppat_unpack _ | Ppat_implicit _ -> ()
   | Ppat_array pats -> List.iter f pats
   | Ppat_or (p1,p2) -> f p1; f p2
   | Ppat_variant (_, arg) | Ppat_construct (_, arg) -> may f arg
