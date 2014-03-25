@@ -239,9 +239,14 @@ and pattern i ppf x =
       longident_loc i ppf li
   | Ppat_unpack s ->
       line i ppf "Ppat_unpack %a\n" fmt_string_loc s;
+<<<<<<< HEAD
   | Ppat_exception p ->
       line i ppf "Ppat_exception\n";
       pattern i ppf p
+=======
+  | Ppat_implicit s ->
+      line i ppf "Ppat_implicit %a\n" fmt_string_loc s;
+>>>>>>> Introduce "implicit" keyword and constructions in parser
   | Ppat_extension (s, arg) ->
       line i ppf "Ppat_extension \"%s\"\n" s.txt;
       payload i ppf arg
@@ -667,6 +672,10 @@ and signature_item i ppf x =
   | Psig_recmodule decls ->
       line i ppf "Psig_recmodule\n";
       list i module_declaration ppf decls;
+  | Psig_implicit pmd ->
+      line i ppf "Psig_implicit %a\n" fmt_string_loc pmd.pmd_name;
+      attributes i ppf pmd.pmd_attributes;
+      module_type i ppf pmd.pmd_type
   | Psig_modtype x ->
       line i ppf "Psig_modtype %a\n" fmt_string_loc x.pmtd_name;
       attributes i ppf x.pmtd_attributes;
@@ -774,6 +783,9 @@ and structure_item i ppf x =
   | Pstr_recmodule bindings ->
       line i ppf "Pstr_recmodule\n";
       list i module_binding ppf bindings;
+  | Pstr_implicit x ->
+      line i ppf "Pstr_implicit\n";
+      module_binding i ppf x
   | Pstr_modtype x ->
       line i ppf "Pstr_modtype %a\n" fmt_string_loc x.pmtd_name;
       attributes i ppf x.pmtd_attributes;

@@ -1420,7 +1420,8 @@ module Analyser =
           in
             (0, new_env, [ Element_exception new_ext ])
 
-      | Parsetree.Pstr_module {Parsetree.pmb_name=name; pmb_expr=module_expr} ->
+      | Parsetree.Pstr_module {Parsetree.pmb_name=name; pmb_expr=module_expr}
+      | Parsetree.Pstr_implicit {Parsetree.pmb_name=name; pmb_expr=module_expr} ->
           (
            (* of string * module_expr *)
            try

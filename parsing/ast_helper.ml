@@ -74,6 +74,7 @@ module Pat = struct
   let lazy_ ?loc ?attrs a = mk ?loc ?attrs (Ppat_lazy a)
   let unpack ?loc ?attrs a = mk ?loc ?attrs (Ppat_unpack a)
   let exception_ ?loc ?attrs a = mk ?loc ?attrs (Ppat_exception a)
+  let implicit_ ?loc ?attrs a = mk ?loc ?attrs (Ppat_implicit a)
   let extension ?loc ?attrs a = mk ?loc ?attrs (Ppat_extension a)
 end
 
@@ -162,6 +163,7 @@ module Sig = struct
   let type_extension ?loc a = mk ?loc (Psig_typext a)
   let exception_ ?loc a = mk ?loc (Psig_exception a)
   let module_ ?loc a = mk ?loc (Psig_module a)
+  let implicit_ ?loc a = mk ?loc (Psig_implicit a)
   let rec_module ?loc a = mk ?loc (Psig_recmodule a)
   let modtype ?loc a = mk ?loc (Psig_modtype a)
   let open_ ?loc a = mk ?loc (Psig_open a)
@@ -186,6 +188,7 @@ module Str = struct
   let type_extension ?loc a = mk ?loc (Pstr_typext a)
   let exception_ ?loc a = mk ?loc (Pstr_exception a)
   let module_ ?loc a = mk ?loc (Pstr_module a)
+  let implicit_ ?loc a = mk ?loc (Pstr_implicit a)
   let rec_module ?loc a = mk ?loc (Pstr_recmodule a)
   let modtype ?loc a = mk ?loc (Pstr_modtype a)
   let open_ ?loc a = mk ?loc (Pstr_open a)

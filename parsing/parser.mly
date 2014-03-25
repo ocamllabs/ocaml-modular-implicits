@@ -440,6 +440,7 @@ let class_of_let_bindings lbs body =
 %token GREATERRBRACE
 %token GREATERRBRACKET
 %token IF
+%token IMPLICIT
 %token IN
 %token INCLUDE
 %token <string> INFIXOP0
@@ -766,6 +767,8 @@ structure_item:
   | module_type_declaration
       { mkstr(Pstr_modtype $1) }
   | open_statement { mkstr(Pstr_open $1) }
+  | IMPLICIT MODULE module_binding
+      { mkstr(Pstr_implicit $3) }
   | class_declarations
       { mkstr(Pstr_class (List.rev $1)) }
   | class_type_declarations
@@ -859,6 +862,15 @@ signature_item:
       { mksig(Psig_module $1) }
   | module_alias
       { mksig(Psig_module $1) }
+  | IMPLICIT MODULE UIDENT module_declaration post_item_attributes
+      { mksig(Psig_module (Md.mk (mkrhs $3 3)
+                             $4 ~attrs:$5 ~loc:(symbol_rloc()))) }
+  | IMPLICIT MODULE UIDENT EQUAL mod_longident post_item_attributes
+      { mksig(Psig_module (Md.mk (mkrhs $3 3)
+                             (Mty.alias ~loc:(rhs_loc 5) (mkrhs $5 5))
+                             ~attrs:$6
+                             ~loc:(symbol_rloc())
+                          )) }
   | rec_module_declarations
       { mksig(Psig_recmodule (List.rev $1)) }
   | module_type_declaration
@@ -1207,6 +1219,9 @@ labeled_simple_pattern:
       { (Parr_labelled (fst $2), None, snd $2) }
   | LABEL simple_pattern
       { (Parr_labelled $1, None, $2) }
+  | LPAREN IMPLICIT UIDENT COLON package_type RPAREN
+      { (Parr_simple, None, mkpat(Ppat_constraint(mkpat(Ppat_unpack (mkrhs $3 3)),
+                              ghtyp(Ptyp_package $5)))) }
   | simple_pattern
       { (Parr_simple, None, $1) }
 ;

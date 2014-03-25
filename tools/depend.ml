@@ -136,7 +136,11 @@ let rec add_pattern bv pat =
   | Ppat_type li -> add bv li
   | Ppat_lazy p -> add_pattern bv p
   | Ppat_unpack id -> pattern_bv := StringSet.add id.txt !pattern_bv
+<<<<<<< HEAD
   | Ppat_exception p -> add_pattern bv p
+=======
+  | Ppat_implicit id -> pattern_bv := StringSet.add id.txt !pattern_bv
+>>>>>>> Introduce "implicit" keyword and constructions in parser
   | Ppat_extension _ -> ()
 
 let add_pattern bv pat =
@@ -254,6 +258,8 @@ and add_sig_item bv item =
       in
       List.iter (fun pmd -> add_modtype bv' pmd.pmd_type) decls;
       bv'
+  | Psig_implicit pmd ->
+      add_modtype bv pmd.pmd_type; StringSet.add pmd.pmd_name.txt bv
   | Psig_modtype x ->
       begin match x.pmtd_type with
         None -> ()
@@ -306,6 +312,8 @@ and add_struct_item bv item =
   | Pstr_exception pext ->
       add_extension_constructor bv pext; bv
   | Pstr_module x ->
+      add_module bv x.pmb_expr; StringSet.add x.pmb_name.txt bv
+  | Pstr_implicit x ->
       add_module bv x.pmb_expr; StringSet.add x.pmb_name.txt bv
   | Pstr_recmodule bindings ->
       let bv' =
