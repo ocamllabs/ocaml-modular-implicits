@@ -617,8 +617,26 @@ and transl_signature env sg =
               env loc :: trem,
             Sig_module(id, md, Trec_not) :: rem,
             final_env
-        | Psig_implicit _ ->
-            failwith "TODO"
+
+        | Psig_implicit {pim_module = pmd; pim_arity = _} ->
+            check "module" item.psig_loc module_names pmd.pmd_name.txt;
+            let tmty = transl_modtype env pmd.pmd_type in
+            let md = {
+              md_type=tmty.mty_type;
+              md_attributes=pmd.pmd_attributes;
+              md_loc=pmd.pmd_loc;
+            }
+            in
+            let (id, newenv) =
+              Env.enter_module_declaration pmd.pmd_name.txt md env in
+            let (trem, rem, final_env) = transl_sig newenv srem in
+            mksig (Tsig_module {md_id=id; md_name=pmd.pmd_name; md_type=tmty;
+                                md_loc=pmd.pmd_loc;
+                                md_attributes=pmd.pmd_attributes})
+              env loc :: trem,
+            Sig_module(id, md, Trec_not) :: rem,
+            final_env
+
         | Psig_recmodule sdecls ->
             List.iter
               (fun pmd -> check_name "module" module_names pmd.pmd_name)

@@ -1457,6 +1457,7 @@ and is_nonexpansive_mod mexp =
           | Tstr_value (_, pat_exp_list) ->
               List.for_all (fun vb -> is_nonexpansive vb.vb_expr) pat_exp_list
           | Tstr_module {mb_expr=m;_}
+          | Tstr_implicit {im_module = {mb_expr = m; _}; _}
           | Tstr_include {incl_mod=m;_} -> is_nonexpansive_mod m
           | Tstr_recmodule id_mod_list ->
               List.for_all (fun {mb_expr=m;_} -> is_nonexpansive_mod m)
