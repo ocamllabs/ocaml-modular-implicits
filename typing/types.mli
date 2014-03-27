@@ -301,7 +301,7 @@ and implicit_declaration =
   {
     imd_module: module_declaration;
     (* Number of implicit paramaters for functors *)
-    imd_parameters: int;
+    imd_arity: int;
   }
 
 and rec_status =

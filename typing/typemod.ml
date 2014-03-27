@@ -357,6 +357,14 @@ and approx_sig env ssg =
             Env.enter_module_declaration pmd.pmd_name.txt md env
           in
           Sig_module(id, md, Trec_not) :: approx_sig newenv srem
+      | Psig_implicit pim ->
+          let pmd = pim.pim_module in
+          let md = approx_module_declaration env pmd in
+          let (id, newenv) =
+            Env.enter_module_declaration pmd.pmd_name.txt md env
+          in
+          Sig_implicit(id, {imd_module = md; imd_arity = pim.pim_arity}) ::
+          approx_sig newenv srem
       | Psig_recmodule sdecls ->
           let decls =
             List.map
@@ -438,6 +446,8 @@ let check_sig_item type_names module_names modtype_names loc = function
     Sig_type(id, _, _) ->
       check "type" loc type_names (Ident.name id)
   | Sig_module(id, _, _) ->
+      check "module" loc module_names (Ident.name id)
+  | Sig_implicit(id, _) ->
       check "module" loc module_names (Ident.name id)
   | Sig_modtype(id, _) ->
       check "module type" loc modtype_names (Ident.name id)
@@ -618,7 +628,7 @@ and transl_signature env sg =
             Sig_module(id, md, Trec_not) :: rem,
             final_env
 
-        | Psig_implicit {pim_module = pmd; pim_arity = _} ->
+        | Psig_implicit {pim_module = pmd; pim_arity = arity} ->
             check "module" item.psig_loc module_names pmd.pmd_name.txt;
             let tmty = transl_modtype env pmd.pmd_type in
             let md = {
@@ -630,11 +640,16 @@ and transl_signature env sg =
             let (id, newenv) =
               Env.enter_module_declaration pmd.pmd_name.txt md env in
             let (trem, rem, final_env) = transl_sig newenv srem in
-            mksig (Tsig_module {md_id=id; md_name=pmd.pmd_name; md_type=tmty;
-                                md_loc=pmd.pmd_loc;
-                                md_attributes=pmd.pmd_attributes})
+            (* failwith "TODO" check arity ?! *)
+            mksig (Tsig_implicit
+                     { im_arity = arity;
+                       im_module = {md_id=id; md_name=pmd.pmd_name; md_type=tmty;
+                                    md_loc=pmd.pmd_loc;
+                                    md_attributes=pmd.pmd_attributes}
+                     })
               env loc :: trem,
-            Sig_module(id, md, Trec_not) :: rem,
+            Sig_implicit (id, { imd_arity = arity;
+                                imd_module = md }) :: rem,
             final_env
 
         | Psig_recmodule sdecls ->
@@ -882,6 +897,7 @@ let rec closed_modtype = function
 and closed_signature_item = function
     Sig_value(id, desc) -> Ctype.closed_schema desc.val_type
   | Sig_module(id, md, _) -> closed_modtype md.md_type
+  | Sig_implicit (id, {imd_module = md; _}) -> closed_modtype md.md_type
   | _ -> true
 
 let check_nongen_scheme env str =
@@ -1034,6 +1050,19 @@ let rec package_constraints env loc mty constrs =
               }
             in
             Sig_module (id, md, rs)
+        | Sig_implicit (id, imd) ->
+            let rec aux = function
+              | (m :: ((_ :: _) as l), t) :: rest when m = Ident.name id ->
+                  (l, t) :: aux rest
+              | _ :: rest -> aux rest
+              | [] -> []
+            in
+            let md = imd.imd_module in
+            let md =
+              {md with md_type =
+                         package_constraints env loc md.md_type (aux constrs) }
+            in
+            Sig_implicit (id, {imd with imd_module = md})
         | item -> item
       )
       sg
@@ -1301,8 +1330,36 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
                      md_loc = pmb_loc;
                     }, Trec_not)],
         newenv
-    | Pstr_implicit _ ->
-       failwith "TODO"
+    | Pstr_implicit {pim_module = pmb; pim_arity = arity} ->
+        let {pmb_name = name; pmb_expr = smodl;
+             pmb_attributes = attrs; pmb_loc } = pmb in
+        check "module" loc module_names name.txt;
+        let modl =
+          type_module ~alias:true true funct_body
+            (anchor_submodule name.txt anchor) env smodl in
+        let md =
+          { md_type = enrich_module_type anchor name.txt modl.mod_type env;
+            md_attributes = attrs;
+            md_loc = pmb_loc;
+          }
+        in
+        let (id, newenv) = Env.enter_module_declaration name.txt md env in
+        (* failwith "TODO" check arity ?! *)
+        Tstr_implicit
+          { im_arity = arity;
+            im_module = {mb_id=id; mb_name=name; mb_expr=modl;
+                         mb_attributes=attrs;  mb_loc=pmb_loc;
+                        }
+          },
+        [Sig_implicit(id,
+                      { imd_arity = arity;
+                        imd_module =
+                          {md_type = modl.mod_type;
+                           md_attributes = attrs;
+                           md_loc = pmb_loc;
+                          }
+                      })],
+        newenv
     | Pstr_recmodule sbind ->
         let sbind =
           List.map
@@ -1443,7 +1500,14 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
                   | Sig_typext _ | Sig_class _ as it ->
                       incr pos; it
                   | Sig_implicit (id, imd) ->
-                      failwith "TODO"
+                    let n = !pos in incr pos;
+                    let md = imd.imd_module in
+                    let md = {md with md_type =
+                                 Mty_alias (Pdot(p,Ident.name id,n))} in
+                    Sig_implicit (id, {imd with imd_module = md})
+                  | Sig_value (_, {val_kind=Val_reg}) | Sig_exception _
+                  | Sig_class _ as it ->
+                      incr pos; it
                   | Sig_value _ | Sig_type _ | Sig_modtype _
                   | Sig_class_type _ as it ->
                       it)
@@ -1512,6 +1576,7 @@ and normalize_signature env = List.iter (normalize_signature_item env)
 and normalize_signature_item env = function
     Sig_value(id, desc) -> Ctype.normalize_type env desc.val_type
   | Sig_module(id, md, _) -> normalize_modtype env md.md_type
+  | Sig_implicit(id, imd) -> normalize_modtype env imd.imd_module.md_type
   | _ -> ()
 
 (* Extract the module type of a module expression *)

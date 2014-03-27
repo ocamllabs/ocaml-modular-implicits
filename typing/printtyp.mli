@@ -50,6 +50,7 @@ val tree_of_extension_constructor:
 val extension_constructor:
     Ident.t -> formatter -> extension_constructor -> unit
 val tree_of_module: Ident.t -> module_type -> rec_status -> out_sig_item
+val tree_of_implicit: Ident.t -> implicit_declaration -> out_sig_item
 val modtype: formatter -> module_type -> unit
 val signature: formatter -> signature -> unit
 val tree_of_modtype_declaration:

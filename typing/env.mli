@@ -106,6 +106,7 @@ val add_type: check:bool -> Ident.t -> type_declaration -> t -> t
 val add_extension: check:bool -> Ident.t -> extension_constructor -> t -> t
 val add_module: ?arg:bool -> Ident.t -> module_type -> t -> t
 val add_module_declaration: ?arg:bool -> Ident.t -> module_declaration -> t -> t
+val add_implicit: Ident.t -> arity:int -> module_type -> t -> t
 val add_implicit_declaration: Ident.t -> implicit_declaration -> t -> t
 val add_modtype: Ident.t -> modtype_declaration -> t -> t
 val add_class: Ident.t -> class_declaration -> t -> t

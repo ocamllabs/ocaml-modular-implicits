@@ -1210,7 +1210,7 @@ and tree_of_signature_rec env' = function
             [Osig_module (Ident.name id, tree_of_modtype md.md_type,
                           tree_of_rec rs)]
         | Sig_implicit(id, imd) ->
-            [Osig_implicit (Ident.name id, imd.imd_parameters,
+            [Osig_implicit (Ident.name id, imd.imd_arity,
                             tree_of_modtype imd.imd_module.md_type)]
         | Sig_modtype(id, decl) ->
             [tree_of_modtype_declaration id decl]
@@ -1232,6 +1232,10 @@ and tree_of_modtype_declaration id decl =
 
 let tree_of_module id mty rs =
   Osig_module (Ident.name id, tree_of_modtype mty, tree_of_rec rs)
+
+let tree_of_implicit id imd =
+  Osig_implicit (Ident.name id, imd.imd_arity,
+                  tree_of_modtype imd.imd_module.md_type)
 
 let modtype ppf mty = !Oprint.out_module_type ppf (tree_of_modtype mty)
 let modtype_declaration id ppf decl =

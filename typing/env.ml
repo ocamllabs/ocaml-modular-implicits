@@ -285,6 +285,9 @@ let strengthen =
 let md md_type =
   {md_type; md_attributes=[]; md_loc=Location.none}
 
+let imd imd_arity md_type =
+  {imd_module = md md_type; imd_arity = imd_arity}
+
 (* The name of the compilation unit currently compiled.
    "" if outside a compilation unit. *)
 
@@ -1485,6 +1488,9 @@ and add_cltype id ty env =
 
 let add_module ?arg id mty env =
   add_module_declaration ?arg id (md mty) env
+
+let add_implicit id ~arity mty env =
+  add_implicit_declaration id (imd arity mty) env
 
 let add_local_constraint id info elv env =
   match info with
