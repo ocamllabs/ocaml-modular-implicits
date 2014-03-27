@@ -828,31 +828,15 @@ and module_binding =
     }
 (* X = ME *)
 
-and implicit_declaration =
+and 'a implicit_infos =
   {
-    pid_name: string loc;
-    pid_type: module_type;
-    pid_attributes: attributes; (* ... [@@id1] [@@id2] *)
-    pid_loc: Location.t;
-    pid_parameters: implicit_parameter list;
+    pim_module: 'a;
+    pim_arity: int;
   }
 
-and implicit_binding =
-  {
-    pib_name: string loc;
-    pib_expr: module_expr;
-    pib_attributes : attributes;
-    pib_loc: Location.t;
-    pib_parameters: implicit_parameter list;
-  }
+and implicit_binding = module_binding implicit_infos
 
-and implicit_parameter =
-  {
-    pip_name: string loc;
-    pip_mty: module_type;
-    pip_loc: Location.t;
-    pip_attributes: attributes;
-  }
+and implicit_declaration = module_declaration implicit_infos
 
 (** {2 Toplevel} *)
 

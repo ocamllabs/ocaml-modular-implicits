@@ -1019,15 +1019,11 @@ class printer  ()= object(self:'self)
         pp f "@[<hov2>module@ type@ %s%a@]%a"
 =======
           self#module_type  pmd.pmd_type
-    | Psig_implicit ({pid_parameters = []; _} as pid) ->
-        pp f "@[<hov>implicit module@ %s@ :@ %a@]"
-          pid.pid_name.txt
-          self#module_type  pid.pid_type
     | Psig_implicit pid ->
-        pp f "@[<hov>implicit functor@ %s@ %a@ :@ %a@]"
-          pid.pid_name.txt
-          (self#list self#implicit_parameter ~sep:"@ ") pid.pid_parameters
-          self#module_type  pid.pid_type
+        pp f "@[<hov>implicit %s@ %s@ :@ %a@]"
+          (if pid.pim_arity = 0 then "module" else "functor")
+          pid.pim_module.pmd_name.txt
+          (self#implicit_declaration pid.pim_arity) pid.pim_module.pmd_type
     | Psig_open (ovf, li, _attrs) ->
         pp f "@[<hov2>open%s@ %a@]" (override ovf) self#longident_loc li
     | Psig_include (mt, _attrs) ->
@@ -1095,9 +1091,31 @@ class printer  ()= object(self:'self)
 
   method structure f x = self#list ~sep:"@\n" self#structure_item f x
 
-  method implicit_parameter f x =
-    pp f "@[<hov2>(%s@ :@ %a)]" x.pip_name.txt
-      self#module_type x.pip_mty
+  method implicit_binding n f me =
+    match me.pmod_desc with
+    | Pmod_functor (s, Some mt, me') when n > 0 ->
+        pp f "(%s@ :@ %a)@;%a"
+          s.txt
+          self#module_type mt
+          (self#implicit_binding (n - 1)) me'
+    | Pmod_constraint (me, ({pmty_desc = ( Pmty_ident _
+                                         | Pmty_signature _ ); _} as mt)) ->
+        assert (n = 0);
+        pp f " :@;%a@;=@;%a@;" self#module_type mt self#module_expr me
+    | _ ->
+        assert (n = 0);
+        pp f " =@;%a@;"  self#module_expr me
+
+  method implicit_declaration n f mt =
+    match mt.pmty_desc with
+    | Pmty_functor (s, Some mt, mt') when n > 0 ->
+        pp f "(%s@ :@ %a)@;%a"
+          s.txt
+          self#module_type mt
+          (self#implicit_declaration (n - 1)) mt'
+    | _ ->
+        assert (n = 0);
+        self#module_type f mt
 
   method payload f = function
     | PStr [{pstr_desc = Pstr_eval (e, attrs)}] ->
@@ -1170,21 +1188,10 @@ class printer  ()= object(self:'self)
     | Pstr_module x ->
         pp f "@[<hov2>module@ %a@]" self#module_binding x
     | Pstr_implicit pib ->
-        pp f "@[<hov2>implicit %s@ %s@ %a%a@]"
-          (match pib.pib_parameters with
-           | [] -> "module"
-           | _ -> "functor")
-          pib.pib_name.txt
-          (self#list self#implicit_parameter ~sep:"@ ") pib.pib_parameters
-          (fun f me ->
-             match me.pmod_desc with
-             | Pmod_constraint
-                 (me,
-                  ({pmty_desc=(Pmty_ident _ | Pmty_signature _);_} as mt)) ->
-                 pp f " :@;%a@;=@;%a@;"  self#module_type mt self#module_expr  me
-             | _ ->
-                 pp f " =@ %a"  self#module_expr  me
-          ) pib.pib_expr
+        pp f "@[<hov2>implicit %s@ %s@ %a@]"
+          (if pib.pim_arity = 0 then "module" else "functor")
+          pib.pim_module.pmb_name.txt
+          (self#implicit_binding pib.pim_arity) pib.pim_module.pmb_expr
     | Pstr_open (ovf, li, _attrs) ->
         pp f "@[<2>open%s@;%a@]" (override ovf) self#longident_loc li;
     | Pstr_modtype {pmtd_name=s; pmtd_type=md} ->
