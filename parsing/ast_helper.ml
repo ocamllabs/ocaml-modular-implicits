@@ -357,36 +357,28 @@ module Incl = struct
 
 end
 
-module Id = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) name params typ =
+module Im = struct
+  let mk md arity =
     {
-     pid_name = name;
-     pid_type = typ;
-     pid_attributes = attrs;
-     pid_loc = loc;
-     pid_parameters = params;
+      pim_module = md;
+      pim_arity = arity;
     }
-end
 
-module Ib = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) name params expr =
-    {
-     pib_name = name;
-     pib_expr = expr;
-     pib_attributes = attrs;
-     pib_loc = loc;
-     pib_parameters = params;
-    }
-end
+  let binding ?loc ?attrs name params me =
+    let me = List.fold_right
+        (fun (name,mty) acc ->
+           Mod.mk ?loc (Pmod_functor(name, Some mty, acc)))
+        params me
+    in
+    mk (Mb.mk ?loc ?attrs name me) (List.length params)
 
-module Ip = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) name typ =
-    {
-      pip_name = name;
-      pip_mty = typ;
-      pip_loc = loc;
-      pip_attributes = attrs;
-    }
+  let declaration ?loc ?attrs name params mty =
+    let mty = List.fold_right
+        (fun (name,mty) acc ->
+           Mty.mk ?loc (Pmty_functor(name, Some mty, acc)))
+        params mty
+    in
+    mk (Md.mk ?loc ?attrs name mty) (List.length params)
 end
 
 module Vb = struct

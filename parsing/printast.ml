@@ -673,9 +673,8 @@ and signature_item i ppf x =
       line i ppf "Psig_recmodule\n";
       list i module_declaration ppf decls;
   | Psig_implicit pid ->
-      line i ppf "Psig_implicit %a\n" fmt_string_loc pid.pid_name;
-      attributes i ppf pid.pid_attributes;
-      module_type i ppf pid.pid_type
+      line i ppf "Psig_implicit %d\n" pid.pim_arity;
+      module_declaration i ppf pid.pim_module
   | Psig_modtype x ->
       line i ppf "Psig_modtype %a\n" fmt_string_loc x.pmtd_name;
       attributes i ppf x.pmtd_attributes;
@@ -784,7 +783,8 @@ and structure_item i ppf x =
       line i ppf "Pstr_recmodule\n";
       list i module_binding ppf bindings;
   | Pstr_implicit pib ->
-      line i ppf "Pstr_implicit\n"
+      line i ppf "Pstr_implicit %d\n" pib.pim_arity;
+      module_binding i ppf pib.pim_module
   | Pstr_modtype x ->
       line i ppf "Pstr_modtype %a\n" fmt_string_loc x.pmtd_name;
       attributes i ppf x.pmtd_attributes;
@@ -821,23 +821,6 @@ and module_binding i ppf x =
   string_loc i ppf x.pmb_name;
   attributes i ppf x.pmb_attributes;
   module_expr (i+1) ppf x.pmb_expr
-
-and implicit_declaration i ppf pid =
-  string_loc i ppf pid.pid_name;
-  attributes i ppf pid.pid_attributes;
-  list i implicit_parameter ppf pid.pid_parameters;
-  module_type (i+1) ppf pid.pid_type;
-
-and implicit_binding i ppf pib =
-  string_loc i ppf pib.pib_name;
-  attributes i ppf pib.pib_attributes;
-  list i implicit_parameter ppf pib.pib_parameters;
-  module_expr (i+1) ppf pib.pib_expr
-
-and implicit_parameter i ppf pip =
-  string_loc i ppf pip.pip_name;
-  attributes i ppf pip.pip_attributes;
-  module_type (i+1) ppf pip.pip_mty;
 
 and core_type_x_core_type_x_location i ppf (ct1, ct2, l) =
   line i ppf "<constraint> %a\n" fmt_location l;

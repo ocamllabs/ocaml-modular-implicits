@@ -296,22 +296,12 @@ module Incl:
   sig
     val mk: ?loc: loc -> ?attrs:attrs -> ?docs:docs -> 'a -> 'a include_infos
 
-(** Implicit declarations *)
-module Id:
+(** Implicit *)
+module Im:
   sig
-    val mk: ?loc:loc -> ?attrs:attrs -> str -> implicit_parameter list -> module_type -> implicit_declaration
-  end
-
-(** Implicit bindings *)
-module Ib:
-  sig
-    val mk: ?loc:loc -> ?attrs:attrs -> str -> implicit_parameter list -> module_expr -> implicit_binding
-  end
-
-(** Implicit parameters *)
-module Ip:
-  sig
-    val mk: ?loc:loc -> ?attrs:attrs -> str -> module_type -> implicit_parameter
+    val mk: 'a -> int -> 'a implicit_infos
+    val binding: ?loc:loc -> ?attrs:attrs -> str -> (str * module_type) list -> module_expr -> implicit_binding
+    val declaration: ?loc:loc -> ?attrs:attrs -> str -> (str * module_type) list -> module_type -> implicit_declaration
   end
 
 (** Value bindings *)

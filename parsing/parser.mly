@@ -817,7 +817,7 @@ and_module_binding:
 
 implicit_parameter:
   | LPAREN functor_arg_name COLON module_type RPAREN
-      { Ip.mk (mkrhs $2 2) $4 ~loc:(symbol_rloc ()) }
+      { (mkrhs $2 2, $4) }
 ;
 implicit_parameters:
     implicit_parameters implicit_parameter
@@ -827,10 +827,10 @@ implicit_parameters:
 ;
 
 implicit_binding:
-    MODULE UIDENT implicit_binding_body
-    { Ib.mk (mkrhs $2 2) [] $3 ~loc:(symbol_rloc ()) }
-  | FUNCTOR UIDENT implicit_parameters implicit_binding_body
-    { Ib.mk (mkrhs $2 2) $3 $4 ~loc:(symbol_rloc ()) }
+    MODULE UIDENT implicit_binding_body post_item_attributes
+    { Im.binding (mkrhs $2 2) [] $3 ~loc:(symbol_rloc ()) ~attrs:$4 }
+  | FUNCTOR UIDENT implicit_parameters implicit_binding_body post_item_attributes
+    { Im.binding (mkrhs $2 2) (List.rev $3) $4 ~loc:(symbol_rloc ()) ~attrs:$5 }
 ;
 
 implicit_binding_body:
@@ -838,6 +838,19 @@ implicit_binding_body:
     { $2 }
   | COLON module_type EQUAL module_expr
     { mkmod(Pmod_constraint($4, $2)) }
+;
+
+implicit_declaration:
+  | MODULE UIDENT implicit_declaration_body post_item_attributes
+    { Im.declaration (mkrhs $2 2) [] $3 ~attrs:$4 ~loc:(symbol_rloc()) }
+  | FUNCTOR UIDENT implicit_parameters implicit_declaration_body post_item_attributes
+    { Im.declaration (mkrhs $2 2) (List.rev $3) $4 ~attrs:$5 ~loc:(symbol_rloc()) }
+;
+implicit_declaration_body:
+  | COLON module_type
+    { $2 }
+  | EQUAL mod_longident
+    { (Mty.alias ~loc:(rhs_loc 2) (mkrhs $2 2)) }
 ;
 
 /* Module types */
@@ -888,15 +901,8 @@ signature_item:
       { mksig(Psig_module $1) }
   | module_alias
       { mksig(Psig_module $1) }
-  | IMPLICIT MODULE UIDENT module_declaration post_item_attributes
-      { mksig(Psig_module (Md.mk (mkrhs $3 3)
-                             $4 ~attrs:$5 ~loc:(symbol_rloc()))) }
-  | IMPLICIT MODULE UIDENT EQUAL mod_longident post_item_attributes
-      { mksig(Psig_module (Md.mk (mkrhs $3 3)
-                             (Mty.alias ~loc:(rhs_loc 5) (mkrhs $5 5))
-                             ~attrs:$6
-                             ~loc:(symbol_rloc())
-                          )) }
+  | IMPLICIT implicit_declaration
+      { mksig(Psig_implicit $2) }
   | rec_module_declarations
       { mksig(Psig_recmodule (List.rev $1)) }
   | module_type_declaration
