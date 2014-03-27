@@ -299,10 +299,9 @@ and modtype_declaration =
 
 and implicit_declaration =
   {
-    imd_type: module_type;
-    imd_attributes: Parsetree.attributes;
-    imd_loc: Location.t;
-    imd_parameters: (Ident.t * module_type) list;
+    imd_module: module_declaration;
+    (* Number of implicit paramaters for functors *)
+    imd_parameters: int;
   }
 
 and rec_status =

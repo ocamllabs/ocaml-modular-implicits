@@ -45,7 +45,6 @@ val is_Tvar: type_expr -> bool
 val is_Tunivar: type_expr -> bool
 val dummy_method: label
 val default_mty: module_type option -> module_type
-val mty_of_implicit_declaration: implicit_declaration -> module_type
 
 val repr: type_expr -> type_expr
         (* Return the canonical representative of a type. *)

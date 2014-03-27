@@ -351,6 +351,22 @@ let rec print_out_functor ppf =
       fprintf ppf "(%s : %a) %a" name
         print_out_module_type mty_arg print_out_functor mty_res
   | m -> fprintf ppf "->@ %a" print_out_module_type m
+and print_out_implicit_functor n ppf =
+  function
+  | Omty_functor (name , Some mty_arg, mty_res) when n > 0 ->
+      fprintf ppf "(%s : %a) %a" name
+        print_out_module_type mty_arg
+        (print_out_implicit_functor (n - 1)) mty_res
+    (* The implicit declares 'n' parameters, but when printing module_type
+            we leave the implicit parameters side. If the state is consistent,
+            n should be 0 now. *)
+  | Omty_alias id ->
+      assert (n = 0);
+      fprintf ppf "=@ %a" print_ident id
+  | m ->
+      assert (n = 0);
+      fprintf ppf ":@ %a" print_out_module_type m
+
 and print_out_module_type ppf =
   function
     Omty_abstract -> ()
@@ -417,6 +433,11 @@ and print_out_sig_item ppf =
                      | Orec_first -> "module rec"
                      | Orec_next -> "and")
         name !out_module_type mty
+  | Osig_implicit (name, n, mty) ->
+      fprintf ppf "@[<2>implicit %s %s %a@]"
+        (if n = 0 then "module" else "functor")
+        name
+        (print_out_implicit_functor n) mty
   | Osig_type(td, rs) ->
         print_out_type_decl
           (if rs = Orec_next then "and" else "type")

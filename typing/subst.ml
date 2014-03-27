@@ -32,6 +32,7 @@ let identity =
 let add_type id p s = { s with types = Tbl.add id p s.types }
 
 let add_module id p s = { s with modules = Tbl.add id p s.modules }
+let add_implicit = add_module
 
 let add_modtype id ty s = { s with modtypes = Tbl.add id ty s.modtypes }
 
@@ -325,7 +326,7 @@ let rec rename_bound_idents s idents = function
     (* Implicits behave like modules at this point? *)
   | Sig_implicit(id, imd) :: sg ->
       let id' = Ident.rename id in
-      rename_bound_idents (add_module id (Pident id') s) (id' :: idents) sg
+      rename_bound_idents (add_implicit id (Pident id') s) (id' :: idents) sg
   | Sig_modtype(id, d) :: sg ->
       let id' = Ident.rename id in
       rename_bound_idents (add_modtype id (Mty_ident(Pident id')) s)
@@ -389,22 +390,9 @@ and module_declaration s decl =
   }
 
 and implicit_declaration s decl =
-  let rec parameters acc s = function
-    | [] -> List.rev acc, s
-    | (id, mty) :: tl ->
-      let id' = Ident.rename id in
-      parameters
-        ((id', modtype s mty) :: acc)
-        (add_module id (Pident id') s)
-        tl
-  in
-  let params, s = parameters [] s decl.imd_parameters in
-  let typ = modtype s decl.imd_type in
   {
-    imd_type = typ;
-    imd_attributes = attrs s decl.imd_attributes;
-    imd_loc = loc s decl.imd_loc;
-    imd_parameters = params;
+    imd_module = module_declaration s decl.imd_module;
+    imd_parameters = decl.imd_parameters;
   }
 
 and modtype_declaration s decl  =

@@ -67,6 +67,11 @@ and strengthen_sig env sg p =
       Sig_module(id, str, rs)
       :: strengthen_sig (Env.add_module_declaration id md env) rem p
       (* Need to add the module in case it defines manifest module types *)
+  | Sig_implicit(id, imd) :: rem ->
+      let md = imd.imd_module in
+      let md = strengthen_decl env md (Pdot(p, Ident.name id, nopos)) in
+      Sig_implicit(id, {imd with imd_module = md})
+      :: strengthen_sig (Env.add_implicit_declaration id imd env) rem p
   | Sig_modtype(id, decl) :: rem ->
       let newdecl =
         match decl.mtd_type with
@@ -133,6 +138,11 @@ let nondep_supertype env mid mty =
           :: rem'
       | Sig_module(id, md, rs) ->
           Sig_module(id, {md with md_type=nondep_mty env va md.md_type}, rs)
+          :: rem'
+      | Sig_implicit(id, imd) ->
+          let md = imd.imd_module in
+          let md = {md with md_type=nondep_mty env va md.md_type} in
+          Sig_implicit(id, {imd with imd_module = md})
           :: rem'
       | Sig_modtype(id, d) ->
           begin try
@@ -206,6 +216,9 @@ and type_paths_sig env p pos sg =
   | Sig_module(id, md, _) :: rem ->
       type_paths env (Pdot(p, Ident.name id, pos)) md.md_type @
       type_paths_sig (Env.add_module_declaration id md env) p (pos+1) rem
+  | Sig_implicit(id, imd) :: rem ->
+      type_paths env (Pdot(p, Ident.name id, pos)) imd.imd_module.md_type @
+      type_paths_sig (Env.add_implicit_declaration id imd env) p (pos+1) rem
   | Sig_modtype(id, decl) :: rem ->
       type_paths_sig (Env.add_modtype id decl env) p pos rem
   | (Sig_typext _ | Sig_class _) :: rem ->
@@ -231,6 +244,9 @@ and no_code_needed_sig env sg =
   | Sig_module(id, md, _) :: rem ->
       no_code_needed env md.md_type &&
       no_code_needed_sig (Env.add_module_declaration id md env) rem
+  | Sig_implicit(id, imd) :: rem ->
+      no_code_needed env imd.imd_module.md_type &&
+      no_code_needed_sig (Env.add_implicit_declaration id imd env) rem
   | (Sig_type _ | Sig_modtype _ | Sig_class_type _) :: rem ->
       no_code_needed_sig env rem
   | (Sig_typext _ | Sig_class _) :: rem ->
@@ -262,6 +278,8 @@ and contains_type_item env = function
       raise Exit
   | Sig_module (_, {md_type = mty}, _) ->
       contains_type env mty
+  | Sig_implicit (_, imd) ->
+      contains_type env imd.imd_module.md_type
   | Sig_value _
   | Sig_type _
   | Sig_typext _
