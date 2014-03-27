@@ -767,8 +767,8 @@ structure_item:
   | module_type_declaration
       { mkstr(Pstr_modtype $1) }
   | open_statement { mkstr(Pstr_open $1) }
-  | IMPLICIT MODULE module_binding
-      { mkstr(Pstr_implicit $3) }
+  | IMPLICIT module_binding
+      { mkstr(Pstr_implicit $2) }
   | class_declarations
       { mkstr(Pstr_class (List.rev $1)) }
   | class_type_declarations
@@ -812,6 +812,32 @@ and_module_binding:
     AND UIDENT module_binding_body post_item_attributes
       { Mb.mk (mkrhs $2 2) $3 ~attrs:$4 ~loc:(symbol_rloc ())
                ~text:(symbol_text ()) ~docs:(symbol_docs ()) }
+;
+
+
+implicit_parameter:
+  | LPAREN functor_arg_name COLON module_type RPAREN
+      { Ip.mk (mkrhs $2 2) $4 ~loc:(symbol_rloc ()) }
+;
+implicit_parameters:
+    implicit_parameters implicit_parameter
+      { $2 :: $1 }
+  | implicit_parameter
+      { [ $1 ] }
+;
+
+implicit_binding:
+    MODULE UIDENT implicit_binding_body
+    { Ib.mk (mkrhs $2 2) [] $3 ~loc:(symbol_rloc ()) }
+  | FUNCTOR UIDENT implicit_parameters implicit_binding_body
+    { Ib.mk (mkrhs $2 2) $3 $4 ~loc:(symbol_rloc ()) }
+;
+
+implicit_binding_body:
+    EQUAL module_expr
+    { $2 }
+  | COLON module_type EQUAL module_expr
+    { mkmod(Pmod_constraint($4, $2)) }
 ;
 
 /* Module types */

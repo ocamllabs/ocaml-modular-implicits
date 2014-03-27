@@ -54,8 +54,9 @@ type mapper = {
   module_type: mapper -> module_type -> module_type;
   module_type_declaration: mapper -> module_type_declaration
                            -> module_type_declaration;
-  implicit_binding: mapper -> module_binding -> module_binding;
-  implicit_declaration: mapper -> module_declaration -> module_declaration;
+  implicit_binding: mapper -> implicit_binding -> implicit_binding;
+  implicit_declaration: mapper -> implicit_declaration -> implicit_declaration;
+  implicit_parameter: mapper -> implicit_parameter -> implicit_parameter;
   open_description: mapper -> open_description -> open_description;
   pat: mapper -> pattern -> pattern;
   payload: mapper -> payload -> payload;
@@ -545,19 +546,30 @@ let default_mapper =
       );
 
     implicit_declaration =
-      (fun this {pmd_name; pmd_type; pmd_attributes; pmd_loc} ->
-         Md.mk
-           (map_loc this pmd_name)
-           (this.module_type this pmd_type)
-           ~attrs:(this.attributes this pmd_attributes)
-           ~loc:(this.location this pmd_loc)
+      (fun this {pid_name; pid_type; pid_attributes; pid_loc; pid_parameters} ->
+         Id.mk
+           (map_loc this pid_name)
+           (List.map (this.implicit_parameter this) pid_parameters)
+           (this.module_type this pid_type)
+           ~attrs:(this.attributes this pid_attributes)
+           ~loc:(this.location this pid_loc)
       );
 
     implicit_binding =
-      (fun this {pmb_name; pmb_expr; pmb_attributes; pmb_loc} ->
-         Mb.mk (map_loc this pmb_name) (this.module_expr this pmb_expr)
-           ~attrs:(this.attributes this pmb_attributes)
-           ~loc:(this.location this pmb_loc)
+      (fun this {pib_name; pib_expr; pib_attributes; pib_loc; pib_parameters} ->
+         Ib.mk
+           (map_loc this pib_name)
+           (List.map (this.implicit_parameter this) pib_parameters)
+           (this.module_expr this pib_expr)
+           ~attrs:(this.attributes this pib_attributes)
+           ~loc:(this.location this pib_loc)
+      );
+
+    implicit_parameter =
+      (fun this {pip_name; pip_loc; pip_mty; pip_attributes} ->
+         Ip.mk (map_loc this pip_name) (this.module_type this pip_mty)
+           ~attrs:(this.attributes this pip_attributes)
+           ~loc:(this.location this pip_loc)
       );
 
 

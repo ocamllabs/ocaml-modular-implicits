@@ -80,8 +80,9 @@ type mapper = {
   module_type: mapper -> module_type -> module_type;
   module_type_declaration: mapper -> module_type_declaration
                            -> module_type_declaration;
-  implicit_binding: mapper -> module_binding -> module_binding;
-  implicit_declaration: mapper -> module_declaration -> module_declaration;
+  implicit_binding: mapper -> implicit_binding -> implicit_binding;
+  implicit_declaration: mapper -> implicit_declaration -> implicit_declaration;
+  implicit_parameter: mapper -> implicit_parameter -> implicit_parameter;
   open_description: mapper -> open_description -> open_description;
   pat: mapper -> pattern -> pattern;
   payload: mapper -> payload -> payload;

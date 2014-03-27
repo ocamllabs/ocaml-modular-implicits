@@ -24,7 +24,9 @@ type t =
     for_saving: bool }
 
 let identity =
-  { types = Tbl.empty; modules = Tbl.empty; modtypes = Tbl.empty;
+  { types = Tbl.empty;
+    modules = Tbl.empty;
+    modtypes = Tbl.empty;
     for_saving = false }
 
 let add_type id p s = { s with types = Tbl.add id p s.types }
@@ -331,6 +333,10 @@ let rec rename_bound_idents s idents = function
   | Sig_module(id, mty, _) :: sg ->
       let id' = Ident.rename id in
       rename_bound_idents (add_module id (Pident id') s) (id' :: idents) sg
+    (* Implicits behave like modules at this point? *)
+  | Sig_implicit(id, imd) :: sg ->
+      let id' = Ident.rename id in
+      rename_bound_idents (add_module id (Pident id') s) (id' :: idents) sg
   | Sig_modtype(id, d) :: sg ->
       let id' = Ident.rename id in
       rename_bound_idents (add_modtype id (Mty_ident(Pident id')) s)
@@ -377,6 +383,8 @@ and signature_component s comp newid =
       Sig_typext(newid, extension_constructor s ext, es)
   | Sig_module(id, d, rs) ->
       Sig_module(newid, module_declaration s d, rs)
+  | Sig_implicit (id, imd) ->
+      Sig_implicit(newid, implicit_declaration s imd)
   | Sig_modtype(id, d) ->
       Sig_modtype(newid, modtype_declaration s d)
   | Sig_class(id, d, rs) ->
@@ -389,6 +397,25 @@ and module_declaration s decl =
     md_type = modtype s decl.md_type;
     md_attributes = attrs s decl.md_attributes;
     md_loc = loc s decl.md_loc;
+  }
+
+and implicit_declaration s decl =
+  let rec parameters acc s = function
+    | [] -> List.rev acc, s
+    | (id, mty) :: tl ->
+      let id' = Ident.rename id in
+      parameters
+        ((id', modtype s mty) :: acc)
+        (add_module id (Pident id') s)
+        tl
+  in
+  let params, s = parameters [] s decl.imd_parameters in
+  let typ = modtype s decl.imd_type in
+  {
+    imd_type = typ;
+    imd_attributes = attrs s decl.imd_attributes;
+    imd_loc = loc s decl.imd_loc;
+    imd_parameters = params;
   }
 
 and modtype_declaration s decl  =

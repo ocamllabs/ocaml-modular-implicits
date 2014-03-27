@@ -45,6 +45,7 @@ val is_Tvar: type_expr -> bool
 val is_Tunivar: type_expr -> bool
 val dummy_method: label
 val default_mty: module_type option -> module_type
+val mty_of_implicit_declaration: implicit_declaration -> module_type
 
 val repr: type_expr -> type_expr
         (* Return the canonical representative of a type. *)
@@ -97,6 +98,7 @@ type type_iterators =
     it_type_declaration: type_iterators -> type_declaration -> unit;
     it_extension_constructor: type_iterators -> extension_constructor -> unit;
     it_module_declaration: type_iterators -> module_declaration -> unit;
+    it_implicit_declaration: type_iterators -> implicit_declaration -> unit;
     it_modtype_declaration: type_iterators -> modtype_declaration -> unit;
     it_class_declaration: type_iterators -> class_declaration -> unit;
     it_class_type_declaration: type_iterators -> class_type_declaration -> unit;
