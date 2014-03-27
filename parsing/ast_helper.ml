@@ -325,6 +325,38 @@ module Incl = struct
     }
 end
 
+module Id = struct
+  let mk ?(loc = !default_loc) ?(attrs = []) name params typ =
+    {
+     pid_name = name;
+     pid_type = typ;
+     pid_attributes = attrs;
+     pid_loc = loc;
+     pid_parameters = params;
+    }
+end
+
+module Ib = struct
+  let mk ?(loc = !default_loc) ?(attrs = []) name params expr =
+    {
+     pib_name = name;
+     pib_expr = expr;
+     pib_attributes = attrs;
+     pib_loc = loc;
+     pib_parameters = params;
+    }
+end
+
+module Ip = struct
+  let mk ?(loc = !default_loc) ?(attrs = []) name typ =
+    {
+      pip_name = name;
+      pip_mty = typ;
+      pip_loc = loc;
+      pip_attributes = attrs;
+    }
+end
+
 module Vb = struct
   let mk ?(loc = !default_loc) ?(attrs = []) pat expr =
     {

@@ -665,7 +665,7 @@ and signature_item_desc =
         (* module X : MT *)
   | Psig_recmodule of module_declaration list
         (* module rec X1 : MT1 and ... and Xn : MTn *)
-  | Psig_implicit of module_declaration
+  | Psig_implicit of implicit_declaration
         (* implicit module X : MT *)
   | Psig_modtype of module_type_declaration
         (* module type S = MT
@@ -794,7 +794,7 @@ and structure_item_desc =
         (* module X = ME *)
   | Pstr_recmodule of module_binding list
         (* module rec X1 = ME1 and ... and Xn = MEn *)
-  | Pstr_implicit of module_binding
+  | Pstr_implicit of implicit_binding
         (* implicit module X = ME *)
   | Pstr_modtype of module_type_declaration
         (* module type S = MT *)
@@ -827,6 +827,32 @@ and module_binding =
      pmb_loc: Location.t;
     }
 (* X = ME *)
+
+and implicit_declaration =
+  {
+    pid_name: string loc;
+    pid_type: module_type;
+    pid_attributes: attributes; (* ... [@@id1] [@@id2] *)
+    pid_loc: Location.t;
+    pid_parameters: implicit_parameter list;
+  }
+
+and implicit_binding =
+  {
+    pib_name: string loc;
+    pib_expr: module_expr;
+    pib_attributes : attributes;
+    pib_loc: Location.t;
+    pib_parameters: implicit_parameter list;
+  }
+
+and implicit_parameter =
+  {
+    pip_name: string loc;
+    pip_mty: module_type;
+    pip_loc: Location.t;
+    pip_attributes: attributes;
+  }
 
 (** {2 Toplevel} *)
 

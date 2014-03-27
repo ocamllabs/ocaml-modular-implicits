@@ -50,6 +50,7 @@ class printer :
     method expression2 : Format.formatter -> Parsetree.expression -> unit
     method extension_constructor :
       Format.formatter -> Parsetree.extension_constructor -> unit
+    method implicit_parameter : Format.formatter -> Parsetree.implicit_parameter -> unit
     method label_exp :
       Format.formatter ->
       Parsetree.arrow_flag * Parsetree.expression option * Parsetree.pattern ->
