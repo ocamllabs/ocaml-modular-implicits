@@ -403,7 +403,7 @@ and module_declaration s decl =
 and implicit_declaration s decl =
   {
     imd_module = module_declaration s decl.imd_module;
-    imd_parameters = decl.imd_parameters;
+    imd_arity = decl.imd_arity;
   }
 
 and modtype_declaration s decl  =

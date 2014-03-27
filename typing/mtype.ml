@@ -196,6 +196,11 @@ and enrich_item env p = function
                    md_type = enrich_modtype env
                        (Pdot(p, Ident.name id, nopos)) md.md_type},
                  rs)
+  | Sig_implicit(id, im) ->
+      let md = im.imd_module in
+      let md = {md with md_type = enrich_modtype env
+                            (Pdot(p, Ident.name id, nopos)) md.md_type} in
+      Sig_implicit(id, {im with imd_module = md})
   | item -> item
 
 let rec type_paths env p mty =
@@ -346,11 +351,15 @@ let collect_arg_paths mty =
   and it_signature_item it si =
     type_iterators.it_signature_item it si;
     match si with
-      Sig_module (id, {md_type=Mty_alias p}, _) ->
+      Sig_module (id, {md_type=Mty_alias p}, _)
+    | Sig_implicit (id, {imd_module = {md_type=Mty_alias p}}) ->
         bindings := Ident.add id p !bindings
-    | Sig_module (id, {md_type=Mty_signature sg}, _) ->
+    | Sig_module (id, {md_type=Mty_signature sg}, _)
+    | Sig_implicit (id, {imd_module = {md_type=Mty_signature sg}}) ->
         List.iter
-          (function Sig_module (id', _, _) ->
+          (function
+            | Sig_module (id', _, _)
+            | Sig_implicit (id', _) ->
               subst :=
                 PathMap.add (Pdot (Pident id, Ident.name id', -1)) id' !subst
             | _ -> ())
@@ -387,6 +396,19 @@ and remove_aliases_sig env excl sg =
       in
       Sig_module(id, {md with md_type = mty} , rs) ::
       remove_aliases_sig (Env.add_module id mty env) excl rem
+  | Sig_implicit (id, imd) :: rem ->
+      let md = imd.imd_module in
+      let mty =
+        match md.md_type with
+          Mty_alias _ when IdentSet.mem id excl ->
+            md.md_type
+        | mty ->
+            remove_aliases env excl mty
+      in
+      Sig_implicit(id, {imd with imd_module = {md with md_type = mty}}) ::
+      remove_aliases_sig
+        (Env.add_implicit id ~arity:imd.imd_arity mty env) excl
+        rem
   | Sig_modtype(id, mtd) :: rem ->
       Sig_modtype(id, mtd) ::
       remove_aliases_sig (Env.add_modtype id mtd env) excl rem

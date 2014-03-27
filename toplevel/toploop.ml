@@ -206,6 +206,9 @@ let rec pr_item env items =
   | Sig_module(id, md, rs) :: rem ->
       let tree = Printtyp.tree_of_module id md.md_type rs in
       Some (tree, None, rem)
+  | Sig_implicit(id, imd) :: rem ->
+      let tree = Printtyp.tree_of_implicit id imd in
+      Some (tree, None, rem)
   | Sig_modtype(id, decl) :: rem ->
       let tree = Printtyp.tree_of_modtype_declaration id decl in
       Some (tree, None, rem)

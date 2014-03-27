@@ -288,9 +288,10 @@ and signatures env cxt subst sig1 sig2 =
   let (id_pos_list,_) =
     List.fold_left
       (fun (l,pos) -> function
-          Sig_module (id, _, _) ->
-            ((id,pos,Tcoerce_none)::l , pos+1)
-        | item -> (l, if is_runtime_component item then pos+1 else pos))
+           Sig_module (id, _, _)
+         | Sig_implicit (id, _) ->
+             ((id,pos,Tcoerce_none)::l , pos+1)
+         | item -> (l, if is_runtime_component item then pos+1 else pos))
       ([], 0) sig1 in
   (* Build a table of the components of sig1, along with their positions.
      The table is indexed by kind and name of component *)
@@ -391,7 +392,12 @@ and signature_components old_env env cxt subst paired =
       let cc =
         modtypes env (Module id1::cxt) subst
           (Mtype.strengthen env mty1.md_type (Pident id1)) mty2.md_type in
-      (pos, cc) :: comps_rec rem
+      (pos, cc) :: signature_components env cxt subst rem
+  | (Sig_implicit(id1, im1), Sig_implicit(id2, im2), pos) :: rem ->
+      let cc =
+        modtypes env (Module id1::cxt) subst
+          (Mtype.strengthen env im1.imd_module.md_type (Pident id1)) im2.imd_module.md_type in
+      (pos, cc) :: signature_components env cxt subst rem
   | (Sig_modtype(id1, info1), Sig_modtype(id2, info2), pos) :: rem ->
       modtype_infos env cxt subst id1 info1 info2;
       comps_rec rem
@@ -401,7 +407,7 @@ and signature_components old_env env cxt subst paired =
   | (Sig_class_type(id1, info1, _),
      Sig_class_type(id2, info2, _), pos) :: rem ->
       class_type_declarations ~old_env env cxt subst id1 info1 info2;
-      comps_rec rem
+      signature_components env cxt subst rem
   | _ ->
       assert false
 
