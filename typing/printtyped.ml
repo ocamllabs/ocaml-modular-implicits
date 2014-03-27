@@ -636,6 +636,9 @@ and signature_item i ppf x =
       line i ppf "Psig_module \"%a\"\n" fmt_ident md.md_id;
       attributes i ppf md.md_attributes;
       module_type i ppf md.md_type
+  | Tsig_implicit imd ->
+      line i ppf "Psig_implicit %d\n" imd.im_arity;
+      module_declaration i ppf imd.im_module
   | Tsig_recmodule decls ->
       line i ppf "Psig_recmodule\n";
       list i module_declaration ppf decls;
@@ -741,6 +744,9 @@ and structure_item i ppf x =
   | Tstr_module x ->
       line i ppf "Pstr_module\n";
       module_binding i ppf x
+  | Tstr_implicit imb ->
+      line i ppf "Pstr_implicit %d\n" imb.im_arity;
+      module_binding i ppf imb.im_module
   | Tstr_recmodule bindings ->
       line i ppf "Pstr_recmodule\n";
       list i module_binding ppf bindings
