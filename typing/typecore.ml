@@ -189,7 +189,7 @@ let iter_expression f e =
     | Pstr_extension _ -> ()
     | Pstr_include {pincl_mod = me}
     | Pstr_module {pmb_expr = me} -> module_expr me
-    | Pstr_implicit {pmb_expr = me} -> module_expr me
+    | Pstr_implicit _ -> failwith "TODO"
     | Pstr_recmodule l -> List.iter (fun x -> module_expr x.pmb_expr) l
     | Pstr_class cdl -> List.iter (fun c -> class_expr c.pci_expr) cdl
 

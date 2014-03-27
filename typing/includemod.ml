@@ -126,6 +126,7 @@ type field_desc =
   | Field_type of string
   | Field_typext of string
   | Field_module of string
+  | Field_implicit of string
   | Field_modtype of string
   | Field_class of string
   | Field_classtype of string
@@ -135,6 +136,7 @@ let kind_of_field_desc = function
   | Field_type _ -> "type"
   | Field_typext _ -> "extension constructor"
   | Field_module _ -> "module"
+  | Field_implicit _ -> "implicit"
   | Field_modtype _ -> "module type"
   | Field_class _ -> "class"
   | Field_classtype _ -> "class type"
@@ -144,6 +146,7 @@ let item_ident_name = function
   | Sig_type(id, d, _) -> (id, d.type_loc, Field_type(Ident.name id))
   | Sig_typext(id, d, _) -> (id, d.ext_loc, Field_typext(Ident.name id))
   | Sig_module(id, d, _) -> (id, d.md_loc, Field_module(Ident.name id))
+  | Sig_implicit(id, d) -> (id, d.imd_module.md_loc, Field_implicit(Ident.name id))
   | Sig_modtype(id, d) -> (id, d.mtd_loc, Field_modtype(Ident.name id))
   | Sig_class(id, d, _) -> (id, d.cty_loc, Field_class(Ident.name id))
   | Sig_class_type(id, d, _) -> (id, d.clty_loc, Field_classtype(Ident.name id))
@@ -156,6 +159,7 @@ let is_runtime_component = function
   | Sig_value(_,_)
   | Sig_typext(_,_,_)
   | Sig_module(_,_,_)
+  | Sig_implicit(_,_)
   | Sig_class(_, _,_) -> true
 
 (* Print a coercion *)
@@ -343,6 +347,8 @@ and signatures env cxt subst sig1 sig2 =
                 Subst.add_type id2 (Pident id1) subst
             | Sig_module _ ->
                 Subst.add_module id2 (Pident id1) subst
+            | Sig_implicit _ ->
+                Subst.add_implicit id2 (Pident id1) subst
             | Sig_modtype _ ->
                 Subst.add_modtype id2 (Mty_ident (Pident id1)) subst
             | Sig_value _ | Sig_typext _

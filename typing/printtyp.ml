@@ -1224,6 +1224,9 @@ and tree_of_signature_rec env' in_type_group = function
         | Sig_module(id, md, rs) ->
             [Osig_module (Ident.name id, tree_of_modtype md.md_type,
                           tree_of_rec rs)]
+        | Sig_implicit(id, imd) ->
+            [Osig_implicit (Ident.name id, imd.imd_parameters,
+                            tree_of_modtype imd.imd_module.md_type)]
         | Sig_modtype(id, decl) ->
             [tree_of_modtype_declaration id decl]
         | Sig_class(id, decl, rs) ->
