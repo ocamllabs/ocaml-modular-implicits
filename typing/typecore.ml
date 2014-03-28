@@ -932,7 +932,7 @@ let rec type_pat ~constrs ~labels ~no_existentials ~mode ~env sp expected_ty =
       rp {
         pat_desc = Tpat_var (id, name);
         pat_loc = sp.ppat_loc;
-        pat_extra=[Tpat_unpack, loc, sp.ppat_attributes];
+        pat_extra=[Tpat_implicit, loc, sp.ppat_attributes];
         pat_type = expected_ty;
         pat_attributes = [];
         pat_env = !env }
@@ -3955,7 +3955,9 @@ let report_error env ppf = function
         | Tarr_labelled s ->
             sprintf "but its first argument is labelled ~%s" s
         | Tarr_optional s ->
-            sprintf "but its first argument is labelled ?%s" s in
+            sprintf "but its first argument is labelled ?%s" s
+        | Tarr_implicit id ->
+            sprintf "but its first argument is implicit %s" (Ident.name id) in
       reset_and_mark_loops ty;
       fprintf ppf "@[<v>@[<2>This function should have type@ %a@]@,%s@]"
       type_expr ty (label_mark l)

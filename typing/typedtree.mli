@@ -35,6 +35,7 @@ and pat_extra =
   | Tpat_constraint of core_type
   | Tpat_type of Path.t * Longident.t loc
   | Tpat_unpack
+  | Tpat_implicit
 
 and pattern_desc =
     Tpat_any

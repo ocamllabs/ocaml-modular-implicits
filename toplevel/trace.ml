@@ -56,6 +56,7 @@ let print_label ppf = function
   | Tarr_simple -> ()
   | Tarr_optional s -> fprintf ppf "?%s:" s
   | Tarr_labelled s -> fprintf ppf "%s:" s
+  | Tarr_implicit id -> fprintf ppf "implicit %s" (Ident.name id)
 
 (* If a function returns a functional value, wrap it into a trace code *)
 
