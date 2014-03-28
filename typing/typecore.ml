@@ -1488,6 +1488,7 @@ let rec approx_type env sty =
       let ty1 = type_option (newvar ()) in
       newty (Tarrow (Tarr_optional s, ty1, approx_type env sty, Cok))
   | Ptyp_arrow (p, _, sty) ->
+      (* def: TODO*)
       newty (Tarrow (tarr_of_parr p, newvar (), approx_type env sty, Cok))
   | Ptyp_tuple args ->
       newty (Ttuple (List.map (approx_type env) args))
@@ -1889,6 +1890,10 @@ and type_expect_ ?in_function env sexp ty_expected =
       in
       type_expect ?in_function env sfun ty_expected
         (* TODO: keep attributes, call type_function directly *)
+  | Pexp_fun (Parr_implicit s, None, spat, sexp) ->
+      let id = Ident.create s in
+      type_function ?in_function loc sexp.pexp_attributes env ty_expected
+        (Tarr_implicit id) [{pc_lhs=spat; pc_guard=None; pc_rhs=sexp}]
   | Pexp_fun (l, None, spat, sexp) ->
       type_function ?in_function loc sexp.pexp_attributes env ty_expected
         (tarr_of_parr l) [{pc_lhs=spat; pc_guard=None; pc_rhs=sexp}]
