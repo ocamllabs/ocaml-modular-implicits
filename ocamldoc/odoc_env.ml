@@ -60,6 +60,7 @@ let rec add_signature env root ?rel signat =
           |  _ -> env
         in
         { env2 with env_modules = (rel_name ident, qualify ident) :: env2.env_modules }
+    | Types.Sig_implicit _ -> failwith "TODO"
     | Types.Sig_modtype (ident, modtype_decl) ->
         let env2 =
           match modtype_decl.Types.mtd_type with

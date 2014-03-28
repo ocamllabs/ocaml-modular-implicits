@@ -26,6 +26,7 @@ let structure_item sub x =
   | Tstr_typext te -> sub # type_extension te
   | Tstr_exception ext -> sub # extension_constructor ext
   | Tstr_module mb -> sub # module_binding mb
+  | Tstr_implicit imb -> sub # module_binding imb.im_module
   | Tstr_recmodule list -> List.iter (sub # module_binding) list
   | Tstr_modtype mtd -> opt (sub # module_type) mtd.mtd_type
   | Tstr_open _ -> ()
@@ -187,6 +188,8 @@ let signature_item sub item =
       sub # extension_constructor ext
   | Tsig_module md ->
       sub # module_type md.md_type
+  | Tsig_implicit imd ->
+      sub # module_type imd.im_module.md_type
   | Tsig_recmodule list ->
       List.iter (fun md -> sub # module_type md.md_type) list
   | Tsig_modtype mtd ->
