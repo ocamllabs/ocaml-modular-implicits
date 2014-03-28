@@ -12,7 +12,6 @@
 
 (* The "trace" facility *)
 
-open Asttypes
 open Format
 open Misc
 open Longident
