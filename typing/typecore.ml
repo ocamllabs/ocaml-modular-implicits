@@ -3297,8 +3297,8 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
                 may_warn sarg0.pexp_loc
                   (Warnings.Not_principal "using an optional argument here");
                 (fun () -> option_some (type_argument env sarg0
-                      (extract_option_type env ty)
-                      (extract_option_type env ty0)))
+                                         (extract_option_type env ty)
+                                         (extract_option_type env ty0)))
               end in
             sargs, more_sargs, Some f
           with Not_found ->
