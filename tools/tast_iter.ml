@@ -75,6 +75,7 @@ let pattern sub pat =
   let extra = function
     | Tpat_type _
     | Tpat_unpack -> ()
+    | Tpat_implicit -> ()
     | Tpat_constraint ct -> sub # core_type ct
   in
   List.iter (fun (c, _, _) -> extra c) pat.pat_extra;

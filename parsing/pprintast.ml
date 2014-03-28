@@ -246,6 +246,9 @@ class printer  ()= object(self:'self)
         end
     | Parr_labelled s ->
         pp f "%s:%a" s self#core_type1 c
+    | Parr_implicit s ->
+        pp f "(implicit %s : %a)" s self#core_type1 c
+
   method core_type f x =
     if x.ptyp_attributes <> [] then begin
       pp f "((%a)%a)" self#core_type {x with ptyp_attributes=[]}
@@ -440,6 +443,9 @@ class printer  ()= object(self:'self)
               pp f "~%s@;" s
           | _ ->  pp f "~%s:%a@;" s self#simple_pattern p
         end
+    | Parr_implicit s ->
+        pp f "(implicit %s : %a)@;" s self#simple_pattern p
+
   method sugar_expr f e =
     if e.pexp_attributes <> [] then false
       (* should also check attributes underneath *)

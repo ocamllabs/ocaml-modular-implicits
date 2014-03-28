@@ -91,6 +91,7 @@ let arrow_flag ppf = function
   | Tarr_simple -> ()
   | Tarr_optional s -> fprintf ppf "?%s" s
   | Tarr_labelled s -> fprintf ppf "%s" s
+  | Tarr_implicit id -> fprintf ppf "implicit %a" ident id
 
 (* Print a raw type expression, with sharing *)
 
@@ -536,6 +537,7 @@ let print_label ppf l =
     | Tarr_simple -> false
     | Tarr_optional _ -> true
     | Tarr_labelled _ -> !print_labels
+    | Tarr_implicit _ -> true
   then
     fprintf ppf "%a:" arrow_flag l
 
@@ -543,6 +545,7 @@ let raw_label = function
   | Tarr_labelled s when !print_labels -> s
   | Tarr_optional s -> "?" ^ s
   | Tarr_simple | Tarr_labelled _ -> ""
+  | Tarr_implicit id -> "implicit " ^ ident_name id
 
 let rec tree_of_typexp sch ty =
   let ty = repr ty in

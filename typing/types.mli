@@ -15,14 +15,15 @@
 open Asttypes
 
 type arrow_flag =
-  | Tarr_simple             (*        T -> ... *)
-  | Tarr_labelled of string (*  label:T -> ... *)
-  | Tarr_optional of string (* ?label:T -> ... *)
+  | Tarr_simple              (*        T -> ... *)
+  | Tarr_labelled of string  (*  label:T -> ... *)
+  | Tarr_optional of string  (* ?label:T -> ... *)
+  | Tarr_implicit of Ident.t (* implicit Id : T -> ... *)
 
 type apply_flag =
-  | Tapp_simple             (* f expr *)
-  | Tapp_labelled of string (* f ~label:expr *)
-  | Tapp_optional of string (* f ?label:expr *)
+  | Tapp_simple              (* f expr *)
+  | Tapp_labelled of string  (* f ~label:expr *)
+  | Tapp_optional of string  (* f ?label:expr *)
 
 (* Type expressions for the core language *)
 

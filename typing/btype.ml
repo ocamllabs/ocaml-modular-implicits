@@ -561,16 +561,19 @@ let arrow_is_optional = function
 let label_name = function
   | Tarr_simple -> ""
   | Tarr_optional s | Tarr_labelled s -> s
+  | Tarr_implicit id -> Ident.name id
 
 let label_raw = function
   | Tarr_simple -> ""
   | Tarr_optional s -> "?" ^ s
   | Tarr_labelled s -> s
+  | Tarr_implicit id -> "implicit " ^ (Ident.name id)
 
 let tarr_of_parr = function
   | Parsetree.Parr_simple     -> Tarr_simple
   | Parsetree.Parr_optional s -> Tarr_optional s
   | Parsetree.Parr_labelled s -> Tarr_labelled s
+  | Parsetree.Parr_implicit _ -> assert false
 
 let tapp_of_papp = function
   | Parsetree.Papp_simple     -> Tapp_simple
@@ -586,6 +589,7 @@ let tapp_of_tarr = function
   | Tarr_simple     -> Tapp_simple
   | Tarr_optional s -> Tapp_optional s
   | Tarr_labelled s -> Tapp_labelled s
+  | Tarr_implicit _ -> failwith "LOL"
 
 let arrow_is_applicable arr app =
   match app, arr with

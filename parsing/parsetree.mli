@@ -18,6 +18,7 @@ type arrow_flag =
   | Parr_simple             (*        T -> ... *)
   | Parr_labelled of string (*  label:T -> ... *)
   | Parr_optional of string (* ?label:T -> ... *)
+  | Parr_implicit of string (* (implicit M : S) -> ... *)
 
 type apply_flag =
   | Papp_simple             (* f expr *)

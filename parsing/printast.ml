@@ -129,6 +129,7 @@ let arrow_flag f = function
   | Parr_simple -> ()
   | Parr_optional s -> fprintf f "?%s" s
   | Parr_labelled s -> fprintf f "%s" s
+  | Parr_implicit s -> fprintf f "implicit %s" s
 ;;
 
 let apply_flag f = function

@@ -141,6 +141,7 @@ let arrow_flag f = function
   | Tarr_simple -> fprintf f ""
   | Tarr_optional s -> fprintf f "?%s" s
   | Tarr_labelled s -> fprintf f "%s" s
+  | Tarr_implicit id -> fprintf f "implicit %a" fmt_ident id
 
 let apply_flag f = function
   | Tapp_simple -> fprintf f ""
@@ -212,6 +213,10 @@ and pattern i ppf x =
   match x.pat_extra with
     | (Tpat_unpack, _, attrs) :: rem ->
         line i ppf "Tpat_unpack\n";
+        attributes i ppf attrs;
+        pattern i ppf { x with pat_extra = rem }
+    | (Tpat_implicit, _, attrs) :: rem ->
+        line i ppf "Tpat_implicit\n";
         attributes i ppf attrs;
         pattern i ppf { x with pat_extra = rem }
     | (Tpat_constraint cty, _, attrs) :: rem ->

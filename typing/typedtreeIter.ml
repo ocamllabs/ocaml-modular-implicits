@@ -209,7 +209,7 @@ module MakeIterator(Iter : IteratorArgument) : sig
       Iter.enter_pattern pat;
       List.iter (fun (cstr, _, _attrs) -> match cstr with
               | Tpat_type _ -> ()
-              | Tpat_unpack -> ()
+              | Tpat_unpack | Tpat_implicit -> ()
               | Tpat_constraint ct -> iter_core_type ct) pat.pat_extra;
       begin
         match pat.pat_desc with

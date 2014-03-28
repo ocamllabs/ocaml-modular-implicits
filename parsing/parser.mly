@@ -1096,8 +1096,8 @@ labeled_simple_pattern:
   | LABEL simple_pattern
       { (Parr_labelled $1, None, $2) }
   | LPAREN IMPLICIT UIDENT COLON package_type RPAREN
-      { (Parr_simple, None, mkpat(Ppat_constraint(mkpat(Ppat_unpack (mkrhs $3 3)),
-                              ghtyp(Ptyp_package $5)))) }
+      { (Parr_implicit $3, None, mkpat(Ppat_constraint(mkpat(Ppat_implicit (mkrhs $3 3)),
+                                 ghtyp(Ptyp_package $5)))) }
   | simple_pattern
       { (Parr_simple, None, $1) }
 ;
