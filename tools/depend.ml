@@ -257,8 +257,9 @@ and add_sig_item bv item =
       in
       List.iter (fun pmd -> add_modtype bv' pmd.pmd_type) decls;
       bv'
-  | Psig_implicit pmd ->
-      add_modtype bv pmd.pid_type; StringSet.add pmd.pid_name.txt bv
+  | Psig_implicit pim ->
+      let pmd = pim.pim_module in
+      add_modtype bv pmd.pmd_type; StringSet.add pmd.pmd_name.txt bv
   | Psig_modtype x ->
       begin match x.pmtd_type with
         None -> ()
@@ -312,8 +313,9 @@ and add_struct_item bv item =
       add_extension_constructor bv pext; bv
   | Pstr_module x ->
       add_module bv x.pmb_expr; StringSet.add x.pmb_name.txt bv
-  | Pstr_implicit x ->
-      add_module bv x.pib_expr; StringSet.add x.pib_name.txt bv
+  | Pstr_implicit pim ->
+      let x = pim.pim_module in
+      add_module bv x.pmb_expr; StringSet.add x.pmb_name.txt bv
   | Pstr_recmodule bindings ->
       let bv' =
         List.fold_right StringSet.add

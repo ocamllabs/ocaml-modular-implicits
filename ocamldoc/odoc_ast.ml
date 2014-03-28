@@ -116,6 +116,8 @@ module Typedtree_search =
       | Typedtree.Tstr_include _ -> ()
       | Typedtree.Tstr_eval _ -> ()
       | Typedtree.Tstr_attribute _ -> ()
+      | Typedtree.Tstr_implicit _ ->
+          failwith "TODO"
 
     let tables typedtree =
       let t = Hashtbl.create 13 in
@@ -1411,8 +1413,7 @@ module Analyser =
           in
             (0, new_env, [ Element_exception new_ext ])
 
-      | Parsetree.Pstr_module {Parsetree.pmb_name=name; pmb_expr=module_expr}
-      | Parsetree.Pstr_implicit {Parsetree.pmb_name=name; pmb_expr=module_expr} ->
+      | Parsetree.Pstr_module {Parsetree.pmb_name=name; pmb_expr=module_expr} ->
           (
            (* of string * module_expr *)
            try
@@ -1453,6 +1454,9 @@ module Analyser =
                let complete_name = Name.concat current_module_name name.txt in
                raise (Failure (Odoc_messages.module_not_found_in_typedtree complete_name))
           )
+
+      | Parsetree.Pstr_implicit _ ->
+          failwith "TODO"
 
       | Parsetree.Pstr_recmodule mods ->
           (* A VOIR ICI pb: pas de lien avec les module type

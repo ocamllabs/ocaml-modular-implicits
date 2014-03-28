@@ -62,6 +62,10 @@ and untype_structure_item item =
         Pstr_exception (untype_extension_constructor ext)
     | Tstr_module mb ->
         Pstr_module (untype_module_binding mb)
+    | Tstr_implicit imb ->
+        let mb = imb.im_module in
+        let pmb = untype_module_binding mb in
+        Pstr_implicit { pim_module = pmb; pim_arity = imb.im_arity }
     | Tstr_recmodule list ->
         Pstr_recmodule (List.map untype_module_binding list)
     | Tstr_modtype mtd ->
@@ -387,6 +391,14 @@ and untype_signature_item item =
                      pmd_type = untype_module_type md.md_type;
                      pmd_attributes = md.md_attributes; pmd_loc = md.md_loc;
                     }
+    | Tsig_implicit imd ->
+        let md = imd.im_module in
+        let pmd = {pmd_name = md.md_name;
+                   pmd_type = untype_module_type md.md_type;
+                   pmd_attributes = md.md_attributes; pmd_loc = md.md_loc;
+                  } in
+        Psig_implicit { pim_module = pmd; pim_arity = imd.im_arity }
+
     | Tsig_recmodule list ->
         Psig_recmodule (List.map (fun md ->
               {pmd_name = md.md_name; pmd_type = untype_module_type md.md_type;
