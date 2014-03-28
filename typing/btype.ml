@@ -12,6 +12,7 @@
 
 (* Basic operations on core types *)
 
+open Asttypes
 open Misc
 open Types
 
