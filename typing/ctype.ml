@@ -2023,6 +2023,7 @@ let arrows_are_compatible l1 l2 =
   match l1, l2 with
   | (Tarr_simple | Tarr_labelled _), (Tarr_simple | Tarr_labelled _) ->
       true
+  (* def: TODO *)
   | Tarr_optional _, Tarr_optional _ -> true
   | _ -> false
 
