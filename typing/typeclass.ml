@@ -352,7 +352,7 @@ let type_constraint val_env sty sty' loc =
 let make_method loc cl_num expr =
   let open Ast_helper in
   let mkid s = mkloc s loc in
-  Exp.fun_ ~loc:expr.pexp_loc Simple None
+  Exp.fun_ ~loc:expr.pexp_loc Parr_simple None
     (Pat.alias ~loc (Pat.var ~loc (mkid "self-*")) (mkid ("self-" ^ cl_num)))
     expr
 
@@ -495,12 +495,13 @@ and class_type env scty =
       let typ = Cty_signature clsig.csig_type in
       cltyp (Tcty_signature clsig) typ
 
-  | Pcty_arrow (l, sty, scty) ->
+  | Pcty_arrow (arr, sty, scty) ->
       let cty = transl_simple_type env false sty in
       let ty = cty.ctyp_type in
+      let arr = Btype.tarr_of_parr arr in
       let clty = class_type env scty in
-      let typ = Cty_arrow (l, ty, clty.cltyp_type) in
-      cltyp (Tcty_arrow (l, cty, clty)) typ
+      let typ = Cty_arrow (arr, ty, clty.cltyp_type) in
+      cltyp (Tcty_arrow (arr, cty, clty)) typ
   | Pcty_extension ext ->
       raise (Error_forward (Typetexp.error_of_extension ext))
 
@@ -673,7 +674,7 @@ let rec class_field self_loc cl_num self_type meths vars
       let field =
         lazy begin
           let meth_type =
-            Btype.newgenty (Tarrow(Simple, self_type, ty, Cok)) in
+            Btype.newgenty (Tarrow(Tarr_simple, self_type, ty, Cok)) in
           Ctype.raise_nongen_level ();
           vars := vars_local;
           let texp = type_expect met_env meth_expr meth_type in
@@ -698,7 +699,7 @@ let rec class_field self_loc cl_num self_type meths vars
           Ctype.raise_nongen_level ();
           let meth_type =
             Ctype.newty
-              (Tarrow (Simple, self_type,
+              (Tarrow (Tarr_simple, self_type,
                        Ctype.instance_def Predef.type_unit, Cok)) in
           vars := vars_local;
           let texp = type_expect met_env expr meth_type in
@@ -914,10 +915,11 @@ and class_expr cl_num val_env met_env scl =
              is not detected for class-level let bindings.  See #5975.*)
       in
       class_expr cl_num val_env met_env sfun
-  | Pcl_fun (l, None, spat, scl') ->
+  | Pcl_fun (arr, None, spat, scl') ->
       if !Clflags.principal then Ctype.begin_def ();
+      let arr = Btype.tarr_of_parr arr in
       let (pat, pv, val_env', met_env) =
-        Typecore.type_class_arg_pattern cl_num val_env met_env l spat
+        Typecore.type_class_arg_pattern cl_num val_env met_env arr spat
       in
       if !Clflags.principal then begin
         Ctype.end_def ();
@@ -957,13 +959,13 @@ and class_expr cl_num val_env met_env scl =
       Ctype.raise_nongen_level ();
       let cl = class_expr cl_num val_env' met_env scl' in
       Ctype.end_def ();
-      if Btype.is_optional l && not_function cl.cl_type then
+      if Btype.is_optional arr && not_function cl.cl_type then
         Location.prerr_warning pat.pat_loc
           Warnings.Unerasable_optional_argument;
-      rc {cl_desc = Tcl_fun (l, pat, pv, cl, partial);
+      rc {cl_desc = Tcl_fun (arr, pat, pv, cl, partial);
           cl_loc = scl.pcl_loc;
           cl_type = Cty_arrow
-            (l, Ctype.instance_def pat.pat_type, cl.cl_type);
+            (arr, Ctype.instance_def pat.pat_type, cl.cl_type);
           cl_env = val_env;
           cl_attributes = scl.pcl_attributes;
          }
@@ -971,6 +973,7 @@ and class_expr cl_num val_env met_env scl =
       if sargs = [] then
         Syntaxerr.ill_formed_ast scl.pcl_loc
           "Function application with no argument.";
+      let sargs = List.map (fun (arr,e) -> Btype.tarr_of_parr arr,e) sargs in
       if !Clflags.principal then Ctype.begin_def ();
       let cl = class_expr cl_num val_env met_env scl' in
       if !Clflags.principal then begin
@@ -1040,7 +1043,7 @@ and class_expr cl_num val_env met_env scl =
               with Not_found ->
                 sargs, more_sargs,
                 if Btype.is_optional l &&
-                  (List.mem_assoc Simple sargs || List.mem_assoc Simple more_sargs)
+                  (List.mem_assoc Tarr_simple sargs || List.mem_assoc Tarr_simple more_sargs)
                 then
                   Some (option_none ty0 Location.none)
                 else None
@@ -1160,11 +1163,12 @@ let var_option = Predef.type_option (Btype.newgenvar ())
 
 let rec approx_declaration cl =
   match cl.pcl_desc with
-    Pcl_fun (l, _, _, cl) ->
+    Pcl_fun (arr, _, _, cl) ->
+      let arr = Btype.tarr_of_parr arr in
       let arg =
-        if Btype.is_optional l then Ctype.instance_def var_option
+        if Btype.is_optional arr then Ctype.instance_def var_option
         else Ctype.newvar () in
-      Ctype.newty (Tarrow (l, arg, approx_declaration cl, Cok))
+      Ctype.newty (Tarrow (arr, arg, approx_declaration cl, Cok))
   | Pcl_let (_, _, cl) ->
       approx_declaration cl
   | Pcl_constraint (cl, _) ->
@@ -1173,11 +1177,12 @@ let rec approx_declaration cl =
 
 let rec approx_description ct =
   match ct.pcty_desc with
-    Pcty_arrow (l, _, ct) ->
+    Pcty_arrow (arr, _, ct) ->
+      let arr = Btype.tarr_of_parr arr in
       let arg =
-        if Btype.is_optional l then Ctype.instance_def var_option
+        if Btype.is_optional arr then Ctype.instance_def var_option
         else Ctype.newvar () in
-      Ctype.newty (Tarrow (l, arg, approx_description ct, Cok))
+      Ctype.newty (Tarrow (arr, arg, approx_description ct, Cok))
   | _ -> Ctype.newvar ()
 
 (*******************************)
@@ -1704,9 +1709,9 @@ let report_error env ppf = function
         "This class expression is not a class function, it cannot be applied"
   | Apply_wrong_label l ->
       let mark_label = function
-        | Simple -> "out label"
-        | Optional s -> sprintf " label ?%s" s
-        | Labelled s -> sprintf " label ~%s" s
+        | Tarr_simple -> "out label"
+        | Tarr_optional s -> sprintf " label ?%s" s
+        | Tarr_labelled s -> sprintf " label ~%s" s
       in
       fprintf ppf "This argument cannot be applied with%s" (mark_label l)
   | Pattern_type_clash ty ->

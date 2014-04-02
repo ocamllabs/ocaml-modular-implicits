@@ -46,8 +46,3 @@ type variance =
   | Covariant
   | Contravariant
   | Invariant
-
-type arrow_flag =
-  | Simple             (*        T -> ... *)
-  | Labelled of string (*  label:T -> ... *)
-  | Optional of string (* ?label:T -> ... *)

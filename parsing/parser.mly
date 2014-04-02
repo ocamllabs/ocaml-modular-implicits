@@ -76,7 +76,7 @@ let ghunit () =
   ghexp (Pexp_construct (mknoloc (Lident "()"), None))
 
 let mkinfix arg1 name arg2 =
-  mkexp(Pexp_apply(mkoperator name 2, [Simple, arg1; Simple, arg2]))
+  mkexp(Pexp_apply(mkoperator name 2, [Parr_simple, arg1; Parr_simple, arg2]))
 
 let neg_float_string f =
   if String.length f > 0 && f.[0] = '-'
@@ -96,7 +96,7 @@ let mkuminus name arg =
   | ("-" | "-."), Pexp_constant(Const_float f) ->
       mkexp(Pexp_constant(Const_float(neg_float_string f)))
   | _ ->
-      mkexp(Pexp_apply(mkoperator ("~" ^ name) 1, [Simple, arg]))
+      mkexp(Pexp_apply(mkoperator ("~" ^ name) 1, [Parr_simple, arg]))
 
 let mkuplus name arg =
   let desc = arg.pexp_desc in
@@ -107,7 +107,7 @@ let mkuplus name arg =
   | "+", Pexp_constant(Const_nativeint _)
   | ("+" | "+."), Pexp_constant(Const_float _) -> mkexp desc
   | _ ->
-      mkexp(Pexp_apply(mkoperator ("~" ^ name) 1, [Simple, arg]))
+      mkexp(Pexp_apply(mkoperator ("~" ^ name) 1, [Parr_simple, arg]))
 
 let mkexp_cons consloc args loc =
   Exp.mk ~loc (Pexp_construct(mkloc (Lident "::") consloc, Some args))
@@ -180,34 +180,34 @@ let bigarray_get arr arg =
   match bigarray_untuplify arg with
     [c1] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array1" get)),
-                       [Simple, arr; Simple, c1]))
+                       [Parr_simple, arr; Parr_simple, c1]))
   | [c1;c2] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array2" get)),
-                       [Simple, arr; Simple, c1; Simple, c2]))
+                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, c2]))
   | [c1;c2;c3] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array3" get)),
-                       [Simple, arr; Simple, c1; Simple, c2; Simple, c3]))
+                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, c2; Parr_simple, c3]))
   | coords ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Genarray" "get")),
-                       [Simple, arr; Simple, ghexp(Pexp_array coords)]))
+                       [Parr_simple, arr; Parr_simple, ghexp(Pexp_array coords)]))
 
 let bigarray_set arr arg newval =
   let set = if !Clflags.fast then "unsafe_set" else "set" in
   match bigarray_untuplify arg with
     [c1] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array1" set)),
-                       [Simple, arr; Simple, c1; Simple, newval]))
+                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, newval]))
   | [c1;c2] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array2" set)),
-                       [Simple, arr; Simple, c1; Simple, c2; Simple, newval]))
+                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, c2; Parr_simple, newval]))
   | [c1;c2;c3] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array3" set)),
-                       [Simple, arr; Simple, c1; Simple, c2; Simple, c3; Simple, newval]))
+                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, c2; Parr_simple, c3; Parr_simple, newval]))
   | coords ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Genarray" "set")),
-                       [Simple, arr;
-                        Simple, ghexp(Pexp_array coords);
-                        Simple, newval]))
+                       [Parr_simple, arr;
+                        Parr_simple, ghexp(Pexp_array coords);
+                        Parr_simple, newval]))
 
 let lapply p1 p2 =
   if !Clflags.applicative_functors
@@ -1082,13 +1082,13 @@ class_type:
       { $1 }
   | QUESTION LIDENT COLON simple_core_type_or_tuple_no_attr MINUSGREATER
     class_type
-      { mkcty(Pcty_arrow(Optional $2 , mkoption $4, $6)) }
+      { mkcty(Pcty_arrow(Parr_optional $2 , mkoption $4, $6)) }
   | OPTLABEL simple_core_type_or_tuple_no_attr MINUSGREATER class_type
-      { mkcty(Pcty_arrow(Optional $1, mkoption $2, $4)) }
+      { mkcty(Pcty_arrow(Parr_optional $1, mkoption $2, $4)) }
   | LIDENT COLON simple_core_type_or_tuple_no_attr MINUSGREATER class_type
-      { mkcty(Pcty_arrow(Labelled $1, $3, $5)) }
+      { mkcty(Pcty_arrow(Parr_labelled $1, $3, $5)) }
   | simple_core_type_or_tuple_no_attr MINUSGREATER class_type
-      { mkcty(Pcty_arrow(Simple, $1, $3)) }
+      { mkcty(Pcty_arrow(Parr_simple, $1, $3)) }
  ;
 class_signature:
     LBRACKET core_type_comma_list RBRACKET clty_longident
@@ -1194,21 +1194,21 @@ seq_expr:
 ;
 labeled_simple_pattern:
     QUESTION LPAREN label_let_pattern opt_default RPAREN
-      { (Optional (fst $3), $4, snd $3) }
+      { (Parr_optional (fst $3), $4, snd $3) }
   | QUESTION label_var
-      { (Optional (fst $2), None, snd $2) }
+      { (Parr_optional (fst $2), None, snd $2) }
   | OPTLABEL LPAREN let_pattern opt_default RPAREN
-      { (Optional $1, $4, $3) }
+      { (Parr_optional $1, $4, $3) }
   | OPTLABEL pattern_var
-      { (Optional $1, None, $2) }
+      { (Parr_optional $1, None, $2) }
   | TILDE LPAREN label_let_pattern RPAREN
-      { (Labelled (fst $3), None, snd $3) }
+      { (Parr_labelled (fst $3), None, snd $3) }
   | TILDE label_var
-      { (Labelled (fst $2), None, snd $2) }
+      { (Parr_labelled (fst $2), None, snd $2) }
   | LABEL simple_pattern
-      { (Labelled $1, None, $2) }
+      { (Parr_labelled $1, None, $2) }
   | simple_pattern
-      { (Simple, None, $1) }
+      { (Parr_simple, None, $1) }
 ;
 pattern_var:
     LIDENT            { mkpat(Ppat_var (mkrhs $1 1)) }
@@ -1324,10 +1324,10 @@ expr:
       { mkexp(Pexp_setfield($1, mkrhs $3 3, $5)) }
   | simple_expr DOT LPAREN seq_expr RPAREN LESSMINUS expr
       { mkexp(Pexp_apply(ghexp(Pexp_ident(array_function "Array" "set")),
-                         [Simple,$1; Simple,$4; Simple,$7])) }
+                         [Parr_simple,$1; Parr_simple,$4; Parr_simple,$7])) }
   | simple_expr DOT LBRACKET seq_expr RBRACKET LESSMINUS expr
       { mkexp(Pexp_apply(ghexp(Pexp_ident(array_function "String" "set")),
-                         [Simple,$1; Simple,$4; Simple,$7])) }
+                         [Parr_simple,$1; Parr_simple,$4; Parr_simple,$7])) }
   | simple_expr DOT LBRACE expr RBRACE LESSMINUS expr
       { bigarray_set $1 $4 $7 }
   | label LESSMINUS expr
@@ -1373,12 +1373,12 @@ simple_expr:
       { unclosed "(" 3 ")" 5 }
   | simple_expr DOT LPAREN seq_expr RPAREN
       { mkexp(Pexp_apply(ghexp(Pexp_ident(array_function "Array" "get")),
-                         [Simple,$1; Simple,$4])) }
+                         [Parr_simple,$1; Parr_simple,$4])) }
   | simple_expr DOT LPAREN seq_expr error
       { unclosed "(" 3 ")" 5 }
   | simple_expr DOT LBRACKET seq_expr RBRACKET
       { mkexp(Pexp_apply(ghexp(Pexp_ident(array_function "String" "get")),
-                         [Simple,$1; Simple,$4])) }
+                         [Parr_simple,$1; Parr_simple,$4])) }
   | simple_expr DOT LBRACKET seq_expr error
       { unclosed "[" 3 "]" 5 }
   | simple_expr DOT LBRACE expr RBRACE
@@ -1415,9 +1415,9 @@ simple_expr:
   | mod_longident DOT LBRACKET expr_semi_list opt_semi error
       { unclosed "[" 3 "]" 6 }
   | PREFIXOP simple_expr
-      { mkexp(Pexp_apply(mkoperator $1 1, [Simple,$2])) }
+      { mkexp(Pexp_apply(mkoperator $1 1, [Parr_simple,$2])) }
   | BANG simple_expr
-      { mkexp(Pexp_apply(mkoperator "!" 1, [Simple,$2])) }
+      { mkexp(Pexp_apply(mkoperator "!" 1, [Parr_simple,$2])) }
   | NEW ext_attributes class_longident
       { mkexp_attrs (Pexp_new(mkrhs $3 3)) $2 }
   | LBRACELESS field_expr_list opt_semi GREATERRBRACE
@@ -1458,19 +1458,19 @@ simple_labeled_expr_list:
 ;
 labeled_simple_expr:
     simple_expr %prec below_SHARP
-      { (Simple, $1) }
+      { (Parr_simple, $1) }
   | label_expr
       { $1 }
 ;
 label_expr:
     LABEL simple_expr %prec below_SHARP
-      { (Labelled $1, $2) }
+      { (Parr_labelled $1, $2) }
   | TILDE label_ident
-      { (Labelled (fst $2), snd $2) }
+      { (Parr_labelled (fst $2), snd $2) }
   | QUESTION label_ident
-      { (Optional (fst $2), snd $2) }
+      { (Parr_optional (fst $2), snd $2) }
   | OPTLABEL simple_expr %prec below_SHARP
-      { (Optional $1, $2) }
+      { (Parr_optional $1, $2) }
 ;
 label_ident:
     LIDENT   { ($1, mkexp(Pexp_ident(mkrhs (Lident $1) 1))) }
@@ -1993,13 +1993,13 @@ core_type2:
     simple_core_type_or_tuple
       { $1 }
   | QUESTION LIDENT COLON core_type2 MINUSGREATER core_type2
-      { mktyp(Ptyp_arrow(Optional $2 , mkoption $4, $6)) }
+      { mktyp(Ptyp_arrow(Parr_optional $2 , mkoption $4, $6)) }
   | OPTLABEL core_type2 MINUSGREATER core_type2
-      { mktyp(Ptyp_arrow(Optional $1 , mkoption $2, $4)) }
+      { mktyp(Ptyp_arrow(Parr_optional $1 , mkoption $2, $4)) }
   | LIDENT COLON core_type2 MINUSGREATER core_type2
-      { mktyp(Ptyp_arrow(Labelled $1, $3, $5)) }
+      { mktyp(Ptyp_arrow(Parr_labelled $1, $3, $5)) }
   | core_type2 MINUSGREATER core_type2
-      { mktyp(Ptyp_arrow(Simple, $1, $3)) }
+      { mktyp(Ptyp_arrow(Parr_simple, $1, $3)) }
 ;
 
 simple_core_type:

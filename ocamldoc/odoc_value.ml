@@ -100,9 +100,9 @@ let dummy_parameter_list typ =
   let rec iter (label, t) =
     match t.Types.desc with
     | Types.Ttuple l ->
-        if label = Asttypes.Simple then
+        if label = Types.Tarr_simple then
           Odoc_parameter.Tuple
-            (List.map (fun t2 -> iter (Asttypes.Simple, t2)) l, t)
+            (List.map (fun t2 -> iter (Types.Tarr_simple, t2)) l, t)
         else
           (* if there is a label, then we don't want to decompose the tuple *)
           Odoc_parameter.Simple_name

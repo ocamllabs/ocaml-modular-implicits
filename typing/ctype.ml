@@ -2019,6 +2019,16 @@ let rec expands_to_datatype env ty =
       end
   | _ -> false
 
+let arrows_are_compatible l1 l2 =
+  match l1, l2 with
+  | (Tarr_simple | Tarr_labelled _), (Tarr_simple | Tarr_labelled _) ->
+      true
+  | Tarr_optional _, Tarr_optional _ -> true
+  | _ -> false
+
+let classic_arrows_are_compatible l1 l2 =
+  l1 = l2 || !Clflags.classic && arrows_are_compatible l1 l2
+
 (* mcomp type_pairs subst env t1 t2 does not raise an
    exception if it is possible that t1 and t2 are actually
    equal, assuming the types in type_pairs are equal and
@@ -2050,7 +2060,7 @@ let rec mcomp type_pairs env t1 t2 =
         match (t1'.desc, t2'.desc) with
           (Tvar _, Tvar _) -> assert false
         | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
-          when l1 = l2 || not (is_optional l1 || is_optional l2) ->
+          when arrows_are_compatible l1 l2 ->
             mcomp type_pairs env t1 t2;
             mcomp type_pairs env u1 u2;
         | (Ttuple tl1, Ttuple tl2) ->
@@ -2440,8 +2450,8 @@ and unify3 env t1 t1' t2 t2' =
     end;
     try
       begin match (d1, d2) with
-        (Tarrow (l1, t1, u1, c1), Tarrow (l2, t2, u2, c2)) when l1 = l2 ||
-        !Clflags.classic && not (is_optional l1 || is_optional l2) ->
+        (Tarrow (l1, t1, u1, c1), Tarrow (l2, t2, u2, c2))
+        when classic_arrows_are_compatible l1 l2 ->
           unify  env t1 t2; unify env  u1 u2;
           begin match commu_repr c1, commu_repr c2 with
             Clink r, c2 -> set_commu r c2
@@ -2840,7 +2850,9 @@ let filter_arrow env t l =
       link_type t t';
       (t1, t2)
   | Tarrow(l', t1, t2, _)
-    when l = l' || !Clflags.classic && is_simple l && not (is_optional l') ->
+    when l = l' || !Clflags.classic
+                   && l = Tarr_simple
+                   && arrows_are_compatible l l' ->
       (t1, t2)
   | _ ->
       raise (Unify [])
@@ -2962,8 +2974,8 @@ let rec moregen inst_nongen type_pairs env t1 t2 =
             (Tvar _, _) when may_instantiate inst_nongen t1' ->
               moregen_occur env t1'.level t2;
               link_type t1' t2
-          | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _)) when l1 = l2
-            || !Clflags.classic && not (is_optional l1 || is_optional l2) ->
+          | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
+            when classic_arrows_are_compatible l1 l2 ->
               moregen inst_nongen type_pairs env t1 t2;
               moregen inst_nongen type_pairs env u1 u2
           | (Ttuple tl1, Ttuple tl2) ->
@@ -3233,8 +3245,8 @@ let rec eqtype rename type_pairs subst env t1 t2 =
                 then raise (Unify []);
                 subst := (t1', t2') :: !subst
               end
-          | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _)) when l1 = l2
-            || !Clflags.classic && not (is_optional l1 || is_optional l2) ->
+          | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
+            when classic_arrows_are_compatible l1 l2 ->
               eqtype rename type_pairs subst env t1 t2;
               eqtype rename type_pairs subst env u1 u2;
           | (Ttuple tl1, Ttuple tl2) ->
@@ -3648,7 +3660,7 @@ let match_class_declarations env patt_params patt_type subj_params subj_type =
         (* Use moregeneral for class parameters, need to recheck everything to
            keeps relationships (PR#4824) *)
         let clty_params =
-          List.fold_right (fun ty cty -> Cty_arrow (Labelled "*",ty,cty)) in
+          List.fold_right (fun ty cty -> Cty_arrow (Tarr_labelled "*",ty,cty)) in
         match_class_types ~trace:false env
           (clty_params patt_params patt_type)
           (clty_params subj_params subj_type)
@@ -3927,8 +3939,8 @@ let rec subtype_rec env trace t1 t2 cstrs =
     match (t1.desc, t2.desc) with
       (Tvar _, _) | (_, Tvar _) ->
         (trace, t1, t2, !univar_pairs)::cstrs
-    | (Tarrow(l1, t1, u1, _), Tarrow(l2, t2, u2, _)) when l1 = l2
-      || !Clflags.classic && not (is_optional l1 || is_optional l2) ->
+    | (Tarrow(l1, t1, u1, _), Tarrow(l2, t2, u2, _))
+      when classic_arrows_are_compatible l1 l2 ->
         let cstrs = subtype_rec env ((t2, t1)::trace) t2 t1 cstrs in
         subtype_rec env ((u1, u2)::trace) u1 u2 cstrs
     | (Ttuple tl1, Ttuple tl2) ->

@@ -225,15 +225,15 @@ class printer  ()= object(self:'self)
 
   method type_in_arrow f (label,({ptyp_desc;_}as c) ) =
     match label with
-    | Simple ->  self#core_type1 f c (* otherwise parenthesize *)
-    | Optional s ->
+    | Parr_simple ->  self#core_type1 f c (* otherwise parenthesize *)
+    | Parr_optional s ->
         begin match ptyp_desc with
         | Ptyp_constr ({txt;_}, l) ->
             assert (is_predef_option txt);
             pp f "?%s:%a" s (self#list self#core_type1) l
         | _ -> failwith "invalid input in print#type_in_arrow"
         end
-    | Labelled s ->
+    | Parr_labelled s ->
         pp f "%s:%a" s self#core_type1 c
   method core_type f x =
     if x.ptyp_attributes <> [] then begin
@@ -409,9 +409,9 @@ class printer  ()= object(self:'self)
 
   method label_exp f (l,opt,p) =
     match l with
-    | Simple ->
+    | Parr_simple ->
       pp f "%a@ " self#simple_pattern p (*single case pattern parens needed here *)
-    | Optional s ->
+    | Parr_optional s ->
         begin match p.ppat_desc with
           | Ppat_var {txt;_} when txt = s ->
               (match opt with
@@ -423,7 +423,7 @@ class printer  ()= object(self:'self)
                    pp f "%s:(%a=@;%a)@;" l self#pattern1 p self#expression o
                | None -> pp f "%s:%a@;" l self#simple_pattern p)
         end
-    | Labelled s ->
+    | Parr_labelled s ->
         begin match p.ppat_desc with
           | Ppat_var {txt;_} when txt = s ->
               pp f "~%s@;" s
@@ -1081,7 +1081,7 @@ class printer  ()= object(self:'self)
     let rec pp_print_pexp_function f x =
       if x.pexp_attributes <> [] then pp f "=@;%a" self#expression x
       else match x.pexp_desc with
-      | Pexp_fun (Simple, eo, p, e) ->
+      | Pexp_fun (Parr_simple, eo, p, e) ->
           pp f "%a@ %a" self#simple_pattern p pp_print_pexp_function e
       | Pexp_fun (label, eo, p, e) ->
           pp f "%a@ %a" self#label_exp (label,eo,p) pp_print_pexp_function e
@@ -1361,13 +1361,13 @@ class printer  ()= object(self:'self)
       | _ -> None
     in
     match l with
-    | Simple -> self#expression2 f e ; (* level 2*)
-    | Optional s ->
+    | Parr_simple -> self#expression2 f e ; (* level 2*)
+    | Parr_optional s ->
         if Some s = simple_name then
           pp f "?%s" s
         else
           pp f "?%s:%a" s self#simple_expr e
-    | Labelled s ->
+    | Parr_labelled s ->
         if Some s = simple_name then
           pp f "~%s" s
         else

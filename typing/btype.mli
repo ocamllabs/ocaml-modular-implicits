@@ -164,11 +164,14 @@ val forget_abbrev:
 
 val is_simple : arrow_flag -> bool
 val is_optional : arrow_flag -> bool
+
 val label_name : arrow_flag -> label
 val label_raw : arrow_flag -> label
 
 (* Returns the label name with first character '?' or '~' as appropriate. *)
 val prefixed_label_name : arrow_flag -> label
+
+val tarr_of_parr : Parsetree.arrow_flag -> Types.arrow_flag
 
 val extract_label :
     label -> (arrow_flag * 'a) list ->
