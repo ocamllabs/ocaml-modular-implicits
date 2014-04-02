@@ -88,9 +88,9 @@ let tree_of_rec = function
 (* Print arrow lhs flag/label *)
 
 let arrow_flag ppf = function
-  | Simple -> ()
-  | Optional s -> fprintf ppf "?%s" s
-  | Labelled s -> fprintf ppf "%s" s
+  | Tarr_simple -> ()
+  | Tarr_optional s -> fprintf ppf "?%s" s
+  | Tarr_labelled s -> fprintf ppf "%s" s
 
 (* Print a raw type expression, with sharing *)
 
@@ -533,16 +533,16 @@ let reset_and_mark_loops_list tyl =
 let print_labels = ref true
 let print_label ppf l =
   if match l with
-    | Simple -> false
-    | Optional _ -> true
-    | Labelled _ -> !print_labels
+    | Tarr_simple -> false
+    | Tarr_optional _ -> true
+    | Tarr_labelled _ -> !print_labels
   then
     fprintf ppf "%a:" arrow_flag l
 
 let raw_label = function
-  | Labelled s when !print_labels -> s
-  | Optional s -> "?" ^ s
-  | Simple | Labelled _ -> ""
+  | Tarr_labelled s when !print_labels -> s
+  | Tarr_optional s -> "?" ^ s
+  | Tarr_simple | Tarr_labelled _ -> ""
 
 let rec tree_of_typexp sch ty =
   let ty = repr ty in
@@ -558,14 +558,16 @@ let rec tree_of_typexp sch ty =
     | Tarrow(l, ty1, ty2, _) ->
         let pr_arrow l ty1 ty2 =
           let lab = raw_label l in
-          let t1 =
-            if is_optional l then
-              match (repr ty1).desc with
-              | Tconstr(path, [ty], _)
-                when Path.same path Predef.path_option ->
-                  tree_of_typexp sch ty
-              | _ -> Otyp_stuff "<hidden>"
-            else tree_of_typexp sch ty1 in
+          let t1 = match l with
+            | Tarr_optional _ ->
+                begin  match (repr ty1).desc with
+                | Tconstr(path, [ty], _)
+                  when Path.same path Predef.path_option ->
+                    tree_of_typexp sch ty
+                | _ -> Otyp_stuff "<hidden>"
+                end
+            | _ -> tree_of_typexp sch ty1
+          in
           Otyp_arrow (lab, t1, tree_of_typexp sch ty2) in
         pr_arrow l ty1 ty2
     | Ttuple tyl ->
@@ -1042,12 +1044,15 @@ let rec tree_of_class_type sch params =
       Octy_signature (self_ty, List.rev csil)
   | Cty_arrow (l, ty, cty) ->
       let lab = raw_label l in
-      let ty =
-       if is_optional l then
-         match (repr ty).desc with
-         | Tconstr(path, [ty], _) when Path.same path Predef.path_option -> ty
-         | _ -> newconstr (Path.Pident(Ident.create "<hidden>")) []
-       else ty in
+      let ty = match l with
+        | Tarr_optional _ ->
+            begin match (repr ty).desc with
+            | Tconstr(path, [ty], _)
+              when Path.same path Predef.path_option -> ty
+            | _ -> newconstr (Path.Pident(Ident.create "<hidden>")) []
+            end
+        | _ -> ty
+      in
       let tr = tree_of_typexp sch ty in
       Octy_arrow (lab, tr, tree_of_class_type sch params cty)
 

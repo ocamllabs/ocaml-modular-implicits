@@ -14,6 +14,11 @@
 
 open Asttypes
 
+type arrow_flag =
+  | Parr_simple             (*        T -> ... *)
+  | Parr_labelled of string (*  label:T -> ... *)
+  | Parr_optional of string (* ?label:T -> ... *)
+
 (** {2 Extension points} *)
 
 type attribute = string loc * payload

@@ -12,7 +12,6 @@
 
 (* The "trace" facility *)
 
-open Asttypes
 open Format
 open Misc
 open Longident
@@ -54,9 +53,9 @@ let invoke_traced_function codeptr env arg =
   Meta.invoke_traced_function codeptr env arg
 
 let print_label ppf = function
-  | Simple -> ()
-  | Optional s -> fprintf ppf "?%s:" s
-  | Labelled s -> fprintf ppf "%s:" s
+  | Tarr_simple -> ()
+  | Tarr_optional s -> fprintf ppf "?%s:" s
+  | Tarr_labelled s -> fprintf ppf "%s:" s
 
 (* If a function returns a functional value, wrap it into a trace code *)
 

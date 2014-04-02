@@ -14,6 +14,7 @@ open Asttypes;;
 open Format;;
 open Lexing;;
 open Location;;
+open Types;;
 open Typedtree;;
 
 let fmt_position f l =
@@ -137,9 +138,9 @@ let bool i ppf x = line i ppf "%s\n" (string_of_bool x);;
 let label i ppf x = line i ppf "label=\"%s\"\n" x;;
 
 let arrow_flag f = function
-  | Simple -> fprintf f ""
-  | Optional s -> fprintf f "?%s" s
-  | Labelled s -> fprintf f "%s" s
+  | Tarr_simple -> fprintf f ""
+  | Tarr_optional s -> fprintf f "?%s" s
+  | Tarr_labelled s -> fprintf f "%s" s
 
 let attributes i ppf l =
   let i = i + 1 in

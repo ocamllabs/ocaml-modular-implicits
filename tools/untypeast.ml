@@ -255,6 +255,11 @@ and untype_binding {vb_pat; vb_expr; vb_attributes; vb_loc} =
     pvb_loc = vb_loc;
   }
 
+and untype_arrow_flag = function
+  | Types.Tarr_simple     -> Parr_simple
+  | Types.Tarr_optional s -> Parr_optional s
+  | Types.Tarr_labelled s -> Parr_labelled s
+
 and untype_expression exp =
   let desc =
     match exp.exp_desc with
@@ -265,8 +270,8 @@ and untype_expression exp =
           List.map untype_binding list,
           untype_expression exp)
     | Texp_function (label, [{c_lhs=p; c_guard=None; c_rhs=e}], _) ->
-        Pexp_fun (label, None, untype_pattern p, untype_expression e)
-    | Texp_function (Simple, cases, _) ->
+        Pexp_fun (untype_arrow_flag label, None, untype_pattern p, untype_expression e)
+    | Texp_function (Types.Tarr_simple, cases, _) ->
         Pexp_function (untype_cases cases)
     | Texp_function _ ->
         assert false
@@ -275,7 +280,7 @@ and untype_expression exp =
           List.fold_right (fun (label, expo, _) list ->
               match expo with
                 None -> list
-              | Some exp -> (label, untype_expression exp) :: list
+              | Some exp -> (untype_arrow_flag label, untype_expression exp) :: list
           ) list [])
     | Texp_match (exp, cases, exn_cases, _) ->
       let merged_cases = untype_cases cases
@@ -497,14 +502,14 @@ and untype_class_expr cexpr =
     | Tcl_structure clstr -> Pcl_structure (untype_class_structure clstr)
 
     | Tcl_fun (label, pat, _pv, cl, _partial) ->
-        Pcl_fun (label, None, untype_pattern pat, untype_class_expr cl)
+        Pcl_fun (untype_arrow_flag label, None, untype_pattern pat, untype_class_expr cl)
 
     | Tcl_apply (cl, args) ->
         Pcl_apply (untype_class_expr cl,
           List.fold_right (fun (label, expo, _) list ->
               match expo with
                 None -> list
-              | Some exp -> (label, untype_expression exp) :: list
+              | Some exp -> (untype_arrow_flag label, untype_expression exp) :: list
           ) args [])
 
     | Tcl_let (rec_flat, bindings, _ivars, cl) ->
@@ -529,7 +534,7 @@ and untype_class_type ct =
     | Tcty_constr (_path, lid, list) ->
         Pcty_constr (lid, List.map untype_core_type list)
     | Tcty_arrow (label, ct, cl) ->
-        Pcty_arrow (label, untype_core_type ct, untype_class_type cl)
+        Pcty_arrow (untype_arrow_flag label, untype_core_type ct, untype_class_type cl)
   in
   { pcty_desc = desc;
     pcty_loc = ct.cltyp_loc;
@@ -564,7 +569,7 @@ and untype_core_type ct =
       Ttyp_any -> Ptyp_any
     | Ttyp_var s -> Ptyp_var s
     | Ttyp_arrow (label, ct1, ct2) ->
-        Ptyp_arrow (label, untype_core_type ct1, untype_core_type ct2)
+        Ptyp_arrow (untype_arrow_flag label, untype_core_type ct1, untype_core_type ct2)
   | Ttyp_tuple list -> Ptyp_tuple (List.map untype_core_type list)
     | Ttyp_constr (_path, lid, list) ->
         Ptyp_constr (lid,

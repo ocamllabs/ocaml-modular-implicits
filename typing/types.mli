@@ -14,6 +14,11 @@
 
 open Asttypes
 
+type arrow_flag =
+  | Tarr_simple             (*        T -> ... *)
+  | Tarr_labelled of string (*  label:T -> ... *)
+  | Tarr_optional of string (* ?label:T -> ... *)
+
 (* Type expressions for the core language *)
 
 type type_expr =

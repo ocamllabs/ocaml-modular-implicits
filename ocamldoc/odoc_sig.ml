@@ -1408,7 +1408,7 @@ module Analyser =
       | (Parsetree.Pcty_arrow (parse_label, _, pclass_type), Types.Cty_arrow (label, type_expr, class_type)) ->
           (* label = string. Dans les signatures, pas de nom de parametres a l'interieur des tuples *)
           (* si label = "", pas de label. ici on a l'information pour savoir si on a un label explicite. *)
-          if parse_label = label then
+          if Btype.tarr_of_parr parse_label = label then
             (
              let new_param = Simple_name
                  {

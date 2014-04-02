@@ -126,9 +126,9 @@ let option i f ppf x =
 ;;
 
 let arrow_flag f = function
-  | Simple -> ()
-  | Optional s -> fprintf f "?%s" s
-  | Labelled s -> fprintf f "%s" s
+  | Parr_simple -> ()
+  | Parr_optional s -> fprintf f "?%s" s
+  | Parr_labelled s -> fprintf f "%s" s
 ;;
 
 let longident_loc i ppf li = line i ppf "%a\n" fmt_longident_loc li;;
