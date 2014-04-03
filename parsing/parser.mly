@@ -73,7 +73,7 @@ let ghunit () =
   ghexp (Pexp_construct (mknoloc (Lident "()"), None))
 
 let mkinfix arg1 name arg2 =
-  mkexp(Pexp_apply(mkoperator name 2, [Parr_simple, arg1; Parr_simple, arg2]))
+  mkexp(Pexp_apply(mkoperator name 2, [Papp_simple, arg1; Papp_simple, arg2]))
 
 let neg_float_string f =
   if String.length f > 0 && f.[0] = '-'
@@ -93,7 +93,7 @@ let mkuminus name arg =
   | ("-" | "-."), Pexp_constant(Const_float f) ->
       mkexp(Pexp_constant(Const_float(neg_float_string f)))
   | _ ->
-      mkexp(Pexp_apply(mkoperator ("~" ^ name) 1, [Parr_simple, arg]))
+      mkexp(Pexp_apply(mkoperator ("~" ^ name) 1, [Papp_simple, arg]))
 
 let mkuplus name arg =
   let desc = arg.pexp_desc in
@@ -104,7 +104,7 @@ let mkuplus name arg =
   | "+", Pexp_constant(Const_nativeint _)
   | ("+" | "+."), Pexp_constant(Const_float _) -> mkexp desc
   | _ ->
-      mkexp(Pexp_apply(mkoperator ("~" ^ name) 1, [Parr_simple, arg]))
+      mkexp(Pexp_apply(mkoperator ("~" ^ name) 1, [Papp_simple, arg]))
 
 let mkexp_cons consloc args loc =
   Exp.mk ~loc (Pexp_construct(mkloc (Lident "::") consloc, Some args))
@@ -177,34 +177,34 @@ let bigarray_get arr arg =
   match bigarray_untuplify arg with
     [c1] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array1" get)),
-                       [Parr_simple, arr; Parr_simple, c1]))
+                       [Papp_simple, arr; Papp_simple, c1]))
   | [c1;c2] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array2" get)),
-                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, c2]))
+                       [Papp_simple, arr; Papp_simple, c1; Papp_simple, c2]))
   | [c1;c2;c3] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array3" get)),
-                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, c2; Parr_simple, c3]))
+                       [Papp_simple, arr; Papp_simple, c1; Papp_simple, c2; Papp_simple, c3]))
   | coords ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Genarray" "get")),
-                       [Parr_simple, arr; Parr_simple, ghexp(Pexp_array coords)]))
+                       [Papp_simple, arr; Papp_simple, ghexp(Pexp_array coords)]))
 
 let bigarray_set arr arg newval =
   let set = if !Clflags.fast then "unsafe_set" else "set" in
   match bigarray_untuplify arg with
     [c1] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array1" set)),
-                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, newval]))
+                       [Papp_simple, arr; Papp_simple, c1; Papp_simple, newval]))
   | [c1;c2] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array2" set)),
-                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, c2; Parr_simple, newval]))
+                       [Papp_simple, arr; Papp_simple, c1; Papp_simple, c2; Papp_simple, newval]))
   | [c1;c2;c3] ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Array3" set)),
-                       [Parr_simple, arr; Parr_simple, c1; Parr_simple, c2; Parr_simple, c3; Parr_simple, newval]))
+                       [Papp_simple, arr; Papp_simple, c1; Papp_simple, c2; Papp_simple, c3; Papp_simple, newval]))
   | coords ->
       mkexp(Pexp_apply(ghexp(Pexp_ident(bigarray_function "Genarray" "set")),
-                       [Parr_simple, arr;
-                        Parr_simple, ghexp(Pexp_array coords);
-                        Parr_simple, newval]))
+                       [Papp_simple, arr;
+                        Papp_simple, ghexp(Pexp_array coords);
+                        Papp_simple, newval]))
 
 let lapply p1 p2 =
   if !Clflags.applicative_functors
@@ -1168,10 +1168,10 @@ expr:
       { mkexp(Pexp_setfield($1, mkrhs $3 3, $5)) }
   | simple_expr DOT LPAREN seq_expr RPAREN LESSMINUS expr
       { mkexp(Pexp_apply(ghexp(Pexp_ident(array_function "Array" "set")),
-                         [Parr_simple,$1; Parr_simple,$4; Parr_simple,$7])) }
+                         [Papp_simple,$1; Papp_simple,$4; Papp_simple,$7])) }
   | simple_expr DOT LBRACKET seq_expr RBRACKET LESSMINUS expr
       { mkexp(Pexp_apply(ghexp(Pexp_ident(array_function "String" "set")),
-                         [Parr_simple,$1; Parr_simple,$4; Parr_simple,$7])) }
+                         [Papp_simple,$1; Papp_simple,$4; Papp_simple,$7])) }
   | simple_expr DOT LBRACE expr RBRACE LESSMINUS expr
       { bigarray_set $1 $4 $7 }
   | label LESSMINUS expr
@@ -1217,12 +1217,12 @@ simple_expr:
       { unclosed "(" 3 ")" 5 }
   | simple_expr DOT LPAREN seq_expr RPAREN
       { mkexp(Pexp_apply(ghexp(Pexp_ident(array_function "Array" "get")),
-                         [Parr_simple,$1; Parr_simple,$4])) }
+                         [Papp_simple,$1; Papp_simple,$4])) }
   | simple_expr DOT LPAREN seq_expr error
       { unclosed "(" 3 ")" 5 }
   | simple_expr DOT LBRACKET seq_expr RBRACKET
       { mkexp(Pexp_apply(ghexp(Pexp_ident(array_function "String" "get")),
-                         [Parr_simple,$1; Parr_simple,$4])) }
+                         [Papp_simple,$1; Papp_simple,$4])) }
   | simple_expr DOT LBRACKET seq_expr error
       { unclosed "[" 3 "]" 5 }
   | simple_expr DOT LBRACE expr RBRACE
@@ -1259,9 +1259,9 @@ simple_expr:
   | mod_longident DOT LBRACKET expr_semi_list opt_semi error
       { unclosed "[" 3 "]" 6 }
   | PREFIXOP simple_expr
-      { mkexp(Pexp_apply(mkoperator $1 1, [Parr_simple,$2])) }
+      { mkexp(Pexp_apply(mkoperator $1 1, [Papp_simple,$2])) }
   | BANG simple_expr
-      { mkexp(Pexp_apply(mkoperator "!" 1, [Parr_simple,$2])) }
+      { mkexp(Pexp_apply(mkoperator "!" 1, [Papp_simple,$2])) }
   | NEW ext_attributes class_longident
       { mkexp_attrs (Pexp_new(mkrhs $3 3)) $2 }
   | LBRACELESS field_expr_list opt_semi GREATERRBRACE
@@ -1300,19 +1300,19 @@ simple_labeled_expr_list:
 ;
 labeled_simple_expr:
     simple_expr %prec below_SHARP
-      { (Parr_simple, $1) }
+      { (Papp_simple, $1) }
   | label_expr
       { $1 }
 ;
 label_expr:
     LABEL simple_expr %prec below_SHARP
-      { (Parr_labelled $1, $2) }
+      { (Papp_labelled $1, $2) }
   | TILDE label_ident
-      { (Parr_labelled (fst $2), snd $2) }
+      { (Papp_labelled (fst $2), snd $2) }
   | QUESTION label_ident
-      { (Parr_optional (fst $2), snd $2) }
+      { (Papp_optional (fst $2), snd $2) }
   | OPTLABEL simple_expr %prec below_SHARP
-      { (Parr_optional $1, $2) }
+      { (Papp_optional $1, $2) }
 ;
 label_ident:
     LIDENT   { ($1, mkexp(Pexp_ident(mkrhs (Lident $1) 1))) }

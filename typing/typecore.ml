@@ -30,7 +30,7 @@ type error =
   | Orpat_vars of Ident.t
   | Expr_type_clash of (type_expr * type_expr) list
   | Apply_non_function of type_expr
-  | Apply_wrong_label of arrow_flag * type_expr
+  | Apply_wrong_label of apply_flag * type_expr
   | Label_multiply_defined of string
   | Label_missing of Ident.t list
   | Label_not_mutable of Longident.t
@@ -110,23 +110,8 @@ let rp node =
   node
 ;;
 
-
-let fst3 (x, _, _) = x
-let snd3 (_,x,_) = x
-
 let case lhs rhs =
   {c_lhs = lhs; c_guard = None; c_rhs = rhs}
-
-let arrow_is_applicable ~expected ~applied =
-  expected = applied ||
-  (!Clflags.classic &&
-   match applied, expected  with
-   | Tarr_simple, (Tarr_simple | Tarr_labelled _) -> true
-   | _ -> false)
-
-let is_optional = function
-  | Tarr_optional _ -> true
-  | _ -> false
 
 (* Upper approximation of free identifiers on the parse tree *)
 
@@ -2381,7 +2366,7 @@ and type_expect_ ?in_function env sexp ty_expected =
                                 exp_type = method_type;
                                 exp_attributes = []; (* check *)
                                 exp_env = env},
-                          [Tarr_simple,
+                          [Tapp_simple,
                             Some {exp_desc = Texp_ident(path, lid, desc);
                                   exp_loc = obj.exp_loc; exp_extra = [];
                                   exp_type = desc.val_type;
@@ -3081,9 +3066,9 @@ and type_argument env sarg ty_expected' ty_expected =
       end;
       let rec make_args args ty_fun =
         match (expand_head env ty_fun).desc with
-        | Tarrow (Tarr_optional _ as l,ty_arg,ty_fun,_) ->
+        | Tarrow (Tarr_optional s,ty_arg,ty_fun,_) ->
             let ty = option_none (instance env ty_arg) sarg.pexp_loc in
-            make_args ((l, Some ty) :: args) ty_fun
+            make_args ((Tapp_optional s, Some ty) :: args) ty_fun
         | Tarrow (l,_,ty_res',_)
           when (match l with Tarr_simple -> true | _ -> false)
             || !Clflags.classic ->
@@ -3120,7 +3105,7 @@ and type_argument env sarg ty_expected' ty_expected =
       let func texp =
         let e =
           {texp with exp_type = ty_res; exp_desc =
-           Texp_apply (texp, args @ [Tarr_simple, Some eta_var])}
+           Texp_apply (texp, args @ [Tapp_simple, Some eta_var])}
         in
         { texp with exp_type = ty_fun; exp_desc =
           Texp_function(Tarr_simple, [case eta_pat e], Total) }
@@ -3144,9 +3129,9 @@ and type_argument env sarg ty_expected' ty_expected =
       unify_exp env texp ty_expected;
       texp
 
-and type_application env funct sargs =
+and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expression) list) =
   (* funct.exp_type may be generic *)
-  let sargs = List.map (fun (arr,e) -> tarr_of_parr arr, e) sargs in
+  let sargs = List.map (fun (app,e) -> tapp_of_papp app, e) sargs in
   let result_type omitted ty_fun =
     List.fold_left
       (fun ty_fun (l,ty,lv) -> newty2 lv (Tarrow(l,ty,ty_fun,Cok)))
@@ -3157,16 +3142,25 @@ and type_application env funct sargs =
     tvar || List.mem l ls
   in
   let ignored = ref [] in
+  (* The main job of typing arguments is done by [type_args], see below.
+
+     [type_unknown_args] is called after, receiving all arguments that didn't
+     directly match the type of the function but might still be valid by, e.g.,
+     extending the type of the function.
+
+    typed: list of arguments already typechecked
+    ty_fun: type of the function applied
+  *)
   let rec type_unknown_args
-      (args : (Types.arrow_flag * (unit -> Typedtree.expression) option) list)
+      (typed : (Types.apply_flag * (unit -> Typedtree.expression) option) list)
     omitted ty_fun = function
       [] ->
         (List.map
            (function l, None -> l, None
                    | l, Some f -> l, Some (f ()))
-           (List.rev args),
+           (List.rev typed),
          instance env (result_type omitted ty_fun))
-    | (l1, sarg1) :: sargl ->
+    | (app1, sarg1) :: sargl ->
         let (ty1, ty2) =
           let ty_fun = expand_head env ty_fun in
           match ty_fun.desc with
@@ -3174,26 +3168,28 @@ and type_application env funct sargs =
               let t1 = newvar () and t2 = newvar () in
               let not_identity = function
                   Texp_ident(_,_,{val_kind=Val_prim
-                                  {Primitive.prim_name="%identity"}}) ->
+                                      {Primitive.prim_name="%identity"}}) ->
                     false
                 | _ -> true
               in
+              let arr1 = tarr_of_tapp app1 in
               if ty_fun.level >= t1.level && not_identity funct.exp_desc then
                 Location.prerr_warning sarg1.pexp_loc Warnings.Unused_argument;
-              unify env ty_fun (newty (Tarrow(l1,t1,t2,Clink(ref Cunknown))));
+              unify env ty_fun (newty (Tarrow(arr1,t1,t2,Clink(ref Cunknown))));
               (t1, t2)
-          | Tarrow (l,t1,t2,_)
-            when arrow_is_applicable ~expected:l ~applied:l1 ->
+          | Tarrow (arr1,t1,t2,_)
+            when arrow_is_applicable arr1 app1 ->
               (t1, t2)
           | td ->
               let ty_fun =
                 match td with Tarrow _ -> newty td | _ -> ty_fun in
               let ty_res = result_type (omitted @ !ignored) ty_fun in
+              let arr1 = tarr_of_tapp app1 in
               match ty_res.desc with
                 Tarrow _ ->
-                  if (!Clflags.classic || not (has_label l1 ty_fun)) then
+                  if (!Clflags.classic || not (has_label arr1 ty_fun)) then
                     raise (Error(sarg1.pexp_loc, env,
-                                 Apply_wrong_label(l1, ty_res)))
+                                 Apply_wrong_label(app1, ty_res)))
                   else
                     raise (Error(funct.exp_loc, env, Incoherent_label_order))
               | _ ->
@@ -3202,29 +3198,30 @@ and type_application env funct sargs =
         in
         let arg1 () =
           let arg1 = type_expect env sarg1 ty1 in
-          if Btype.is_optional l1 then
+          if (match app1 with Tapp_optional _ -> true | _ -> false) then
             unify_exp env arg1 (type_option(newvar()));
           arg1
         in
-        type_unknown_args ((l1, Some arg1) :: args) omitted ty2 sargl
+        type_unknown_args ((app1, Some arg1) :: typed) omitted ty2 sargl
   in
   let ignore_labels =
     !Clflags.classic ||
     begin
       let ls, tvar = list_labels env funct.exp_type in
       not tvar &&
-      let labels = List.filter (function Tarr_optional _ -> false | _ -> true) ls in
+      let labels = List.filter (fun x -> not (arrow_is_optional x)) ls in
       List.length labels = List.length sargs &&
-      List.for_all (function (l,_) -> l = Tarr_simple) sargs &&
+      List.for_all (function (l,_) -> l = Tapp_simple) sargs &&
       List.exists (fun l -> l <> Tarr_simple) labels &&
       (Location.prerr_warning funct.exp_loc Warnings.Labels_omitted;
        true)
     end
   in
   let warned = ref false in
-  let rec type_args args omitted ty_fun ty_fun0 ty_old sargs more_sargs =
+  (* Match arguments (with apply_flag) and arrow types (with arrow_flag) *)
+  let rec type_args typed omitted ty_fun ty_fun0 ty_old sargs more_sargs =
     match expand_head env ty_fun, expand_head env ty_fun0 with
-      {desc=Tarrow (l, ty, ty_fun, com); level=lv} as ty_fun',
+      {desc=Tarrow (arr, ty, ty_fun, com); level=lv} as ty_fun',
       {desc=Tarrow (_, ty0, ty_fun0, _)}
       when (sargs <> [] || more_sargs <> []) && commu_repr com = Cok ->
         let may_warn loc w =
@@ -3234,72 +3231,88 @@ and type_application env funct sargs =
             Location.prerr_warning loc w
           end
         in
-        let name = label_name l in
+        let name = label_name arr in
         let sargs, more_sargs, arg =
-          if ignore_labels && not (is_optional l) then begin
+          if ignore_labels && not (arrow_is_optional arr) then begin
             (* In classic mode, omitted = [] *)
             match sargs, more_sargs with
-              (l', sarg0) :: _, _ ->
+            | (app, sarg0) :: _, _ ->
                 raise(Error(sarg0.pexp_loc, env,
-                            Apply_wrong_label(l', ty_old)))
-            | _, (l', sarg0) :: more_sargs ->
-                if l <> l' && not (l' = Tarr_simple) then
+                            Apply_wrong_label(app, ty_old)))
+            | _, (app, sarg0) :: more_sargs ->
+                if not (arrow_is_compatible arr app) then
                   raise(Error(sarg0.pexp_loc, env,
-                              Apply_wrong_label(l', ty_fun')))
+                              Apply_wrong_label(app, ty_fun')))
                 else
                   ([], more_sargs,
                    Some (fun () -> type_argument env sarg0 ty ty0))
             | _ ->
                 assert false
           end else try
-            let (l', sarg0, sargs, more_sargs) =
+            let (app, sarg0, sargs, more_sargs) =
               try
-                let (l', sarg0, sargs1, sargs2) = extract_label name sargs in
+                let ((app, sarg0), sargs1, sargs2) = extract_label name sargs in
                 if sargs1 <> [] then
                   may_warn sarg0.pexp_loc
                     (Warnings.Not_principal "commuting this argument");
-                (l', sarg0, sargs1 @ sargs2, more_sargs)
+                (app, sarg0, sargs1 @ sargs2, more_sargs)
               with Not_found ->
-                let (l', sarg0, sargs1, sargs2) =
+                let ((app, sarg0), sargs1, sargs2) =
                   extract_label name more_sargs in
                 if sargs1 <> [] || sargs <> [] then
                   may_warn sarg0.pexp_loc
-                    (Warnings.Not_principal "commuting this argument");
-                (l', sarg0, sargs @ sargs1, sargs2)
+                  (Warnings.Not_principal "commuting this argument");
+                (app, sarg0, sargs @ sargs1, sargs2)
             in
-            if not (is_optional l) && is_optional l' then
+            (* Optional apply to non optional arrow *)
+            if (match arr, app with
+                | Tarr_optional _, _ -> false
+                | _, Tapp_optional _ -> true
+                | _ -> false)
+            then
               Location.prerr_warning sarg0.pexp_loc
-                (Warnings.Nonoptional_label (Btype.label_raw l));
-            sargs, more_sargs,
-            if not (is_optional l) || is_optional l' then
-              Some (fun () -> type_argument env sarg0 ty ty0)
-            else begin
+                (Warnings.Nonoptional_label (label_raw arr));
+            (* Optional apply or non optional arrow *)
+            let f =
+              if (match arr, app with
+                  | _, Tapp_optional _ -> true
+                  | Tarr_optional _, _ -> false
+                  | _ -> true)
+              then
+                (fun () -> type_argument env sarg0 ty ty0)
+              else begin
               may_warn sarg0.pexp_loc
                 (Warnings.Not_principal "using an optional argument here");
-              Some (fun () -> option_some (type_argument env sarg0
-                                             (extract_option_type env ty)
-                                             (extract_option_type env ty0)))
+              (fun () -> option_some (type_argument env sarg0
+                                        (extract_option_type env ty)
+                                        (extract_option_type env ty0)))
             end
+            in
+            sargs, more_sargs, Some f
           with Not_found ->
-            sargs, more_sargs,
-            if is_optional l &&
-               ( List.mem_assoc Tarr_simple sargs
-                 || List.mem_assoc Tarr_simple more_sargs)
-            then begin
-              may_warn funct.exp_loc
-                (Warnings.Without_principality "eliminated optional argument");
-              ignored := (l,ty,lv) :: !ignored;
-              Some (fun () -> option_none (instance env ty) Location.none)
-            end else begin
-              may_warn funct.exp_loc
-                (Warnings.Without_principality "commuted an argument");
-              None
-            end
+            let f =
+              if arrow_is_optional arr &&
+                 (List.mem_assoc Tapp_simple sargs ||
+                  List.mem_assoc Tapp_simple more_sargs) then
+                begin
+                  may_warn funct.exp_loc
+                    (Warnings.Without_principality "eliminated optional argument");
+                  ignored := (arr,ty,lv) :: !ignored;
+                  Some (fun () -> option_none (instance env ty) Location.none)
+                end
+              else
+                begin
+                  may_warn funct.exp_loc
+                    (Warnings.Without_principality "commuted an argument");
+                  None
+                end
+            in
+            sargs, more_sargs, f
         in
         let omitted =
-          if arg = None then (l,ty,lv) :: omitted else omitted in
+          if arg = None then (arr,ty,lv) :: omitted else omitted in
         let ty_old = if sargs = [] then ty_fun else ty_old in
-        type_args ((l,arg)::args) omitted ty_fun ty_fun0
+        type_args ((tapp_of_tarr arr,arg)::typed) omitted ty_fun ty_fun0
           ty_old sargs more_sargs
     | _ ->
         match sargs with
@@ -3307,13 +3320,13 @@ and type_application env funct sargs =
             raise(Error(sarg0.pexp_loc, env,
                         Apply_wrong_label(l, ty_old)))
         | _ ->
-            type_unknown_args args omitted ty_fun0
+            type_unknown_args typed omitted ty_fun0
               (sargs @ more_sargs)
   in
   match funct.exp_desc, sargs with
     (* Special case for ignore: avoid discarding warning *)
     Texp_ident (_, _, {val_kind=Val_prim{Primitive.prim_name="%ignore"}}),
-    [Tarr_simple, sarg] ->
+    [Tapp_simple, sarg] ->
       let ty_arg, ty_res = filter_arrow env (instance env funct.exp_type) Tarr_simple in
       let exp = type_expect env sarg ty_arg in
       begin match (expand_head env exp.exp_type).desc with
@@ -3323,7 +3336,7 @@ and type_application env funct sargs =
           add_delayed_check (fun () -> check_application_result env false exp)
       | _ -> ()
       end;
-      ([Tarr_simple, Some exp], ty_res)
+      ([Tapp_simple, Some exp], ty_res)
   | _ ->
       let ty = funct.exp_type in
       if ignore_labels then
@@ -3825,9 +3838,9 @@ let report_error env ppf = function
       end
   | Apply_wrong_label (l, ty) ->
       let print_label ppf = function
-        | Tarr_simple -> fprintf ppf "without label"
-        | Tarr_optional s -> fprintf ppf "with label ?%s" s
-        | Tarr_labelled s -> fprintf ppf "with label ~%s" s in
+        | Tapp_simple -> fprintf ppf "without label"
+        | Tapp_optional s -> fprintf ppf "with label ?%s" s
+        | Tapp_labelled s -> fprintf ppf "with label ~%s" s in
       reset_and_mark_loops ty;
       fprintf ppf
         "@[<v>@[<2>The function applied to this argument has type@ %a@]@.\

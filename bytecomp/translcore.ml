@@ -1007,8 +1007,13 @@ and transl_apply lam sargs loc =
     | [] ->
         lapply lam (List.rev_map fst args)
   in
-  build_apply lam []
-    (List.map (fun (l, x) -> may_map transl_exp x, Btype.is_optional l) sargs)
+  let prepare_arg (l,x) =
+    may_map transl_exp x,
+    match l with
+    | Tapp_optional _ -> true
+    | _ -> false
+  in
+  build_apply lam [] (List.map prepare_arg sargs)
 
 and transl_function loc untuplify_fn repr partial cases =
   match cases with

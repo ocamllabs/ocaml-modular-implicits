@@ -1338,13 +1338,13 @@ class printer  ()= object(self:'self)
       | _ -> None
     in
     match l with
-    | Parr_simple -> self#expression2 f e ; (* level 2*)
-    | Parr_optional s ->
+    | Papp_simple -> self#expression2 f e ; (* level 2*)
+    | Papp_optional s ->
         if Some s = simple_name then
           pp f "?%s" s
         else
           pp f "?%s:%a" s self#simple_expr e
-    | Parr_labelled s ->
+    | Papp_labelled s ->
         if Some s = simple_name then
           pp f "~%s" s
         else

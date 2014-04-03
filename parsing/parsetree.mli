@@ -19,6 +19,11 @@ type arrow_flag =
   | Parr_labelled of string (*  label:T -> ... *)
   | Parr_optional of string (* ?label:T -> ... *)
 
+type apply_flag =
+  | Papp_simple             (* f expr *)
+  | Papp_labelled of string (* f ~label:expr *)
+  | Papp_optional of string (* f ?label:expr *)
+
 (** {2 Extension points} *)
 
 type attribute = string loc * payload
@@ -235,7 +240,7 @@ and expression_desc =
            - "fun P1 P2 .. Pn -> E1" is represented as nested Pexp_fun.
            - "let f P = E" is represented using Pexp_fun.
          *)
-  | Pexp_apply of expression * (arrow_flag * expression) list
+  | Pexp_apply of expression * (apply_flag * expression) list
         (* E0 ~l1:E1 ... ~ln:En
            li can be empty (non labeled argument) or start with '?'
            (optional argument).
@@ -545,7 +550,7 @@ and class_expr_desc =
            fun ?l:P -> CE                       (lab = "?l", None)
            fun ?l:(P = E0) -> CE                (lab = "?l", Some E0)
          *)
-  | Pcl_apply of class_expr * (arrow_flag * expression) list
+  | Pcl_apply of class_expr * (apply_flag * expression) list
         (* CE ~l1:E1 ... ~ln:En
            li can be empty (non labeled argument) or start with '?'
            (optional argument).
