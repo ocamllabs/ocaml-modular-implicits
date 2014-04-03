@@ -162,8 +162,8 @@ val forget_abbrev:
 
 (**** Utilities for labels ****)
 
-val is_simple : arrow_flag -> bool
-val is_optional : arrow_flag -> bool
+val arrow_is_simple : arrow_flag -> bool
+val arrow_is_optional : arrow_flag -> bool
 
 val label_name : arrow_flag -> label
 val label_raw : arrow_flag -> label
@@ -172,10 +172,17 @@ val label_raw : arrow_flag -> label
 val prefixed_label_name : arrow_flag -> label
 
 val tarr_of_parr : Parsetree.arrow_flag -> Types.arrow_flag
+val tapp_of_papp : Parsetree.apply_flag -> Types.apply_flag
+
+val tarr_of_tapp : Types.apply_flag -> Types.arrow_flag
+val tapp_of_tarr : Types.arrow_flag -> Types.apply_flag
+
+val arrow_is_applicable : Types.arrow_flag -> Types.apply_flag -> bool
+val arrow_is_compatible : Types.arrow_flag -> Types.apply_flag -> bool
 
 val extract_label :
-    label -> (arrow_flag * 'a) list ->
-    arrow_flag * 'a * (arrow_flag * 'a) list * (arrow_flag * 'a) list
+    label -> (apply_flag * 'a) list ->
+    (apply_flag * 'a) * (apply_flag * 'a) list * (apply_flag * 'a) list
     (* actual label, value, before list, after list *)
 
 (**** Utilities for backtracking ****)

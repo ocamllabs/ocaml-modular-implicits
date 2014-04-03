@@ -131,6 +131,11 @@ let arrow_flag f = function
   | Parr_labelled s -> fprintf f "%s" s
 ;;
 
+let apply_flag f = function
+  | Papp_simple -> ()
+  | Papp_optional s -> fprintf f "?%s" s
+  | Papp_labelled s -> fprintf f "%s" s
+;;
 let longident_loc i ppf li = line i ppf "%a\n" fmt_longident_loc li;;
 let string i ppf s = line i ppf "\"%s\"\n" s;;
 let string_loc i ppf s = line i ppf "%a\n" fmt_string_loc s;;
@@ -853,7 +858,7 @@ and longident_x_expression i ppf (li, e) =
   expression (i+1) ppf e;
 
 and label_x_expression i ppf (l,e) =
-  line i ppf "<label> \"%a\"\n" arrow_flag l;
+  line i ppf "<label> \"%a\"\n" apply_flag l;
   expression (i+1) ppf e;
 
 and label_x_bool_x_core_type_list i ppf x =

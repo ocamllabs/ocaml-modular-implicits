@@ -55,7 +55,7 @@ class printer :
       Parsetree.arrow_flag * Parsetree.expression option * Parsetree.pattern ->
       unit
     method label_x_expression_param :
-      Format.formatter -> Parsetree.arrow_flag * Parsetree.expression -> unit
+      Format.formatter -> Parsetree.apply_flag * Parsetree.expression -> unit
     method list :
       ?sep:space_formatter ->
       ?first:space_formatter ->

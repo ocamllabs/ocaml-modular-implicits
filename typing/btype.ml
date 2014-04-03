@@ -545,11 +545,11 @@ let check_memorized_abbrevs () =
                   (*  Utilities for labels          *)
                   (**********************************)
 
-let is_simple = function
+let arrow_is_simple = function
   | Tarr_simple -> true
   | _ -> false
 
-let is_optional = function
+let arrow_is_optional = function
   | Tarr_optional _ -> true
   | _ -> false
 
@@ -567,16 +567,46 @@ let tarr_of_parr = function
   | Parsetree.Parr_optional s -> Tarr_optional s
   | Parsetree.Parr_labelled s -> Tarr_labelled s
 
-let prefixed_label_name = function
-  | Simple -> assert false
-  | Optional s -> "?" ^ s
-  | Labelled s -> "~" ^ s
+let tapp_of_papp = function
+  | Parsetree.Papp_simple     -> Tapp_simple
+  | Parsetree.Papp_optional s -> Tapp_optional s
+  | Parsetree.Papp_labelled s -> Tapp_labelled s
+
+let tarr_of_tapp = function
+  | Tapp_simple     -> Tarr_simple
+  | Tapp_optional s -> Tarr_optional s
+  | Tapp_labelled s -> Tarr_labelled s
+
+let tapp_of_tarr = function
+  | Tarr_simple     -> Tapp_simple
+  | Tarr_optional s -> Tapp_optional s
+  | Tarr_labelled s -> Tapp_labelled s
+
+let arrow_is_applicable arr app =
+  match app, arr with
+  | Tapp_simple, (Tarr_simple | Tarr_labelled _)
+    when !Clflags.classic -> true
+  | Tapp_simple, Tarr_simple -> true
+  | Tapp_labelled s, Tarr_labelled s' when s = s' -> true
+  | Tapp_optional s, Tarr_optional s' when s = s' -> true
+  | _ -> false
+
+let arrow_is_compatible arr app =
+  match app, arr  with
+  | Tapp_simple, _ -> true
+  | Tapp_labelled s, Tarr_labelled s' when s = s' -> true
+  | Tapp_optional s, Tarr_optional s' when s = s' -> true
+  | _ -> false
 
 let rec extract_label_aux hd l = function
-    [] -> raise Not_found
-  | (l',t as p) :: ls ->
-      if label_name l' = l then (l', t, List.rev hd, ls)
-      else extract_label_aux (p::hd) l ls
+  | [] -> raise Not_found
+  | (Tapp_simple, _ as flag) :: ls when l = "" ->
+      (flag, List.rev hd, ls)
+  | ((Tapp_optional l' | Tapp_labelled l'), _ as flag) :: ls
+    when l = l' ->
+      (flag, List.rev hd, ls)
+  | p :: ls ->
+      extract_label_aux (p::hd) l ls
 
 let extract_label l ls = extract_label_aux [] l ls
 

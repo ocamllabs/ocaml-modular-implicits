@@ -19,6 +19,11 @@ type arrow_flag =
   | Tarr_labelled of string (*  label:T -> ... *)
   | Tarr_optional of string (* ?label:T -> ... *)
 
+type apply_flag =
+  | Tapp_simple             (* f expr *)
+  | Tapp_labelled of string (* f ~label:expr *)
+  | Tapp_optional of string (* f ?label:expr *)
+
 (* Type expressions for the core language *)
 
 type type_expr =

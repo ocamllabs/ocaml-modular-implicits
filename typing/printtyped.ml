@@ -142,6 +142,11 @@ let arrow_flag f = function
   | Tarr_optional s -> fprintf f "?%s" s
   | Tarr_labelled s -> fprintf f "%s" s
 
+let apply_flag f = function
+  | Tapp_simple -> fprintf f ""
+  | Tapp_optional s -> fprintf f "?%s" s
+  | Tapp_labelled s -> fprintf f "%s" s
+
 let attributes i ppf l =
   let i = i + 1 in
   List.iter
@@ -822,7 +827,7 @@ and longident_x_expression i ppf (li, _, e) =
   expression (i+1) ppf e;
 
 and label_x_expression i ppf (l, e) =
-  line i ppf "<label> \"%a\"\n" arrow_flag l;
+  line i ppf "<label> \"%a\"\n" apply_flag l;
   (match e with None -> () | Some e -> expression (i+1) ppf e)
 
 and ident_x_loc_x_expression_def i ppf (l,_, e) =
