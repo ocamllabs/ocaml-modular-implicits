@@ -797,7 +797,7 @@ module Analyser =
                     Odoc_messages.object_end
           in
           let param_exps = List.fold_left
-              (fun acc -> fun (_, exp_opt, _) ->
+              (fun acc -> fun (_, exp_opt) ->
                 match exp_opt with
                   None -> acc
                 | Some e -> acc @ [e])

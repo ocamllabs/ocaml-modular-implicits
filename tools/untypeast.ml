@@ -277,7 +277,7 @@ and untype_expression exp =
         assert false
     | Texp_apply (exp, list) ->
         Pexp_apply (untype_expression exp,
-          List.fold_right (fun (label, expo, _) list ->
+          List.fold_right (fun (label, expo) list ->
               match expo with
                 None -> list
               | Some exp -> (untype_arrow_flag label, untype_expression exp) :: list
@@ -506,7 +506,7 @@ and untype_class_expr cexpr =
 
     | Tcl_apply (cl, args) ->
         Pcl_apply (untype_class_expr cl,
-          List.fold_right (fun (label, expo, _) list ->
+          List.fold_right (fun (label, expo) list ->
               match expo with
                 None -> list
               | Some exp -> (untype_arrow_flag label, untype_expression exp) :: list

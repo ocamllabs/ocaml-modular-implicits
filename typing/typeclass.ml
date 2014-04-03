@@ -1002,9 +1002,7 @@ and class_expr cl_num val_env met_env scl =
         match ty_fun, ty_fun0 with
         | Cty_arrow (l, ty, ty_fun), Cty_arrow (_, ty0, ty_fun0)
           when sargs <> [] || more_sargs <> [] ->
-            let name = Btype.label_name l
-            and optional =
-              if Btype.is_optional l then Optional else Required in
+            let name = Btype.label_name l in
             let sargs, more_sargs, arg =
               if ignore_labels && not (Btype.is_optional l) then begin
                 match sargs, more_sargs with
@@ -1029,11 +1027,11 @@ and class_expr cl_num val_env met_env scl =
                       Btype.extract_label name more_sargs
                     in (l', sarg0, sargs @ sargs1, sargs2)
                 in
-                if optional = Required && Btype.is_optional l' then
+                if not (Btype.is_optional l) && Btype.is_optional l' then
                   Location.prerr_warning sarg0.pexp_loc
                     (Warnings.Nonoptional_label (Btype.label_raw l));
                 sargs, more_sargs,
-                if optional = Required || Btype.is_optional l' then
+                if not (Btype.is_optional l) || Btype.is_optional l' then
                   Some (type_argument val_env sarg0 ty ty0)
                 else
                   let ty' = extract_option_type val_env ty
@@ -1049,7 +1047,7 @@ and class_expr cl_num val_env met_env scl =
                 else None
             in
             let omitted = if arg = None then (l,ty0) :: omitted else omitted in
-            type_args ((l,arg,optional)::args) omitted ty_fun ty_fun0
+            type_args ((l,arg)::args) omitted ty_fun ty_fun0
               sargs more_sargs
         | _ ->
             match sargs @ more_sargs with
