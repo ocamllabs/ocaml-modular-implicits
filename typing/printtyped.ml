@@ -821,7 +821,7 @@ and longident_x_expression i ppf (li, _, e) =
   line i ppf "%a\n" fmt_longident li;
   expression (i+1) ppf e;
 
-and label_x_expression i ppf (l, e, _) =
+and label_x_expression i ppf (l, e) =
   line i ppf "<label> \"%a\"\n" arrow_flag l;
   (match e with None -> () | Some e -> expression (i+1) ppf e)
 
