@@ -1356,6 +1356,9 @@ label_expr:
       { (Papp_labelled $1, $2) }
   | TILDE label_ident
       { (Papp_labelled (fst $2), snd $2) }
+  | TILDE LPAREN IMPLICIT mod_longident RPAREN
+      { let md = mkmod(Pmod_ident (mkrhs $4 4)) in
+        (Papp_implicit, mkexp (Pexp_pack md)) }
   | QUESTION label_ident
       { (Papp_optional (fst $2), snd $2) }
   | OPTLABEL simple_expr %prec below_SHARP

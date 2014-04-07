@@ -3247,7 +3247,6 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
             Location.prerr_warning loc w
           end
         in
-        let name = label_name arr in
         let sargs, more_sargs, arg =
           if ignore_labels && not (arrow_is_optional arr) then begin
             (* In classic mode, omitted = [] *)
@@ -3267,14 +3266,17 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
           end else try
             let (app, sarg0, sargs, more_sargs) =
               try
-                let ((app, sarg0), sargs1, sargs2) = extract_label name sargs in
+                let ((app, sarg0), sargs1, sargs2) =
+                  extract_application arr sargs
+                in
                 if sargs1 <> [] then
                   may_warn sarg0.pexp_loc
                     (Warnings.Not_principal "commuting this argument");
                 (app, sarg0, sargs1 @ sargs2, more_sargs)
               with Not_found ->
                 let ((app, sarg0), sargs1, sargs2) =
-                  extract_label name more_sargs in
+                  extract_application arr more_sargs
+                in
                 if sargs1 <> [] || sargs <> [] then
                   may_warn sarg0.pexp_loc
                   (Warnings.Not_principal "commuting this argument");
@@ -3851,11 +3853,18 @@ let report_error env ppf = function
             type_expr typ
             "This is not a function; it cannot be applied."
       end
+  | Apply_wrong_label (Tapp_implicit, ty) ->
+      reset_and_mark_loops ty;
+      fprintf ppf
+        "@[<v>@[<2>The function applied to this argument has type@ %a@]@.\
+          This implicit argument cannot be applied]"
+        type_expr ty
   | Apply_wrong_label (l, ty) ->
       let print_label ppf = function
         | Tapp_simple -> fprintf ppf "without label"
         | Tapp_optional s -> fprintf ppf "with label ?%s" s
-        | Tapp_labelled s -> fprintf ppf "with label ~%s" s in
+        | Tapp_labelled s -> fprintf ppf "with label ~%s" s
+        | Tapp_implicit -> assert false in
       reset_and_mark_loops ty;
       fprintf ppf
         "@[<v>@[<2>The function applied to this argument has type@ %a@]@.\

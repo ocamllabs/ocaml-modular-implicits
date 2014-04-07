@@ -136,6 +136,7 @@ let apply_flag f = function
   | Papp_simple -> ()
   | Papp_optional s -> fprintf f "?%s" s
   | Papp_labelled s -> fprintf f "%s" s
+  | Papp_implicit -> fprintf f "implicit"
 ;;
 
 let longident_loc i ppf li = line i ppf "%a\n" fmt_longident_loc li;;
