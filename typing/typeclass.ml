@@ -1002,7 +1002,6 @@ and class_expr cl_num val_env met_env scl =
         match ty_fun, ty_fun0 with
         | Cty_arrow (arr, ty, ty_fun), Cty_arrow (_, ty0, ty_fun0)
           when sargs <> [] || more_sargs <> [] ->
-            let name = Btype.label_name arr in
             let sargs, more_sargs, arg =
               if ignore_labels && not (Btype.arrow_is_optional arr) then begin
                 match sargs, more_sargs with
@@ -1020,11 +1019,11 @@ and class_expr cl_num val_env met_env scl =
                   let (app, sarg0, sargs, more_sargs) =
                     try
                       let ((app, sarg0), sargs1, sargs2) =
-                        Btype.extract_label name sargs
+                        Btype.extract_application arr sargs
                       in (app, sarg0, sargs1 @ sargs2, more_sargs)
                     with Not_found ->
                       let ((app, sarg0), sargs1, sargs2) =
-                        Btype.extract_label name more_sargs
+                        Btype.extract_application arr more_sargs
                       in (app, sarg0, sargs @ sargs1, sargs2)
                   in
                   (* Optional apply to non optional arrow *)
@@ -1716,11 +1715,14 @@ let report_error env ppf = function
   | Cannot_apply clty ->
       fprintf ppf
         "This class expression is not a class function, it cannot be applied"
+  | Apply_wrong_label Tapp_implicit ->
+      fprintf ppf "This implicit argument cannot be applied"
   | Apply_wrong_label l ->
       let mark_label = function
         | Tapp_simple -> "out label"
         | Tapp_optional s -> sprintf " label ?%s" s
         | Tapp_labelled s -> sprintf " label ~%s" s
+        | Tapp_implicit -> assert false
       in
       fprintf ppf "This argument cannot be applied with%s" (mark_label l)
   | Pattern_type_clash ty ->

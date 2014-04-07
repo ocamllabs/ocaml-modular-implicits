@@ -579,45 +579,60 @@ let tapp_of_papp = function
   | Parsetree.Papp_simple     -> Tapp_simple
   | Parsetree.Papp_optional s -> Tapp_optional s
   | Parsetree.Papp_labelled s -> Tapp_labelled s
+  | Parsetree.Papp_implicit   -> Tapp_implicit
 
 let tarr_of_tapp = function
   | Tapp_simple     -> Tarr_simple
   | Tapp_optional s -> Tarr_optional s
   | Tapp_labelled s -> Tarr_labelled s
+  | Tapp_implicit   -> assert false
 
 let tapp_of_tarr = function
   | Tarr_simple     -> Tapp_simple
   | Tarr_optional s -> Tapp_optional s
   | Tarr_labelled s -> Tapp_labelled s
-  | Tarr_implicit _ -> failwith "LOL"
+  | Tarr_implicit _ -> Tapp_implicit
+
+let arrow_equal_apply arr app =
+  match app, arr with
+  | Tapp_simple, Tarr_simple -> true
+  | Tapp_labelled s, Tarr_labelled s'
+  | Tapp_optional s, Tarr_optional s' -> s = s'
+  | Tapp_implicit, Tarr_implicit _ -> true
+  | _ -> false
 
 let arrow_is_applicable arr app =
   match app, arr with
-  | Tapp_simple, (Tarr_simple | Tarr_labelled _)
+  | Tapp_simple, Tarr_labelled _
     when !Clflags.classic -> true
-  | Tapp_simple, Tarr_simple -> true
-  | Tapp_labelled s, Tarr_labelled s' when s = s' -> true
-  | Tapp_optional s, Tarr_optional s' when s = s' -> true
-  | _ -> false
+  | _ -> arrow_equal_apply arr app
 
 let arrow_is_compatible arr app =
   match app, arr  with
+  | Tapp_simple, Tarr_implicit _ -> false
   | Tapp_simple, _ -> true
-  | Tapp_labelled s, Tarr_labelled s' when s = s' -> true
-  | Tapp_optional s, Tarr_optional s' when s = s' -> true
-  | _ -> false
+  | _ -> arrow_equal_apply arr app
 
-let rec extract_label_aux hd l = function
+let extraction_match arr app =
+  match app, arr with
+  | (Tapp_labelled s | Tapp_optional s),
+    (Tarr_labelled s' | Tarr_optional s')
+    (*
+      The bad case (Tapp_optional s, Tarr_labelled s), applying an optional
+      argument to a labelled one , will be handled by the caller: a warning is
+      emitted, and the optional argument will be interpreted as a labelled one.
+    *)
+    when s = s' -> true
+  | _ -> arrow_equal_apply arr app
+
+let rec extract_application_aux acc arr = function
   | [] -> raise Not_found
-  | (Tapp_simple, _ as flag) :: ls when l = "" ->
-      (flag, List.rev hd, ls)
-  | ((Tapp_optional l' | Tapp_labelled l'), _ as flag) :: ls
-    when l = l' ->
-      (flag, List.rev hd, ls)
-  | p :: ls ->
-      extract_label_aux (p::hd) l ls
+  | (app, _ as arg) :: args when extraction_match arr app ->
+      (arg, List.rev acc, args)
+  | arg :: args ->
+      extract_application_aux (arg :: acc) arr args
 
-let extract_label l ls = extract_label_aux [] l ls
+let extract_application arr args = extract_application_aux [] arr args
 
 
                   (**********************************)

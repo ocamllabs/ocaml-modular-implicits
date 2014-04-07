@@ -24,6 +24,7 @@ type apply_flag =
   | Tapp_simple              (* f expr *)
   | Tapp_labelled of string  (* f ~label:expr *)
   | Tapp_optional of string  (* f ?label:expr *)
+  | Tapp_implicit            (* f ~implicit:M *)
 
 (* Type expressions for the core language *)
 

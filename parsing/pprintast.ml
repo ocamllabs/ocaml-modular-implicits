@@ -1443,6 +1443,8 @@ class printer  ()= object(self:'self)
           pp f "~%s" s
         else
           pp f "~%s:%a" s self#simple_expr e
+    | Papp_implicit ->
+        pp f "~implicit:%a" self#simple_expr e
 
   method directive_argument f x =
     (match x with

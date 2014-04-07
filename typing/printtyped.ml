@@ -147,6 +147,7 @@ let apply_flag f = function
   | Tapp_simple -> fprintf f ""
   | Tapp_optional s -> fprintf f "?%s" s
   | Tapp_labelled s -> fprintf f "%s" s
+  | Tapp_implicit -> fprintf f "implicit"
 
 let attributes i ppf l =
   let i = i + 1 in

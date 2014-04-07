@@ -181,10 +181,10 @@ val tapp_of_tarr : Types.arrow_flag -> Types.apply_flag
 val arrow_is_applicable : Types.arrow_flag -> Types.apply_flag -> bool
 val arrow_is_compatible : Types.arrow_flag -> Types.apply_flag -> bool
 
-val extract_label :
-    label -> (apply_flag * 'a) list ->
+val extract_application :
+    arrow_flag -> (apply_flag * 'a) list ->
     (apply_flag * 'a) * (apply_flag * 'a) list * (apply_flag * 'a) list
-    (* actual label, value, before list, after list *)
+    (* (actual flag, value), before list, after list *)
 
 (**** Utilities for backtracking ****)
 
