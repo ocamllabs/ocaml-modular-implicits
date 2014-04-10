@@ -360,6 +360,11 @@ module MakeMap(Map : MapArgument) = struct
           )
         | Texp_letmodule (mb, exp) ->
           Texp_letmodule (map_module_binding mb, map_expression exp)
+        | Texp_letimplicit (x, exp) ->
+          Texp_letimplicit (
+            {x with im_module = map_module_binding x.im_module},
+            map_expression exp
+          )
         | Texp_assert exp -> Texp_assert (map_expression exp)
         | Texp_lazy exp -> Texp_lazy (map_expression exp)
         | Texp_object (cl, string_list) ->

@@ -163,6 +163,9 @@ let expression sub exp =
   | Texp_letmodule (mb, exp) ->
       sub # module_binding mb;
       sub # expression exp
+  | Texp_letimplicit (imb, exp) ->
+      sub # module_binding imb.im_module;
+      sub # expression exp
   | Texp_assert exp -> sub # expression exp
   | Texp_lazy exp -> sub # expression exp
   | Texp_object (cl, _) ->

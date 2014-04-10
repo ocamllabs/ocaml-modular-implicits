@@ -366,6 +366,9 @@ module E = struct
           (List.map (map_tuple (map_loc sub) (sub.expr sub)) sel)
     | Pexp_letmodule (mb, e) ->
         letmodule ~loc ~attrs (sub.module_binding sub mb) (sub.expr sub e)
+    | Pexp_letimplicit (pib, e) ->
+        letimplicit ~loc ~attrs (sub.implicit_binding sub pib)
+          (sub.expr sub e)
     | Pexp_assert e -> assert_ ~loc ~attrs (sub.expr sub e)
     | Pexp_lazy e -> lazy_ ~loc ~attrs (sub.expr sub e)
     | Pexp_poly (e, t) ->

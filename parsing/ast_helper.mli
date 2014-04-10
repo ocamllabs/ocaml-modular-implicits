@@ -128,10 +128,16 @@ module Exp:
     val send: ?loc:loc -> ?attrs:attrs -> expression -> string -> expression
     val new_: ?loc:loc -> ?attrs:attrs -> lid -> expression
     val setinstvar: ?loc:loc -> ?attrs:attrs -> str -> expression -> expression
+<<<<<<< HEAD
     val override: ?loc:loc -> ?attrs:attrs -> (str * expression) list
                   -> expression
     val letmodule: ?loc:loc -> ?attrs:attrs -> module_binding -> expression
                    -> expression
+=======
+    val override: ?loc:loc -> ?attrs:attrs -> (str * expression) list -> expression
+    val letmodule: ?loc:loc -> ?attrs:attrs -> module_binding -> expression -> expression
+    val letimplicit: ?loc:loc -> ?attrs:attrs -> implicit_binding -> expression -> expression
+>>>>>>> Introduce "let implicit _ in _" expression
     val assert_: ?loc:loc -> ?attrs:attrs -> expression -> expression
     val lazy_: ?loc:loc -> ?attrs:attrs -> expression -> expression
     val poly: ?loc:loc -> ?attrs:attrs -> expression -> core_type option -> expression

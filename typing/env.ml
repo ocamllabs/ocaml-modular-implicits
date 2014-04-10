@@ -1515,12 +1515,20 @@ and enter_module_declaration ?arg name md env =
   (id, add_module_declaration ?arg id md env)
   (* let (id, env) = enter store_module name md env in
   (id, add_functor_arg ?arg id env) *)
+and enter_implicit_declaration name imd env =
+  let id = Ident.create name in
+  (id, add_implicit_declaration id imd env)
+  (* let (id, env) = enter store_module name md env in
+  (id, add_functor_arg ?arg id env) *)
 and enter_modtype = enter store_modtype
 and enter_class = enter store_class
 and enter_cltype = enter store_cltype
 
 let enter_module ?arg s mty env =
   enter_module_declaration ?arg s (md mty) env
+
+let enter_implicit s ~arity mty env =
+  enter_implicit_declaration s (imd arity mty) env
 
 (* Insertion of all components of a signature *)
 

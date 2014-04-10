@@ -1133,6 +1133,8 @@ expr:
       { mkexp_attrs (Pexp_let($3, List.rev $4, $6)) $2 }
   | LET MODULE ext_attributes module_binding IN seq_expr
       { mkexp_attrs (Pexp_letmodule($4, $6)) $3 }
+  | LET IMPLICIT ext_attributes implicit_binding IN seq_expr
+      { mkexp_attrs (Pexp_letimplicit($4, $6)) $3 }
   | LET OPEN override_flag ext_attributes mod_longident IN seq_expr
       { mkexp_attrs (Pexp_open($3, mkrhs $5 5, $7)) $4 }
   | FUNCTION ext_attributes opt_bar match_cases
@@ -1356,8 +1358,8 @@ label_expr:
       { (Papp_labelled $1, $2) }
   | TILDE label_ident
       { (Papp_labelled (fst $2), snd $2) }
-  | TILDE LPAREN IMPLICIT mod_longident RPAREN
-      { let md = mkmod(Pmod_ident (mkrhs $4 4)) in
+  | LPAREN IMPLICIT mod_longident RPAREN
+      { let md = mkmod(Pmod_ident (mkrhs $3 3)) in
         (Papp_implicit, mkexp (Pexp_pack md)) }
   | QUESTION label_ident
       { (Papp_optional (fst $2), snd $2) }

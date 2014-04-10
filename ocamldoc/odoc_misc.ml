@@ -475,6 +475,7 @@ let label_prefix = function
   | Types.Tarr_simple -> ""
   | Types.Tarr_optional s -> "?" ^ s ^ ":"
   | Types.Tarr_labelled s -> s ^ ":"
+  | Types.Tarr_implicit im -> "implicit " ^ Ident.name im
 
 let remove_option typ =
   let rec iter t =
