@@ -183,8 +183,8 @@ let rec add_expr bv exp =
   | Pexp_new li -> add bv li
   | Pexp_setinstvar(_v, e) -> add_expr bv e
   | Pexp_override sel -> List.iter (fun (_s, e) -> add_expr bv e) sel
-  | Pexp_letmodule(id, m, e) ->
-      add_module bv m; add_expr (StringSet.add id.txt bv) e
+  | Pexp_letmodule(x, e) ->
+      add_module bv x.pmb_expr; add_expr (StringSet.add x.pmb_name.txt bv) e
   | Pexp_assert (e) -> add_expr bv e
   | Pexp_lazy (e) -> add_expr bv e
   | Pexp_poly (e, t) -> add_expr bv e; add_opt add_type bv t

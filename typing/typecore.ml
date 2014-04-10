@@ -156,7 +156,7 @@ let iter_expression f e =
     | Pexp_ifthenelse (e1, e2, eo) -> expr e1; expr e2; may expr eo
     | Pexp_for (_, e1, e2, _, e3) -> expr e1; expr e2; expr e3
     | Pexp_override sel -> List.iter (fun (_, e) -> expr e) sel
-    | Pexp_letmodule (_, me, e) -> expr e; module_expr me
+    | Pexp_letmodule ({pmb_expr = me}, e) -> expr e; module_expr me
     | Pexp_object { pcstr_fields = fs } -> List.iter class_field fs
     | Pexp_pack me -> module_expr me
 
@@ -1428,8 +1428,8 @@ let rec is_nonexpansive exp =
       Vars.fold (fun _ (mut,_,_) b -> decr count; b && mut = Immutable)
         vars true &&
       !count = 0
-  | Texp_letmodule (_, _, mexp, e) ->
-      is_nonexpansive_mod mexp && is_nonexpansive e
+  | Texp_letmodule (mb, e) ->
+      is_nonexpansive_mod mb.mb_expr && is_nonexpansive e
   | Texp_pack mexp ->
       is_nonexpansive_mod mexp
   | _ -> false
@@ -1605,9 +1605,10 @@ let create_package_type loc env (p, l) =
    List.fold_left
      (fun sexp (name, loc) ->
        Exp.letmodule ~loc:sexp.pexp_loc
-         name
-         (Mod.unpack ~loc
-            (Exp.ident ~loc:name.loc (mkloc (Longident.Lident name.txt) name.loc)))
+         (Mb.mk ~loc name
+            (Mod.unpack ~loc
+               (Exp.ident ~loc:name.loc
+                  (mkloc (Longident.Lident name.txt) name.loc))))
          sexp
      )
     sexp unpacks
@@ -2489,7 +2490,8 @@ and type_expect_ ?in_function env sexp ty_expected =
       | _ ->
           assert false
       end
-  | Pexp_letmodule(name, smodl, sbody) ->
+  | Pexp_letmodule({pmb_name = name; pmb_expr = smodl;
+                    pmb_attributes; pmb_loc}, sbody) ->
       let ty = newvar() in
       (* remember original level *)
       begin_def ();
@@ -2512,8 +2514,10 @@ and type_expect_ ?in_function env sexp ty_expected =
       with Unify _ ->
         raise(Error(loc, env, Scoping_let_module(name.txt, body.exp_type)))
       end;
+      let mb = { mb_id = id; mb_name = name; mb_expr = modl;
+                 mb_attributes = pmb_attributes; mb_loc = pmb_loc } in
       re {
-        exp_desc = Texp_letmodule(id, name, modl, body);
+        exp_desc = Texp_letmodule (mb, body);
         exp_loc = loc; exp_extra = [];
         exp_type = ty;
         exp_attributes = sexp.pexp_attributes;

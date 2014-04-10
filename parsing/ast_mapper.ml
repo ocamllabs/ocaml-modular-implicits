@@ -359,9 +359,8 @@ module E = struct
     | Pexp_override sel ->
         override ~loc ~attrs
           (List.map (map_tuple (map_loc sub) (sub.expr sub)) sel)
-    | Pexp_letmodule (s, me, e) ->
-        letmodule ~loc ~attrs (map_loc sub s) (sub.module_expr sub me)
-          (sub.expr sub e)
+    | Pexp_letmodule (mb, e) ->
+        letmodule ~loc ~attrs (sub.module_binding sub mb) (sub.expr sub e)
     | Pexp_assert e -> assert_ ~loc ~attrs (sub.expr sub e)
     | Pexp_lazy e -> lazy_ ~loc ~attrs (sub.expr sub e)
     | Pexp_poly (e, t) ->

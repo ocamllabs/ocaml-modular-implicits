@@ -356,9 +356,9 @@ and expression i ppf x =
   | Texp_override (_, l) ->
       line i ppf "Pexp_override\n";
       list i string_x_expression ppf l;
-  | Texp_letmodule (s, _, me, e) ->
-      line i ppf "Pexp_letmodule \"%a\"\n" fmt_ident s;
-      module_expr i ppf me;
+  | Texp_letmodule (mb, e) ->
+      line i ppf "Pexp_letmodule\n";
+      module_binding i ppf mb;
       expression i ppf e;
   | Texp_assert (e) ->
       line i ppf "Pexp_assert";

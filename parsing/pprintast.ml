@@ -601,14 +601,14 @@ class printer  ()= object(self:'self)
           pp f "@[<hov2>%s@ =@ %a@]" s.txt self#expression e in
         pp f "@[<hov2>{<%a>}@]"
           (self#list string_x_expression  ~sep:";"  )  l;
-    | Pexp_letmodule (s, me, e) ->
-        pp f "@[<hov2>let@ module@ %s@ =@ %a@ in@ %a@]" s.txt
-          self#reset#module_expr me  self#expression e
+    | Pexp_letmodule (mb, e) ->
+        pp f "@[<hov2>let@ module@ %a@ in@ %a@]"
+          self#reset#module_binding mb  self#expression e
     | Pexp_assert e ->
         pp f "@[<hov2>assert@ %a@]" self#simple_expr e
     | Pexp_lazy (e) ->
         pp f "@[<hov2>lazy@ %a@]" self#simple_expr e
-    (* Pexp_poly: impossible but we should print it anyway, rather than assert false *) 
+    (* Pexp_poly: impossible but we should print it anyway, rather than assert false *)
     | Pexp_poly (e, None) ->
         pp f "@[<hov2>!poly!@ %a@]" self#simple_expr e
     | Pexp_poly (e, Some ct) ->
@@ -881,6 +881,27 @@ class printer  ()= object(self:'self)
           self#class_type ct
     | Pcl_extension e -> self#extension f e
 
+  method module_binding f x =
+    let rec module_helper me = match me.pmod_desc with
+      | Pmod_functor(s,mt,me) ->
+          if mt = None then pp f "()"
+          else Misc.may (pp f "(%s:%a)" s.txt self#module_type) mt;
+          module_helper me
+      | _ -> me in
+    pp f "%s%a"
+      x.pmb_name.txt
+      (fun f me ->
+         let me = module_helper me  in
+         (match me.pmod_desc with
+          | Pmod_constraint
+              (me,
+               ({pmty_desc=(Pmty_ident (_)
+                           | Pmty_signature (_));_} as mt)) ->
+              pp f " :@;%a@;=@;%a@;"  self#module_type mt self#module_expr  me
+          | _ ->
+              pp f " =@ %a"  self#module_expr  me
+         )) x.pmb_expr
+
   method module_type f x =
     if x.pmty_attributes <> [] then begin
       pp f "((%a)%a)" self#module_type {x with pmty_attributes=[]}
@@ -1106,36 +1127,11 @@ class printer  ()= object(self:'self)
     | Pstr_typext te -> self#type_extension f te
     | Pstr_exception ed -> self#exception_declaration f ed
     | Pstr_module x ->
-        let rec module_helper me =
-          match me.pmod_desc with
-          | Pmod_functor(s,mt,me') when me.pmod_attributes = [] ->
-              if mt = None then pp f "()"
-              else Misc.may (pp f "(%s:%a)" s.txt self#module_type) mt;
-              module_helper me'
-          | _ -> me
-        in
-        pp f "@[<hov2>module %s%a@]%a"
-          x.pmb_name.txt
-          (fun f me ->
-            let me = module_helper me in
-            (match me.pmod_desc with
-            | Pmod_constraint
-                (me',
-                 ({pmty_desc=(Pmty_ident (_)
-                             | Pmty_signature (_));_} as mt))
-              when me.pmod_attributes = [] ->
-                pp f " :@;%a@;=@;%a@;"  self#module_type mt self#module_expr  me'
-            | _ ->
-                pp f " =@ %a"  self#module_expr  me
-            )) x.pmb_expr
-          self#item_attributes x.pmb_attributes
-    | Pstr_open od ->
-        pp f "@[<2>open%s@;%a@]%a"
-           (override od.popen_override)
-           self#longident_loc od.popen_lid
-           self#item_attributes od.popen_attributes
-    | Pstr_modtype {pmtd_name=s; pmtd_type=md; pmtd_attributes=attrs} ->
-        pp f "@[<hov2>module@ type@ %s%a@]%a"
+        pp f "@[<hov2>module@ %a@]" self#module_binding x
+    | Pstr_open (ovf, li, _attrs) ->
+        pp f "@[<2>open%s@;%a@]" (override ovf) self#longident_loc li;
+    | Pstr_modtype {pmtd_name=s; pmtd_type=md} ->
+        pp f "@[<hov2>module@ type@ %s%a@]"
           s.txt
           (fun f md -> match md with
           | None -> ()

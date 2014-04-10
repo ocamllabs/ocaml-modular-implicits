@@ -158,8 +158,8 @@ let expression sub exp =
       sub # expression exp
   | Texp_override (_, list) ->
       List.iter (fun (_path, _, exp) -> sub # expression exp) list
-  | Texp_letmodule (_id, _, mexpr, exp) ->
-      sub # module_expr mexpr;
+  | Texp_letmodule (mb, exp) ->
+      sub # module_binding mb;
       sub # expression exp
   | Texp_assert exp -> sub # expression exp
   | Texp_lazy exp -> sub # expression exp
