@@ -131,7 +131,7 @@ module Exp:
     val setinstvar: ?loc:loc -> ?attrs:attrs -> str -> expression -> expression
     val override: ?loc:loc -> ?attrs:attrs -> (str * expression) list
                   -> expression
-    val letmodule: ?loc:loc -> ?attrs:attrs -> str -> module_expr -> expression
+    val letmodule: ?loc:loc -> ?attrs:attrs -> module_binding -> expression
                    -> expression
     val assert_: ?loc:loc -> ?attrs:attrs -> expression -> expression
     val lazy_: ?loc:loc -> ?attrs:attrs -> expression -> expression

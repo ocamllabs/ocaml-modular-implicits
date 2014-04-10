@@ -342,8 +342,8 @@ module MakeIterator(Iter : IteratorArgument) : sig
             List.iter (fun (path, _, exp) ->
                 iter_expression exp
             ) list
-        | Texp_letmodule (id, _, mexpr, exp) ->
-            iter_module_expr mexpr;
+        | Texp_letmodule (mb, exp) ->
+            iter_module_binding mb;
             iter_expression exp
         | Texp_assert exp -> iter_expression exp
         | Texp_lazy exp -> iter_expression exp

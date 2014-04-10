@@ -1238,10 +1238,10 @@ expr:
       { $1 }
   | simple_expr simple_labeled_expr_list
       { mkexp(Pexp_apply($1, List.rev $2)) }
-  | let_bindings IN seq_expr
-      { expr_of_let_bindings $1 $3 }
-  | LET MODULE ext_attributes UIDENT module_binding_body IN seq_expr
-      { mkexp_attrs (Pexp_letmodule(mkrhs $4 4, $5, $7)) $3 }
+  | LET ext_attributes rec_flag let_bindings_no_attrs IN seq_expr
+      { mkexp_attrs (Pexp_let($3, List.rev $4, $6)) $2 }
+  | LET MODULE ext_attributes module_binding IN seq_expr
+      { mkexp_attrs (Pexp_letmodule($4, $6)) $3 }
   | LET OPEN override_flag ext_attributes mod_longident IN seq_expr
       { mkexp_attrs (Pexp_open($3, mkrhs $5 5, $7)) $4 }
   | FUNCTION ext_attributes opt_bar match_cases

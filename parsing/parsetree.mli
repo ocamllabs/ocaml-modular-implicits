@@ -292,7 +292,7 @@ and expression_desc =
         (* x <- 2 *)
   | Pexp_override of (string loc * expression) list
         (* {< x1 = E1; ...; Xn = En >} *)
-  | Pexp_letmodule of string loc * module_expr * expression
+  | Pexp_letmodule of module_binding * expression
         (* let module M = ME in E *)
   | Pexp_assert of expression
         (* assert E

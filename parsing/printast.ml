@@ -329,9 +329,9 @@ and expression i ppf x =
   | Pexp_override (l) ->
       line i ppf "Pexp_override\n";
       list i string_x_expression ppf l;
-  | Pexp_letmodule (s, me, e) ->
-      line i ppf "Pexp_letmodule %a\n" fmt_string_loc s;
-      module_expr i ppf me;
+  | Pexp_letmodule (mb, e) ->
+      line i ppf "Pexp_letmodule\n";
+      module_binding i ppf mb;
       expression i ppf e;
   | Pexp_assert (e) ->
       line i ppf "Pexp_assert\n";

@@ -64,6 +64,7 @@ class printer :
     method longident : Format.formatter -> Longident.t -> unit
     method longident_loc :
       Format.formatter -> Longident.t Asttypes.loc -> unit
+    method module_binding : Format.formatter -> Parsetree.module_binding -> unit
     method module_expr : Format.formatter -> Parsetree.module_expr -> unit
     method module_type : Format.formatter -> Parsetree.module_type -> unit
     method mutable_flag : Format.formatter -> Asttypes.mutable_flag -> unit

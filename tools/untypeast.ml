@@ -341,9 +341,8 @@ and untype_expression exp =
         Pexp_override (List.map (fun (_path, lid, exp) ->
               lid, untype_expression exp
           ) list)
-    | Texp_letmodule (_id, name, mexpr, exp) ->
-        Pexp_letmodule (name, untype_module_expr mexpr,
-          untype_expression exp)
+    | Texp_letmodule (mb, exp) ->
+        Pexp_letmodule (untype_module_binding mb, untype_expression exp)
     | Texp_assert exp -> Pexp_assert (untype_expression exp)
     | Texp_lazy exp -> Pexp_lazy (untype_expression exp)
     | Texp_object (cl, _) ->

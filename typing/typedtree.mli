@@ -99,7 +99,7 @@ and expression_desc =
   | Texp_instvar of Path.t * Path.t * string loc
   | Texp_setinstvar of Path.t * Path.t * string loc * expression
   | Texp_override of Path.t * (Path.t * string loc * expression) list
-  | Texp_letmodule of Ident.t * string loc * module_expr * expression
+  | Texp_letmodule of module_binding * expression
   | Texp_assert of expression
   | Texp_lazy of expression
   | Texp_object of class_structure * string list
