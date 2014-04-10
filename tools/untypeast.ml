@@ -263,11 +263,13 @@ and untype_arrow_flag = function
   | Types.Tarr_simple     -> Parr_simple
   | Types.Tarr_optional s -> Parr_optional s
   | Types.Tarr_labelled s -> Parr_labelled s
+  | Types.Tarr_implicit id -> Parr_implicit (Ident.name id)
 
 and untype_apply_flag = function
   | Types.Tapp_simple     -> Papp_simple
   | Types.Tapp_optional s -> Papp_optional s
   | Types.Tapp_labelled s -> Papp_labelled s
+  | Types.Tapp_implicit   -> Papp_implicit
 
 and untype_expression exp =
   let desc =
@@ -357,6 +359,11 @@ and untype_expression exp =
           ) list)
     | Texp_letmodule (mb, exp) ->
         Pexp_letmodule (untype_module_binding mb, untype_expression exp)
+    | Texp_letimplicit (imb, exp) ->
+        let mb = imb.im_module in
+        let pmb = untype_module_binding mb in
+        let pib = { pim_module = pmb; pim_arity = imb.im_arity } in
+        Pexp_letimplicit (pib, untype_expression exp)
     | Texp_assert exp -> Pexp_assert (untype_expression exp)
     | Texp_lazy exp -> Pexp_lazy (untype_expression exp)
     | Texp_object (cl, _) ->

@@ -376,6 +376,10 @@ and expression i ppf x =
       line i ppf "Pexp_letmodule\n";
       module_binding i ppf mb;
       expression i ppf e;
+  | Texp_letimplicit (imb,e) ->
+      line i ppf "Pexp_letimplicit %d\n" imb.im_arity;
+      module_binding i ppf imb.im_module;
+      expression i ppf e;
   | Texp_assert (e) ->
       line i ppf "Pexp_assert";
       expression i ppf e;

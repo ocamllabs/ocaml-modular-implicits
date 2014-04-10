@@ -281,6 +281,10 @@ and rw_exp iflag sexp =
       rewrite_mod iflag smod;
       rewrite_exp iflag sexp
 
+  | Pexp_letimplicit (pib, sexp) ->
+      rewrite_mod iflag pib.pim_module.pmb_expr;
+      rewrite_exp iflag sexp
+
   | Pexp_assert (cond) -> rewrite_exp iflag cond
 
   | Pexp_lazy (expr) -> rewrite_exp iflag expr
@@ -385,6 +389,7 @@ and rewrite_str_item iflag item =
   | Pstr_value(_, exps)
      -> List.iter (fun x -> rewrite_exp iflag x.pvb_expr) exps
   | Pstr_module x -> rewrite_mod iflag x.pmb_expr
+  | Pstr_implicit x -> rewrite_mod iflag x.pim_module.pmb_expr
         (* todo: Pstr_recmodule?? *)
   | Pstr_class classes -> List.iter (rewrite_class_declaration iflag) classes
   | _ -> ()

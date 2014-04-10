@@ -351,6 +351,10 @@ and expression i ppf x =
       line i ppf "Pexp_letmodule\n";
       module_binding i ppf mb;
       expression i ppf e;
+  | Pexp_letimplicit (pib, e) ->
+      line i ppf "Pexp_letimplicit\n";
+      module_binding i ppf pib.pim_module;
+      expression i ppf e;
   | Pexp_assert (e) ->
       line i ppf "Pexp_assert\n";
       expression i ppf e;

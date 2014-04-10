@@ -53,6 +53,7 @@ type error =
   | Too_many_arguments of bool * type_expr
   | Abstract_wrong_label of arrow_flag * type_expr
   | Scoping_let_module of string * type_expr
+  | Scoping_let_implicit of string * type_expr
   | Masked_instance_variable of Longident.t
   | Not_a_variant_type of Longident.t
   | Incoherent_label_order
@@ -152,7 +153,8 @@ let iter_expression f e =
     | Pexp_ifthenelse (e1, e2, eo) -> expr e1; expr e2; may expr eo
     | Pexp_for (_, e1, e2, _, e3) -> expr e1; expr e2; expr e3
     | Pexp_override sel -> List.iter (fun (_, e) -> expr e) sel
-    | Pexp_letmodule ({pmb_expr = me}, e) -> expr e; module_expr me
+    | Pexp_letmodule (pmb, e) -> expr e; module_expr pmb.pmb_expr
+    | Pexp_letimplicit (pib, e) -> expr e; module_expr pib.pim_module.pmb_expr
     | Pexp_object { pcstr_fields = fs } -> List.iter class_field fs
     | Pexp_pack me -> module_expr me
 
@@ -2533,6 +2535,38 @@ and type_expect_ ?in_function env sexp ty_expected =
       begin try
         Ctype.unify_var new_env ty body.exp_type
       with Unify _ ->
+        raise(Error(loc, env, Scoping_let_implicit(name.txt, body.exp_type)))
+      end;
+      let mb = { mb_id = id; mb_name = name; mb_expr = modl;
+                 mb_attributes = pmb_attributes; mb_loc = pmb_loc } in
+      re {
+        exp_desc = Texp_letmodule (mb, body);
+        exp_loc = loc; exp_extra = [];
+        exp_type = ty;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env }
+  | Pexp_letimplicit ({pim_module = pmb; pim_arity = arity}, sbody) ->
+      let {pmb_name = name; pmb_expr = smodl; pmb_attributes; pmb_loc} = pmb in
+      let ty = newvar() in
+      (* remember original level *)
+      begin_def ();
+      Ident.set_current_time ty.level;
+      let context = Typetexp.narrow () in
+      let modl = !type_module env smodl in
+      let (id, new_env) = Env.enter_implicit name.txt ~arity modl.mod_type env in
+      Ctype.init_def(Ident.current_time());
+      Typetexp.widen context;
+      let body = type_expect new_env sbody ty_expected in
+      (* go back to original level *)
+      end_def ();
+      (* Unification of body.exp_type with the fresh variable ty
+         fails if and only if the prefix condition is violated,
+         i.e. if generative types rooted at id show up in the
+         type body.exp_type.  Thus, this unification enforces the
+         scoping condition on "let module". *)
+      begin try
+        Ctype.unify_var new_env ty body.exp_type
+      with Unify _ ->
         raise(Error(loc, env, Scoping_let_module(name.txt, body.exp_type)))
       end;
       let mb = { mb_id = id; mb_name = name; mb_expr = modl;
@@ -3979,6 +4013,12 @@ let report_error env ppf = function
       reset_and_mark_loops ty;
       fprintf ppf
        "This `let module' expression has type@ %a@ " type_expr ty;
+      fprintf ppf
+       "In this type, the locally bound module name %s escapes its scope" id
+  | Scoping_let_implicit(id, ty) ->
+      reset_and_mark_loops ty;
+      fprintf ppf
+       "This `let implicit' expression has type@ %a@ " type_expr ty;
       fprintf ppf
        "In this type, the locally bound module name %s escapes its scope" id
   | Masked_instance_variable lid ->

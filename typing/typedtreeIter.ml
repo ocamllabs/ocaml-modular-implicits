@@ -346,6 +346,9 @@ module MakeIterator(Iter : IteratorArgument) : sig
         | Texp_letmodule (mb, exp) ->
             iter_module_binding mb;
             iter_expression exp
+        | Texp_letimplicit (imb,expr) ->
+            iter_module_binding imb.im_module;
+            iter_expression exp
         | Texp_assert exp -> iter_expression exp
         | Texp_lazy exp -> iter_expression exp
         | Texp_object (cl, _) ->

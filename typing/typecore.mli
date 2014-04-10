@@ -98,6 +98,7 @@ type error =
   | Too_many_arguments of bool * type_expr
   | Abstract_wrong_label of arrow_flag * type_expr
   | Scoping_let_module of string * type_expr
+  | Scoping_let_implicit of string * type_expr
   | Masked_instance_variable of Longident.t
   | Not_a_variant_type of Longident.t
   | Incoherent_label_order

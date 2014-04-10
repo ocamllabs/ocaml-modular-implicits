@@ -1367,7 +1367,12 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
             md_loc = pmb_loc;
           }
         in
-        let (id, newenv) = Env.enter_module_declaration name.txt md env in
+        let imd =
+          { imd_module = md;
+            imd_arity = arity;
+          }
+        in
+        let (id, newenv) = Env.enter_implicit_declaration name.txt imd env in
         (* failwith "TODO" check arity ?! *)
         Tstr_implicit
           { im_arity = arity;

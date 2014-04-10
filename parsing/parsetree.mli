@@ -308,6 +308,9 @@ and expression_desc =
         (* {< x1 = E1; ...; Xn = En >} *)
   | Pexp_letmodule of module_binding * expression
         (* let module M = ME in E *)
+  | Pexp_letimplicit of implicit_binding * expression
+        (* let implicit module M = ME in E *)
+        (* let implicit functor F (_) = ME in E *)
   | Pexp_assert of expression
         (* assert E
            Note: "assert false" is treated in a special way by the
