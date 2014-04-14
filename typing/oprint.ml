@@ -170,11 +170,36 @@ let rec print_out_type ppf =
 
 and print_out_type_1 ppf =
   function
-    Otyp_arrow (lab, ty1, ty2) ->
+  | Otyp_arrow (lab, ty1, ty2) ->
       pp_open_box ppf 0;
       if lab <> "" then (pp_print_string ppf lab; pp_print_char ppf ':');
       print_out_type_2 ppf ty1;
       pp_print_string ppf " ->";
+      pp_print_space ppf ();
+      print_out_type_1 ppf ty2;
+      pp_close_box ppf ()
+  | Otyp_implicit_arrow (lab, ty1, ty2) ->
+      pp_open_box ppf 0;
+      pp_print_string ppf "(implicit";
+      pp_print_space ppf ();
+      pp_print_string ppf lab;
+      pp_print_space ppf ();
+      pp_print_string ppf ":";
+      pp_print_space ppf ();
+      begin match ty1 with
+      | Otyp_module (p, n, tyl) ->
+        fprintf ppf "@[<1>%s" p;
+        let first = ref true in
+        List.iter2
+          (fun s t ->
+             let sep = if !first then (first := false; "with") else "and" in
+             fprintf ppf " %s type %s = %a" sep s print_out_type t
+          )
+          n tyl;
+        fprintf ppf "@]"
+      | ty1 -> print_out_type_2 ppf ty1;
+      end;
+      pp_print_string ppf ") ->";
       pp_print_space ppf ();
       print_out_type_1 ppf ty2;
       pp_close_box ppf ()
@@ -217,7 +242,8 @@ and print_simple_out_type ppf =
          else if tags = None then "> " else "? ")
         print_fields row_fields
         print_present tags
-  | Otyp_alias _ | Otyp_poly _ | Otyp_arrow _ | Otyp_tuple _ as ty ->
+  | Otyp_arrow _ | Otyp_implicit_arrow _
+  | Otyp_alias _ | Otyp_poly _ | Otyp_tuple _ as ty ->
       pp_open_box ppf 1;
       pp_print_char ppf '(';
       print_out_type ppf ty;

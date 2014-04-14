@@ -555,7 +555,7 @@ let raw_label = function
   | Tarr_labelled s when !print_labels -> s
   | Tarr_optional s -> "?" ^ s
   | Tarr_simple | Tarr_labelled _ -> ""
-  | Tarr_implicit id -> "implicit " ^ ident_name id
+  | Tarr_implicit _ -> assert false
 
 let rec tree_of_typexp sch ty =
   let ty = repr ty in
@@ -568,6 +568,10 @@ let rec tree_of_typexp sch ty =
     match ty.desc with
     | Tvar _ ->
         Otyp_var (is_non_gen sch ty, name_of_type ty)
+    | Tarrow(Tarr_implicit id, ty1, ty2, _) ->
+        Otyp_implicit_arrow (Ident.name id,
+                             tree_of_typexp sch ty1,
+                             tree_of_typexp sch ty2)
     | Tarrow(l, ty1, ty2, _) ->
         let pr_arrow l ty1 ty2 =
           let lab = raw_label l in
