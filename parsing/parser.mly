@@ -1095,11 +1095,14 @@ labeled_simple_pattern:
       { (Parr_labelled (fst $2), None, snd $2) }
   | LABEL simple_pattern
       { (Parr_labelled $1, None, $2) }
-  | LPAREN IMPLICIT UIDENT COLON package_type RPAREN
-      { (Parr_implicit $3, None, mkpat(Ppat_constraint(mkpat(Ppat_implicit (mkrhs $3 3)),
-                                 ghtyp(Ptyp_package $5)))) }
+  | LPAREN IMPLICIT UIDENT COLON implicit_module_type RPAREN
+    { (Parr_implicit $3, None,
+       mkpat(Ppat_constraint(mkpat(Ppat_var (mkrhs $3 3)), $5))) }
   | simple_pattern
       { (Parr_simple, None, $1) }
+;
+implicit_module_type:
+  | package_type      { mktyp(Ptyp_package $1) }
 ;
 pattern_var:
     LIDENT            { mkpat(Ppat_var (mkrhs $1 1)) }

@@ -73,7 +73,6 @@ module Pat = struct
   let lazy_ ?loc ?attrs a = mk ?loc ?attrs (Ppat_lazy a)
   let unpack ?loc ?attrs a = mk ?loc ?attrs (Ppat_unpack a)
   let exception_ ?loc ?attrs a = mk ?loc ?attrs (Ppat_exception a)
-  let implicit_ ?loc ?attrs a = mk ?loc ?attrs (Ppat_implicit a)
   let extension ?loc ?attrs a = mk ?loc ?attrs (Ppat_extension a)
 end
 

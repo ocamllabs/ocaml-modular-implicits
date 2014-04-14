@@ -206,8 +206,6 @@ and pattern_desc =
          *)
   | Ppat_exception of pattern
         (* exception P *)
-  | Ppat_implicit of string loc
-        (* (implicit P: S) *)
   | Ppat_extension of extension
         (* [%id] *)
 
