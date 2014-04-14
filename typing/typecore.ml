@@ -929,15 +929,6 @@ let rec type_pat ~constrs ~labels ~no_existentials ~mode ~env sp expected_ty =
         pat_type = expected_ty;
         pat_attributes = [];
         pat_env = !env }
-  | Ppat_implicit name ->
-      let id = enter_variable loc name expected_ty ~is_module:true in
-      rp {
-        pat_desc = Tpat_var (id, name);
-        pat_loc = sp.ppat_loc;
-        pat_extra=[Tpat_implicit, loc, sp.ppat_attributes];
-        pat_type = expected_ty;
-        pat_attributes = [];
-        pat_env = !env }
   | Ppat_constraint({ppat_desc=Ppat_var name; ppat_loc=lloc},
                     ({ptyp_desc=Ptyp_poly _} as sty)) ->
       (* explicitly polymorphic type *)
@@ -1659,7 +1650,7 @@ let iter_ppat f p =
   match p.ppat_desc with
   | Ppat_any | Ppat_var _ | Ppat_constant _ | Ppat_interval _
   | Ppat_extension _
-  | Ppat_type _ | Ppat_unpack _ | Ppat_implicit _ -> ()
+  | Ppat_type _ | Ppat_unpack _ -> ()
   | Ppat_array pats -> List.iter f pats
   | Ppat_or (p1,p2) -> f p1; f p2
   | Ppat_variant (_, arg) | Ppat_construct (_, arg) -> may f arg
@@ -2535,7 +2526,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       begin try
         Ctype.unify_var new_env ty body.exp_type
       with Unify _ ->
-        raise(Error(loc, env, Scoping_let_implicit(name.txt, body.exp_type)))
+        raise(Error(loc, env, Scoping_let_module(name.txt, body.exp_type)))
       end;
       let mb = { mb_id = id; mb_name = name; mb_expr = modl;
                  mb_attributes = pmb_attributes; mb_loc = pmb_loc } in
@@ -2567,7 +2558,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       begin try
         Ctype.unify_var new_env ty body.exp_type
       with Unify _ ->
-        raise(Error(loc, env, Scoping_let_module(name.txt, body.exp_type)))
+        raise(Error(loc, env, Scoping_let_implicit(name.txt, body.exp_type)))
       end;
       let mb = { mb_id = id; mb_name = name; mb_expr = modl;
                  mb_attributes = pmb_attributes; mb_loc = pmb_loc } in
