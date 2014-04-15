@@ -114,6 +114,7 @@ type summary =
   | Env_cltype of summary * Ident.t * class_type_declaration
   | Env_open of summary * Path.t
   | Env_functor_arg of summary * Ident.t
+  | Env_implicit_arg of summary * Ident.t
 
 module EnvTbl =
   struct
@@ -179,6 +180,7 @@ type t = {
   classes: (Path.t * class_declaration) EnvTbl.t;
   cltypes: (Path.t * class_type_declaration) EnvTbl.t;
   functor_args: unit Ident.tbl;
+  implicit_args: unit Ident.tbl;
   summary: summary;
   local_constraints: bool;
   gadt_instances: (int * TypeSet.t ref) list;
@@ -227,6 +229,7 @@ let empty = {
   summary = Env_empty; local_constraints = false; gadt_instances = [];
   flags = 0;
   functor_args = Ident.empty;
+  implicit_args = Ident.empty;
  }
 
 let in_signature env =
@@ -609,6 +612,14 @@ let rec is_functor_arg path env =
   | Pdot (p, s, _) -> is_functor_arg p env
   | Papply _ -> true
 
+let rec is_implicit_arg path env =
+  match path with
+    Pident id ->
+      begin try Ident.find_same id env.implicit_args; true
+      with Not_found -> false
+      end
+  | Pdot (p, s, _) -> is_implicit_arg p env
+  | Papply _ -> true
 (* Lookup by name *)
 
 exception Recmodule
@@ -1451,6 +1462,12 @@ let add_functor_arg ?(arg=false) id env =
    functor_args = Ident.add id () env.functor_args;
    summary = Env_functor_arg (env.summary, id)}
 
+let add_implicit_arg ?(arg=false) id env =
+  if not arg then env else
+  {env with
+   implicit_args = Ident.add id () env.implicit_args;
+   summary = Env_functor_arg (env.summary, id)}
+
 let add_value ?check id desc env =
   store_value None ?check id (Pident id) desc env env
 
@@ -1469,13 +1486,14 @@ and add_module_declaration ?arg id md env =
   let env = store_module None id path md env env in
   add_functor_arg ?arg id env
 
-and add_implicit_declaration id imd env =
+and add_implicit_declaration ?arg id imd env =
   let path =
     (*match md.md_type with
       Mty_alias path -> normalize_path env path
     | _ ->*) Pident id
   in
-  store_implicit None id path imd env env
+  let env = store_implicit None id path imd env env in
+  add_implicit_arg ?arg id env
 
 and add_modtype id info env =
   store_modtype None id (Pident id) info env env
@@ -1489,8 +1507,8 @@ and add_cltype id ty env =
 let add_module ?arg id mty env =
   add_module_declaration ?arg id (md mty) env
 
-let add_implicit id ~arity mty env =
-  add_implicit_declaration id (imd arity mty) env
+let add_implicit ?arg id ~arity mty env =
+  add_implicit_declaration ?arg id (imd arity mty) env
 
 let add_local_constraint id info elv env =
   match info with

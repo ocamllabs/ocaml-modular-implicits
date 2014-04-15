@@ -763,7 +763,9 @@ let rec update_level env level ty =
     | None -> ()
     end;
     match ty.desc with
-      Tconstr(p, tl, abbrev) when level < get_level env p ->
+      Tconstr(p, tl, abbrev)
+      when level < get_level env p &&
+           not (Env.is_implicit_arg p env && tl = []) ->
         (* Try first to replace an abbreviation by its expansion. *)
         begin try
           (* if is_newtype env p then raise Cannot_expand; *)
@@ -2017,8 +2019,8 @@ let arrows_are_compatible l1 l2 =
   match l1, l2 with
   | (Tarr_simple | Tarr_labelled _), (Tarr_simple | Tarr_labelled _) ->
       true
-  (* def: TODO *)
   | Tarr_optional _, Tarr_optional _ -> true
+  | Tarr_implicit _, Tarr_implicit _ -> true
   | _ -> false
 
 let classic_arrows_are_compatible l1 l2 =

@@ -26,6 +26,7 @@ type summary =
   | Env_cltype of summary * Ident.t * class_type_declaration
   | Env_open of summary * Path.t
   | Env_functor_arg of summary * Ident.t
+  | Env_implicit_arg of summary * Ident.t
 
 type t
 
@@ -63,6 +64,7 @@ val find_type_expansion_opt:
    of the compiler's type-based optimisations. *)
 val find_modtype_expansion: Path.t -> t -> module_type
 val is_functor_arg: Path.t -> t -> bool
+val is_implicit_arg: Path.t -> t -> bool
 val normalize_path: Location.t option -> t -> Path.t -> Path.t
 (* Normalize the path to a concrete value or module.
    If the option is None, allow returning dangling paths.
@@ -106,8 +108,8 @@ val add_type: check:bool -> Ident.t -> type_declaration -> t -> t
 val add_extension: check:bool -> Ident.t -> extension_constructor -> t -> t
 val add_module: ?arg:bool -> Ident.t -> module_type -> t -> t
 val add_module_declaration: ?arg:bool -> Ident.t -> module_declaration -> t -> t
-val add_implicit: Ident.t -> arity:int -> module_type -> t -> t
-val add_implicit_declaration: Ident.t -> implicit_declaration -> t -> t
+val add_implicit: ?arg:bool ->Ident.t -> arity:int -> module_type -> t -> t
+val add_implicit_declaration: ?arg:bool ->Ident.t -> implicit_declaration -> t -> t
 val add_modtype: Ident.t -> modtype_declaration -> t -> t
 val add_class: Ident.t -> class_declaration -> t -> t
 val add_cltype: Ident.t -> class_type_declaration -> t -> t

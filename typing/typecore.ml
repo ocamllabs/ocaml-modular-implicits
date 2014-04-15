@@ -1883,16 +1883,12 @@ and type_expect_ ?in_function env sexp ty_expected =
       in
       type_expect ?in_function env sfun ty_expected
         (* TODO: keep attributes, call type_function directly *)
-  | Pexp_fun (Parr_implicit s, None, spat, sexp) ->
-      let id = Ident.create s in
-      type_function ?in_function loc sexp.pexp_attributes env ty_expected
-        (Tarr_implicit id) [{pc_lhs=spat; pc_guard=None; pc_rhs=sexp}]
-  | Pexp_fun (l, None, spat, sexp) ->
-      type_function ?in_function loc sexp.pexp_attributes env ty_expected
-        (tarr_of_parr l) [{pc_lhs=spat; pc_guard=None; pc_rhs=sexp}]
+  | Pexp_fun (arr, None, spat, sexp) ->
+      type_function ?in_function loc sexp.pexp_attributes env
+        arr ty_expected [{pc_lhs=spat; pc_guard=None; pc_rhs=sexp}]
   | Pexp_function caselist ->
-      type_function ?in_function
-        loc sexp.pexp_attributes env ty_expected Tarr_simple caselist
+      type_function ?in_function loc sexp.pexp_attributes env
+        Parr_simple ty_expected caselist
   | Pexp_apply(sfunct, sargs) ->
       if sargs = [] then
         Syntaxerr.ill_formed_ast loc "Function application with no argument.";
@@ -2723,25 +2719,29 @@ and type_expect_ ?in_function env sexp ty_expected =
   | Pexp_extension ext ->
       raise (Error_forward (Typetexp.error_of_extension ext))
 
-and type_function ?in_function loc attrs env ty_expected (l : Types.arrow_flag) caselist =
+and type_function ?in_function loc attrs env arr ty_expected caselist =
   let (loc_fun, ty_fun) =
     match in_function with Some p -> p
     | None -> (loc, instance env ty_expected)
   in
   let separate = !Clflags.principal || Env.has_local_constraints env in
+  let arr = match arr with
+    | Parr_implicit s -> Tarr_implicit (Ident.create s)
+    | _ -> tarr_of_parr arr
+  in
   if separate then begin_def ();
   let (ty_arg, ty_res) =
-    try filter_arrow env (instance env ty_expected) l
+    try filter_arrow env (instance env ty_expected) arr
     with Unify _ ->
       match expand_head env ty_expected with
         {desc = Tarrow _} as ty ->
-          raise(Error(loc, env, Abstract_wrong_label(l, ty)))
+          raise(Error(loc, env, Abstract_wrong_label(arr, ty)))
       | _ ->
           raise(Error(loc_fun, env,
                       Too_many_arguments (in_function <> None, ty_fun)))
   in
   let ty_arg, is_optional =
-    match l with
+    match arr with
     | Tarr_optional _ ->
         let tv = newvar() in
         begin
@@ -2757,7 +2757,7 @@ and type_function ?in_function loc attrs env ty_expected (l : Types.arrow_flag) 
     generalize_structure ty_res
   end;
   let cases, partial =
-    type_cases ~in_function:(loc_fun,ty_fun) env ty_arg ty_res
+    type_cases ~in_function:(loc_fun,ty_fun) ~arr env ty_arg ty_res
       true loc caselist in
   let not_function ty =
     let ls, tvar = list_labels env ty in
@@ -2767,9 +2767,9 @@ and type_function ?in_function loc attrs env ty_expected (l : Types.arrow_flag) 
     Location.prerr_warning (List.hd cases).c_lhs.pat_loc
       Warnings.Unerasable_optional_argument;
   re {
-  exp_desc = Texp_function(l,cases, partial);
+  exp_desc = Texp_function(arr,cases, partial);
     exp_loc = loc; exp_extra = [];
-    exp_type = instance env (newgenty (Tarrow(l, ty_arg, ty_res, Cok)));
+    exp_type = instance env (newgenty (Tarrow(arr, ty_arg, ty_res, Cok)));
     exp_attributes = attrs;
     exp_env = env }
 
@@ -3471,7 +3471,7 @@ and type_statement env sexp =
 
 (* Typing of match cases *)
 
-and type_cases ?in_function env ty_arg ty_res partial_flag loc caselist =
+and type_cases ?in_function ?arr env ty_arg ty_res partial_flag loc caselist =
   (* ty_arg is _fully_ generalized *)
   let patterns = List.map (fun {pc_lhs=p} -> p) caselist in
   let erase_either =
@@ -3563,8 +3563,8 @@ and type_cases ?in_function env ty_arg ty_res partial_flag loc caselist =
           end
           else if contains_gadt env pc_lhs then correct_levels ty_res
           else ty_res in
-(*        Format.printf "@[%i %i, ty_res' =@ %a@]@." lev (get_current_level())
-          Printtyp.raw_type_expr ty_res'; *)
+        (* Format.printf "@[%i %i, ty_res' =@ %a@]@." lev (get_current_level())
+           Printtyp.raw_type_expr ty_res'; *)
         let guard =
           match pc_guard with
           | None -> None
@@ -3573,7 +3573,11 @@ and type_cases ?in_function env ty_arg ty_res partial_flag loc caselist =
                 (type_expect ext_env (wrap_unpacks scond unpacks)
                    Predef.type_bool)
         in
-        let exp = type_expect ?in_function ext_env sexp ty_res' in
+        let exp = match arr with
+          | Some (Tarr_implicit id) ->
+              type_implicit_arg id ?in_function ext_env sexp ty_res'
+          | _ -> type_expect ?in_function ext_env sexp ty_res'
+        in
         {
          c_lhs = pat;
          c_guard = guard;
@@ -3603,6 +3607,41 @@ and type_cases ?in_function env ty_arg ty_res partial_flag loc caselist =
     unify_exp_types loc env (instance env ty_res) (newvar ()) ;
   end;
   cases, partial
+
+and type_implicit_arg id ?in_function env sbody ty_res =
+  let ty = newvar() in
+  (* remember original level *)
+  begin_def ();
+  Ident.set_current_time ty.level;
+  let context = Typetexp.narrow () in
+  let name = Ident.name id in
+  let smodl =
+    let open Ast_helper in
+    Mod.unpack (Exp.ident (mknoloc (Longident.Lident name)))
+  in
+  let modl = !type_module env smodl in
+  let new_env = Env.add_implicit ~arg:true id ~arity:0 modl.mod_type env in
+  Ctype.init_def(Ident.current_time());
+  Typetexp.widen context;
+  let body = type_expect ?in_function new_env sbody ty_res in
+  (* go back to original level *)
+  end_def ();
+  (* Unification of body.exp_type with the fresh variable ty
+     fails if and only if the prefix condition is violated,
+     i.e. if generative types rooted at id show up in the
+     type body.exp_type.  Thus, this unification enforces the
+     scoping condition on "let module". *)
+  begin try
+    Ctype.unify_var new_env ty body.exp_type
+  with Unify _ ->
+    raise(Error(sbody.pexp_loc, env, Scoping_let_implicit(name, body.exp_type)))
+  end;
+  re {
+    exp_desc = Texp_letmodule(id, mknoloc name, modl, body);
+    exp_loc = sbody.pexp_loc; exp_extra = [];
+    exp_type = ty;
+    exp_attributes = sbody.pexp_attributes;
+    exp_env = env }
 
 (* Typing of let bindings *)
 
