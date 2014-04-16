@@ -181,6 +181,7 @@ type t = {
   cltypes: (Path.t * class_type_declaration) EnvTbl.t;
   functor_args: unit Ident.tbl;
   implicit_args: unit Ident.tbl;
+  implicit_instances: (Path.t * implicit_declaration) list;
   summary: summary;
   local_constraints: bool;
   gadt_instances: (int * TypeSet.t ref) list;
@@ -230,6 +231,7 @@ let empty = {
   flags = 0;
   functor_args = Ident.empty;
   implicit_args = Ident.empty;
+  implicit_instances = [];
  }
 
 let in_signature env =
@@ -620,6 +622,9 @@ let rec is_implicit_arg path env =
       end
   | Pdot (p, s, _) -> is_implicit_arg p env
   | Papply _ -> true
+
+let implicit_instances env = env.implicit_instances
+
 (* Lookup by name *)
 
 exception Recmodule
@@ -1413,7 +1418,9 @@ and store_implicit slot id path imd env renv =
       EnvTbl.add "module" slot id
                  (path, components_of_module env Subst.identity path md.md_type)
                    env.components renv.components;
-    summary = Env_implicit(env.summary, id, imd) }
+    summary = Env_implicit(env.summary, id, imd);
+    implicit_instances = (path, imd) :: env.implicit_instances;
+  }
 
 
 and store_modtype slot id path info env renv =

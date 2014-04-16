@@ -304,7 +304,7 @@ and expression i ppf x =
   | Texp_apply (e, l) ->
       line i ppf "Pexp_apply\n";
       expression i ppf e;
-      list i label_x_expression ppf l;
+      list i argument ppf l;
   | Texp_match (e, l1, l2, partial) ->
       line i ppf "Pexp_match\n";
       expression i ppf e;
@@ -541,7 +541,7 @@ and class_expr i ppf x =
   | Tcl_apply (ce, l) ->
       line i ppf "Pcl_apply\n";
       class_expr i ppf ce;
-      list i label_x_expression ppf l;
+      list i argument ppf l;
   | Tcl_let (rf, l1, l2, ce) ->
       line i ppf "Pcl_let %a\n" fmt_rec_flag rf;
       list i value_binding ppf l1;
@@ -842,9 +842,9 @@ and longident_x_expression i ppf (li, _, e) =
   line i ppf "%a\n" fmt_longident li;
   expression (i+1) ppf e;
 
-and label_x_expression i ppf (l, e) =
-  line i ppf "<label> \"%a\"\n" apply_flag l;
-  (match e with None -> () | Some e -> expression (i+1) ppf e)
+and argument i ppf { arg_flag; arg_expression } =
+  line i ppf "<label> \"%a\"\n" apply_flag arg_flag;
+  Misc.may (expression (i+1) ppf) arg_expression
 
 and ident_x_loc_x_expression_def i ppf (l,_, e) =
   line i ppf "<def> \"%a\"\n" fmt_ident l;

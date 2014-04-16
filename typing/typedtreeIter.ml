@@ -257,13 +257,9 @@ module MakeIterator(Iter : IteratorArgument) : sig
             iter_expression exp
         | Texp_function (label, cases, _) ->
             iter_cases cases
-        | Texp_apply (exp, list) ->
+        | Texp_apply (exp, args) ->
             iter_expression exp;
-            List.iter (fun (label, expo) ->
-                match expo with
-                  None -> ()
-                | Some exp -> iter_expression exp
-            ) list
+            List.iter iter_argument args
         | Texp_match (exp, list1, list2, _) ->
             iter_expression exp;
             iter_cases list1;
@@ -339,6 +335,11 @@ module MakeIterator(Iter : IteratorArgument) : sig
             iter_module_expr mexpr
       end;
       Iter.leave_expression exp;
+
+    and iter_argument arg =
+      match arg.arg_expression with
+        None -> ()
+      | Some exp -> iter_expression exp
 
     and iter_package_type pack =
       Iter.enter_package_type pack;
@@ -474,11 +475,7 @@ module MakeIterator(Iter : IteratorArgument) : sig
 
         | Tcl_apply (cl, args) ->
             iter_class_expr cl;
-            List.iter (fun (label, expo) ->
-                match expo with
-                  None -> ()
-                | Some exp -> iter_expression exp
-            ) args
+            List.iter iter_argument args
 
         | Tcl_let (rec_flat, bindings, ivars, cl) ->
           iter_bindings rec_flat bindings;

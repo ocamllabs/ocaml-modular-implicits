@@ -75,7 +75,7 @@ and expression_desc =
   | Texp_constant of constant
   | Texp_let of rec_flag * value_binding list * expression
   | Texp_function of arrow_flag * case list * partial
-  | Texp_apply of expression * (apply_flag * expression option) list
+  | Texp_apply of expression * argument list
   | Texp_match of expression * case list * case list * partial
   | Texp_try of expression * case list
   | Texp_tuple of expression list
@@ -107,6 +107,13 @@ and expression_desc =
   | Texp_object of class_structure * string list
   | Texp_pack of module_expr
 
+and argument =
+  {
+    arg_flag: apply_flag;
+    (* Made mutable to defer implicit instance selection *)
+    mutable arg_expression: expression option;
+  }
+
 and meth =
     Tmeth_name of string
   | Tmeth_val of Ident.t
@@ -134,7 +141,7 @@ and class_expr_desc =
   | Tcl_structure of class_structure
   | Tcl_fun of arrow_flag * pattern * (Ident.t * string loc * expression) list
                * class_expr * partial
-  | Tcl_apply of class_expr * (apply_flag * expression option) list
+  | Tcl_apply of class_expr * argument list
   | Tcl_let of rec_flag * value_binding list *
                   (Ident.t * string loc * expression) list * class_expr
   | Tcl_constraint of

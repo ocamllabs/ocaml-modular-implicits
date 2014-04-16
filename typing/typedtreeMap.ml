@@ -268,14 +268,7 @@ module MakeMap(Map : MapArgument) = struct
           Texp_function (label, map_cases cases, partial)
         | Texp_apply (exp, list) ->
           Texp_apply (map_expression exp,
-                      List.map (fun (label, expo) ->
-                        let expo =
-                          match expo with
-                              None -> expo
-                            | Some exp -> Some (map_expression exp)
-                        in
-                        (label, expo)
-                      ) list )
+                      List.map map_argument list )
         | Texp_match (exp, list1, list2, partial) ->
           Texp_match (
             map_expression exp,
@@ -377,6 +370,11 @@ module MakeMap(Map : MapArgument) = struct
       exp with
         exp_desc = exp_desc;
         exp_extra = exp_extra; }
+
+  and map_argument = function
+    | {arg_expression = None; _} as arg -> arg
+    | {arg_flag; arg_expression = Some exp} ->
+        {arg_flag; arg_expression = Some (map_expression exp)}
 
   and map_exp_extra ((desc, loc, attrs) as exp_extra) =
     match desc with
@@ -537,9 +535,7 @@ module MakeMap(Map : MapArgument) = struct
 
         | Tcl_apply (cl, args) ->
           Tcl_apply (map_class_expr cl,
-                     List.map (fun (label, expo) ->
-                       (label, may_map map_expression expo)
-                     ) args)
+                     List.map map_argument args)
         | Tcl_let (rec_flat, bindings, ivars, cl) ->
           Tcl_let (rec_flat, map_bindings rec_flat bindings,
                    List.map (fun (id, name, exp) ->
