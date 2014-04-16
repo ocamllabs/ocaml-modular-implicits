@@ -82,6 +82,8 @@ val gadt_instance_level: t -> type_expr -> int option
 val add_gadt_instances: t -> int -> type_expr list -> unit
 val add_gadt_instance_chain: t -> int -> type_expr -> unit
 
+val implicit_instances: t -> (Path.t * implicit_declaration) list
+
 (* Lookup by long identifiers *)
 
 val lookup_value: Longident.t -> t -> Path.t * value_description

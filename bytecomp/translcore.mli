@@ -18,7 +18,7 @@ open Typedtree
 open Lambda
 
 val transl_exp: expression -> lambda
-val transl_apply: lambda -> (Types.apply_flag * expression option) list
+val transl_apply: lambda -> argument list
                   -> Location.t -> lambda
 val transl_let: rec_flag -> value_binding list -> lambda -> lambda
 val transl_primitive: Location.t -> Primitive.description -> lambda

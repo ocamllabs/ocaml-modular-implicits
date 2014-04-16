@@ -55,6 +55,9 @@ open Typedtree
 let ctyp desc typ env loc =
   { ctyp_desc = desc; ctyp_type = typ; ctyp_loc = loc; ctyp_env = env; ctyp_attributes = [] }
 
+let make_argument (f,e) =
+  {arg_flag = f; arg_expression = e}
+
 (**********************)
 (*  Useful constants  *)
 (**********************)
@@ -1079,7 +1082,7 @@ and class_expr cl_num val_env met_env scl =
         else
           type_args [] [] cl.cl_type ty_fun0 sargs []
       in
-      rc {cl_desc = Tcl_apply (cl, args);
+      rc {cl_desc = Tcl_apply (cl, List.map make_argument args);
           cl_loc = scl.pcl_loc;
           cl_type = cty;
           cl_env = val_env;
