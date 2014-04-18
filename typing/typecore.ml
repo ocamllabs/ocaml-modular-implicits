@@ -1535,6 +1535,24 @@ let rec type_approx env sexp =
       ty2
   | _ -> newvar ()
 
+(*  Produce the result type of an application: not all arguments may have been
+    applied, so prepend the result type [ty_res] with omitted argument types.
+    Given:
+      val f : ~a:int -> int -> ~c:int -> int
+    Typing:
+      f ~c:5
+    Result in the following application:
+      Texp_apply (`f`, [("a",None); ("",None); ("c",Some `5`)])
+    with the following type:
+      application_result_type [("",int); ("a",int)] int =
+      ~a:int -> int -> int
+*)
+
+let application_result_type omitted ty_res =
+  List.fold_left
+    (fun ty_fun (arr,ty,lv) -> newty2 lv (Tarrow(arr,ty,ty_fun,Cok)))
+    ty_res omitted
+
 (* List labels in a function type, and whether return type is a variable *)
 let rec list_labels_aux env visited ls ty_fun =
   let ty = expand_head env ty_fun in
@@ -1718,6 +1736,86 @@ let duplicate_ident_types loc caselist env =
         | _ -> env
       with Not_found -> env)
     env idents
+
+(* Instantiate implicits in a function type
+
+   Given a type expression, find all path refering to an implicit module.
+   1. Find any implicit bindings: if none, return the original type.
+   2. Generate fresh idents for all implicit bindings, substitute idents in the
+      type.
+   3. Replace all type constructors referring to an implicit module
+      by a fresh type variable and remember the (constr, var) constraint
+      association.
+
+   (*If a typed expression is a function containing implicit arguments,
+   this produces a new expression corresponding to the function with all
+   implicits instantiated together with the hole to be filled with actual
+   instances and a set of constraints to be satisfied.*)
+*)
+
+let instantiate_implicits ty =
+  let rec has_implicit ty = match ty.desc with
+    | Tarrow (Tarr_implicit id,_,_,_) -> true
+    | Tarrow (_,_,rhs,_) -> has_implicit ty
+    | _ -> false
+  in
+  if not (has_implicit ty) then Ident.empty, ty
+  else
+    let rec extract_implicits ty = match ty.desc with
+      | Tarrow (Tarr_implicit id, lhs, rhs, comm) ->
+          let id' = Ident.rename id in
+          let idents, subst, rhs' = extract_implicits rhs in
+          Ident.add id' () idents,
+          Subst.add_implicit id (Path.Pident id') subst,
+          {ty with desc = Tarrow (Tarr_implicit id', lhs, rhs', comm)}
+      | Tarrow (arr, lhs, rhs, comm) ->
+          let idents, subst, rhs' = extract_implicits rhs in
+          idents, subst,
+          {ty with desc = Tarrow (arr, lhs, rhs', comm)}
+      | _ -> Ident.empty, Subst.identity, ty
+    in
+    let idents, subst, ty = extract_implicits ty in
+    let ty = Subst.type_expr subst ty in
+    (* Set of constraints : maintain a table mapping implicit binding
+       identifier to a list of type variable pairs.
+       An implicit instance is correct only iff, in an environment where the
+       ident is bound to the instance, all pairs in the list unify.
+    *)
+    let constraints = ref Ident.empty in
+    let add_constraint path ty ty' =
+      let id = Path.head path in
+      let l =
+        try Ident.find_same id !constraints
+        with Not_found -> []
+      in
+      constraints := Ident.add id ((ty,ty') :: l) !constraints
+    in
+    let rec unlink_constructors ty =
+      (* First recurse in sub expressions *)
+      iter_type_expr unlink_constructors ty;
+      (* Then replace current type if it is a constructor referring to an
+         implicit *)
+      match ty.desc with
+      | Tconstr (path,_,_) when
+          try Ident.find_same (Path.head path) idents; true
+          with Not_found -> false
+        ->
+          (* Fresh variable *)
+          let ty' = newvar() in
+          (* Swap the content of ty and ty' … *)
+          let {desc = desc; level = lv; id = id} = ty in
+          let {desc = desc'; level = lv'; id = id'} = ty' in
+          ty.desc   <- desc';
+          ty.level  <- lv';
+          ty.id     <- id';
+          ty'.desc  <- desc;
+          ty'.level <- lv;
+          ty'.id    <- id;
+          add_constraint path ty ty'
+      | _ -> ()
+    in
+    unlink_constructors ty;
+    !constraints, ty
 
 (* Typing of expressions *)
 
@@ -1915,6 +2013,8 @@ and type_expect_ ?in_function env sexp ty_expected =
       end_def ();
       wrap_trace_gadt_instances env (lower_args []) ty;
       begin_def ();
+      let constraints, funct_ty = instantiate_implicits funct.exp_type in
+      let funct = {funct with exp_type = funct_ty} in
       let (args, ty_res) = type_application env funct sargs in
       (* Gather implicit modules *)
       let subst =
@@ -3211,11 +3311,6 @@ and type_argument env sarg ty_expected' ty_expected =
 and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expression) list) =
   (* funct.exp_type may be generic *)
   let sargs = List.map (fun (app,e) -> tapp_of_papp app, e) sargs in
-  let result_type omitted ty_fun =
-    List.fold_left
-      (fun ty_fun (l,ty,lv) -> newty2 lv (Tarrow(l,ty,ty_fun,Cok)))
-      ty_fun omitted
-  in
   let has_label l ty_fun =
     let ls, tvar = list_labels env ty_fun in
     tvar || List.mem l ls
@@ -3237,7 +3332,7 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
         (List.map
            (fun (flag,expr) -> flag, may_map ((|>) ()) expr)
            (List.rev typed),
-         instance env (result_type omitted ty_fun))
+         instance env (application_result_type omitted ty_fun))
     | (app1, sarg1) :: sargl ->
         let (ty1, ty2) =
           let ty_fun = expand_head env ty_fun in
@@ -3261,7 +3356,7 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
           | td ->
               let ty_fun =
                 match td with Tarrow _ -> newty td | _ -> ty_fun in
-              let ty_res = result_type (omitted @ !ignored) ty_fun in
+              let ty_res = application_result_type (omitted @ !ignored) ty_fun in
               let arr1 = tarr_of_tapp app1 in
               match ty_res.desc with
                 Tarrow _ ->
@@ -3393,8 +3488,14 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
             in
             sargs, more_sargs, f
         in
-        let omitted =
-          if arg = None then (arr,ty,lv) :: omitted else omitted in
+        let omitted = match arr, arg with
+          (* Applied arguments don't affect omitted list *)
+          | _, Some _ -> omitted
+          (* Undefined implicit arguments will be instantiated later *)
+          | Tarr_implicit _, None -> omitted
+          (* Other undefined arguments are remembered as omitted *)
+          | _, None -> (arr,ty,lv) :: omitted
+        in
         let ty_old = if sargs = [] then ty_fun else ty_old in
         type_args ((arr,arg)::typed) omitted ty_fun ty_fun0
           ty_old sargs more_sargs
@@ -3610,10 +3711,9 @@ and type_cases ?in_function ?arr env ty_arg ty_res partial_flag loc caselist =
         let guard =
           match pc_guard with
           | None -> None
-          | Some scond ->
-              Some
-                (type_expect ext_env (wrap_unpacks scond unpacks)
-                   Predef.type_bool)
+          | Some scond -> Some (type_expect ext_env
+                                  (wrap_unpacks scond unpacks)
+                                  Predef.type_bool)
         in
         let exp = match arr with
           | Some (Tarr_implicit id) ->
