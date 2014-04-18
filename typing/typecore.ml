@@ -1916,6 +1916,36 @@ and type_expect_ ?in_function env sexp ty_expected =
       wrap_trace_gadt_instances env (lower_args []) ty;
       begin_def ();
       let (args, ty_res) = type_application env funct sargs in
+      (* Gather implicit modules *)
+      let subst =
+        List.fold_left (fun subst (arr,expo) ->
+            match arr, expo with
+            (* Uninstantiated implicit: keep them in a list in order to find
+               an instance later *)
+            (*| Tarr_implicit id, None -> (*FIXME*)*)
+            (* Instantiated ones: substitute the type path with the instance *)
+            | Tarr_implicit id, Some expr ->
+                (* An implicit instance always have to be a path to a module in
+                   scope *)
+                let rec mod_path me = match me.mod_desc with
+                  | Tmod_ident (path,_) -> path
+                  | Tmod_constraint (me,_,_,_) ->
+                      mod_path me
+                  | _ -> assert false
+                in
+                let path = match expr.exp_desc with
+                  | Texp_pack me -> mod_path me
+                  | _ -> assert false
+                in
+                Subst.add_module id path subst
+            | _ -> subst
+          ) Subst.identity args
+      in
+      let args = List.map
+          (fun (arr,expo) -> make_argument (tapp_of_tarr arr, expo))
+          args
+      in
+      let ty_res = Subst.type_expr subst ty_res in
       end_def ();
       unify_var env (newvar()) funct.exp_type;
       rue {
@@ -3201,21 +3231,11 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
     ty_fun: type of the function applied
   *)
   let rec type_unknown_args
-      (typed : (Types.apply_flag * (unit -> Typedtree.expression) option) list)
+      (typed : (Types.arrow_flag * (unit -> Typedtree.expression) option) list)
     omitted ty_fun = function
       [] ->
         (List.map
-           (fun (flag,expr) ->
-             begin match flag, expr with
-             | Tapp_implicit, None ->
-                 prerr_endline "uninstanciated implicit";
-             | _ -> ()
-             end;
-             let expr = match expr with
-               | None -> None
-               | Some f -> Some (f ())
-             in
-             make_argument (flag,expr))
+           (fun (flag,expr) -> flag, may_map ((|>) ()) expr)
            (List.rev typed),
          instance env (result_type omitted ty_fun))
     | (app1, sarg1) :: sargl ->
@@ -3254,13 +3274,18 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
                   raise(Error(funct.exp_loc, env, Apply_non_function
                                 (expand_head env funct.exp_type)))
         in
+        let arr1 = tarr_of_tapp app1 in
         let arg1 () =
           let arg1 = type_expect env sarg1 ty1 in
-          if (match app1 with Tapp_optional _ -> true | _ -> false) then
+          let is_optional = match app1 with
+            | Tapp_optional _ -> true
+            | _ -> false
+          in
+          if is_optional then
             unify_exp env arg1 (type_option(newvar()));
           arg1
         in
-        type_unknown_args ((app1, Some arg1) :: typed) omitted ty2 sargl
+        type_unknown_args ((arr1, Some arg1) :: typed) omitted ty2 sargl
   in
   let ignore_labels =
     !Clflags.classic ||
@@ -3371,7 +3396,7 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
         let omitted =
           if arg = None then (arr,ty,lv) :: omitted else omitted in
         let ty_old = if sargs = [] then ty_fun else ty_old in
-        type_args ((tapp_of_tarr arr,arg)::typed) omitted ty_fun ty_fun0
+        type_args ((arr,arg)::typed) omitted ty_fun ty_fun0
           ty_old sargs more_sargs
     | _ ->
         match sargs with
@@ -3395,7 +3420,7 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
           add_delayed_check (fun () -> check_application_result env false exp)
       | _ -> ()
       end;
-      ([{arg_flag = Tapp_simple; arg_expression = Some exp}], ty_res)
+      ([Tarr_simple, Some exp], ty_res)
   | _ ->
       let ty = funct.exp_type in
       if ignore_labels then
