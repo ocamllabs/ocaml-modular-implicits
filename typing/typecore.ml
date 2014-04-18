@@ -1756,7 +1756,7 @@ let duplicate_ident_types loc caselist env =
 let instantiate_implicits ty =
   let rec has_implicit ty = match ty.desc with
     | Tarrow (Tarr_implicit id,_,_,_) -> true
-    | Tarrow (_,_,rhs,_) -> has_implicit ty
+    | Tarrow (_,_,rhs,_) -> has_implicit rhs
     | _ -> false
   in
   if not (has_implicit ty) then Ident.empty, ty
@@ -3778,8 +3778,10 @@ and type_implicit_arg id ?in_function env sbody ty_res =
   with Unify _ ->
     raise(Error(sbody.pexp_loc, env, Scoping_let_implicit(name, body.exp_type)))
   end;
+  let mb = { mb_id = id; mb_name = mknoloc name; mb_expr = modl;
+             mb_attributes = []; mb_loc = sbody.pexp_loc } in
   re {
-    exp_desc = Texp_letmodule(id, mknoloc name, modl, body);
+    exp_desc = Texp_letmodule(mb, body);
     exp_loc = sbody.pexp_loc; exp_extra = [];
     exp_type = ty;
     exp_attributes = sbody.pexp_attributes;

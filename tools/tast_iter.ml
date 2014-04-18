@@ -113,7 +113,7 @@ let expression sub exp =
       sub # cases cases
   | Texp_apply (exp, list) ->
       sub # expression exp;
-      List.iter (fun (_, expo) -> opt (sub # expression) expo) list
+      List.iter (fun arg -> opt (sub # expression) arg.arg_expression) list
   | Texp_match (exp, cases, exn_cases, _) ->
       sub # expression exp;
       sub # cases cases;
@@ -265,7 +265,7 @@ let class_expr sub cexpr =
       sub # class_expr cl
   | Tcl_apply (cl, args) ->
       sub # class_expr cl;
-      List.iter (fun (_label, expo) -> opt (sub # expression) expo) args
+      List.iter (fun arg -> opt (sub # expression) arg.arg_expression) args
   | Tcl_let (rec_flat, bindings, ivars, cl) ->
       sub # bindings (rec_flat, bindings);
       List.iter (fun (_id, _, exp) -> sub # expression exp) ivars;
