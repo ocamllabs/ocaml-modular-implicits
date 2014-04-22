@@ -1757,7 +1757,20 @@ let duplicate_ident_types loc caselist env =
    instances and a set of constraints to be satisfied.*)
 *)
 
-let instantiate_implicits ty =
+type pending_implicit = {
+  implicit_id: Ident.t;
+  implicit_env: Env.t;
+  implicit_loc: Location.t;
+  implicit_type: Path.t * Longident.t list * type_expr list;
+  mutable implicit_constraints: (type_expr * type_expr) list;
+  implicit_argument: argument;
+}
+
+let pending_implicits
+  : pending_implicit list ref
+  = ref []
+
+let instantiate_implicits loc env ty =
   let rec has_implicit ty = match ty.desc with
     | Tarrow (Tarr_implicit id,_,_,_) -> true
     | Tarrow (_,_,rhs,_) -> has_implicit rhs
@@ -1765,34 +1778,43 @@ let instantiate_implicits ty =
   in
   if not (has_implicit ty) then Ident.empty, ty
   else
-    let rec extract_implicits ty = match ty.desc with
+    let fresh_implicit id ty =
+      let ty = repr ty in
+      match ty.desc with
+      | Tpackage (p,nl,tl) -> {
+          implicit_id = id;
+          implicit_env = env;
+          implicit_loc = loc;
+          implicit_type = (p,nl,tl);
+          implicit_constraints = [];
+          implicit_argument = make_argument (Tapp_implicit, None);
+        }
+      | _ -> assert false
+    in
+    let rec extract_implicits ty =
+      let ty = repr ty in
+      match ty.desc with
       | Tarrow (Tarr_implicit id, lhs, rhs, comm) ->
           let id' = Ident.rename id in
-          let idents, subst, rhs' = extract_implicits rhs in
-          Ident.add id' () idents,
+          let instances, subst, rhs' = extract_implicits rhs in
+          Ident.add id' (fresh_implicit id' lhs) instances,
           Subst.add_implicit id (Path.Pident id') subst,
           {ty with desc = Tarrow (Tarr_implicit id', lhs, rhs', comm)}
       | Tarrow (arr, lhs, rhs, comm) ->
-          let idents, subst, rhs' = extract_implicits rhs in
-          idents, subst,
+          let instances, subst, rhs' = extract_implicits rhs in
+          instances, subst,
           {ty with desc = Tarrow (arr, lhs, rhs', comm)}
       | _ -> Ident.empty, Subst.identity, ty
     in
-    let idents, subst, ty = extract_implicits ty in
+    let instances, subst, ty = extract_implicits ty in
     let ty = Subst.type_expr subst ty in
     (* Set of constraints : maintain a table mapping implicit binding
        identifier to a list of type variable pairs.
        An implicit instance is correct only iff, in an environment where the
        ident is bound to the instance, all pairs in the list unify.
     *)
-    let constraints = ref Ident.empty in
-    let add_constraint path ty ty' =
-      let id = Path.head path in
-      let l =
-        try Ident.find_same id !constraints
-        with Not_found -> []
-      in
-      constraints := Ident.add id ((ty,ty') :: l) !constraints
+    let add_constraint inst ty ty' =
+      inst.implicit_constraints <- (ty,ty') :: inst.implicit_constraints
     in
     let rec unlink_constructors ty =
       (* First recurse in sub expressions *)
@@ -1800,26 +1822,52 @@ let instantiate_implicits ty =
       (* Then replace current type if it is a constructor referring to an
          implicit *)
       match ty.desc with
-      | Tconstr (path,_,_) when
-          try Ident.find_same (Path.head path) idents; true
-          with Not_found -> false
-        ->
-          (* Fresh variable *)
-          let ty' = newvar() in
-          (* Swap the content of ty and ty' … *)
-          let {desc = desc; level = lv; id = id} = ty in
-          let {desc = desc'; level = lv'; id = id'} = ty' in
-          ty.desc   <- desc';
-          ty.level  <- lv';
-          ty.id     <- id';
-          ty'.desc  <- desc;
-          ty'.level <- lv;
-          ty'.id    <- id;
-          add_constraint path ty ty'
+      | Tconstr (path,_,_) ->
+          begin try
+            let inst = Ident.find_same (Path.head path) instances in
+            (* Fresh variable *)
+            let ty' = newvar() in
+            (* Swap the content of ty and ty' … *)
+            let {desc = desc; level = lv; id = id} = ty in
+            let {desc = desc'; level = lv'; id = id'} = ty' in
+            ty.desc   <- desc';
+            ty.level  <- lv';
+            ty.id     <- id';
+            ty'.desc  <- desc;
+            ty'.level <- lv;
+            ty'.id    <- id;
+            add_constraint inst ty ty'
+          with Not_found -> ()
+          end
       | _ -> ()
     in
     unlink_constructors ty;
-    !constraints, ty
+    instances, ty
+
+let link_implicit inst expr =
+  (* An implicit instance always have to be a path to a module in scope *)
+  let rec mod_path me = match me.mod_desc with
+    | Tmod_ident (path,_) -> path
+    | Tmod_constraint (me,_,_,_) ->
+        mod_path me
+    | _ -> assert false
+  in
+  let path = match expr.exp_desc with
+    | Texp_pack me -> mod_path me
+    | _ -> assert false
+  in
+  (* FIXME Check subtype relation between expr and instance *)
+  (* FIXME Check that all constraints are satisfied *)
+  let subst = Subst.add_module inst.implicit_id path Subst.identity in
+  List.iter (fun (ty,ty') ->
+      let ty = Subst.type_expr subst ty in
+      let ty' = Subst.type_expr subst ty' in
+      unify_exp_types inst.implicit_loc inst.implicit_env ty ty'
+    )
+    inst.implicit_constraints;
+  (* FIXME Update argument in Typedtree *)
+  inst.implicit_argument.arg_expression <- Some expr
+
 
 (* Typing of expressions *)
 
@@ -2017,39 +2065,34 @@ and type_expect_ ?in_function env sexp ty_expected =
       end_def ();
       wrap_trace_gadt_instances env (lower_args []) ty;
       begin_def ();
-      let constraints, funct_ty = instantiate_implicits funct.exp_type in
+      let implicits, funct_ty = instantiate_implicits loc env funct.exp_type in
       let funct = {funct with exp_type = funct_ty} in
       let (args, ty_res) = type_application env funct sargs in
-      (* Gather implicit modules *)
-      let subst =
-        List.fold_left (fun subst (arr,expo) ->
-            match arr, expo with
-            (* Uninstantiated implicit: keep them in a list in order to find
-               an instance later *)
-            (*| Tarr_implicit id, None -> (*FIXME*)*)
-            (* Instantiated ones: substitute the type path with the instance *)
-            | Tarr_implicit id, Some expr ->
-                (* An implicit instance always have to be a path to a module in
-                   scope *)
-                let rec mod_path me = match me.mod_desc with
-                  | Tmod_ident (path,_) -> path
-                  | Tmod_constraint (me,_,_,_) ->
-                      mod_path me
-                  | _ -> assert false
-                in
-                let path = match expr.exp_desc with
-                  | Texp_pack me -> mod_path me
-                  | _ -> assert false
-                in
-                Subst.add_module id path subst
-            | _ -> subst
-          ) Subst.identity args
-      in
       let args = List.map
-          (fun (arr,expo) -> make_argument (tapp_of_tarr arr, expo))
+          (fun (arr,expo) ->
+             match arr with
+             | Tarr_implicit id' ->
+                 let inst =
+                   try Ident.find_same id' implicits
+                   with Not_found ->
+                     (* All implicits in the current function should be
+                        fresh, and as such bound in "implicits" table *)
+                     assert false
+                 in
+                 let argument = inst.implicit_argument  in
+                 argument.arg_expression <- expo;
+                 begin match expo with
+                 | None ->
+                     (* Add implicit to pending list *)
+                     pending_implicits := inst :: !pending_implicits
+                 | Some exp ->
+                     (* Link implicit with actual instance *)
+                     link_implicit inst exp
+                 end;
+                 argument
+             | _ -> make_argument (tapp_of_tarr arr, expo))
           args
       in
-      let ty_res = Subst.type_expr subst ty_res in
       end_def ();
       unify_var env (newvar()) funct.exp_type;
       rue {
