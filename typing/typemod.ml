@@ -1676,6 +1676,45 @@ let type_package env m p nl tl =
     nl tl';
   (wrap_constraint env modl mty Tmodtype_implicit, tl')
 
+let type_implicit_instance env m p nl tl =
+  (* Same as Pexp_letmodule *)
+  (* remember original level *)
+  let lv = Ctype.get_current_level () in
+  Ctype.begin_def ();
+  Ident.set_current_time lv;
+  let context = Typetexp.narrow () in
+  let modl = type_module env m in
+  Ctype.init_def(Ident.current_time());
+  Typetexp.widen context;
+  let (mp, env) =
+    match modl.mod_desc with
+      Tmod_ident (mp,_) -> (mp, env)
+    | _ ->
+      let (id, new_env) = Env.enter_module ~arg:true "%M" modl.mod_type env in
+      (Pident id, new_env)
+  in
+  let rec mkpath mp = function
+    | Lident name -> Pdot(mp, name, nopos)
+    | Ldot (m, name) -> Pdot(mkpath mp m, name, nopos)
+    | _ -> assert false
+  in
+  let tl' =
+    List.map
+      (fun name -> Btype.newgenty (Tconstr (mkpath mp name,[],ref Mnil)))
+      nl in
+  (* go back to original level *)
+  Ctype.end_def ();
+  if nl = [] then
+    (wrap_constraint env modl (Mty_ident p) Tmodtype_implicit, [])
+  else let mty = modtype_of_package env modl.mod_loc p nl tl' in
+  List.iter2
+    (fun n ty ->
+      try Ctype.unify env ty (Ctype.newvar ())
+      with Ctype.Unify _ ->
+        raise (Error(m.pmod_loc, env, Scoping_pack (n,ty))))
+    nl tl';
+  (wrap_constraint env modl mty Tmodtype_implicit, tl')
+
 (* Fill in the forward declarations *)
 let () =
   Typecore.type_module := type_module;
@@ -1683,6 +1722,7 @@ let () =
   Typetexp.transl_modtype := transl_modtype;
   Typecore.type_open := type_open_ ?toplevel:None;
   Typecore.type_package := type_package;
+  Typeimplicit.type_package := type_package;
   type_module_type_of_fwd := type_module_type_of
 
 

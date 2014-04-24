@@ -17,6 +17,7 @@ open Asttypes
 open Parsetree
 open Types
 open Typedtree
+open Typeimplicit
 open Btype
 open Ctype
 
@@ -1741,134 +1742,6 @@ let duplicate_ident_types loc caselist env =
       with Not_found -> env)
     env idents
 
-(* Instantiate implicits in a function type
-
-   Given a type expression, find all path refering to an implicit module.
-   1. Find any implicit bindings: if none, return the original type.
-   2. Generate fresh idents for all implicit bindings, substitute idents in the
-      type.
-   3. Replace all type constructors referring to an implicit module
-      by a fresh type variable and remember the (constr, var) constraint
-      association.
-
-   (*If a typed expression is a function containing implicit arguments,
-   this produces a new expression corresponding to the function with all
-   implicits instantiated together with the hole to be filled with actual
-   instances and a set of constraints to be satisfied.*)
-*)
-
-type pending_implicit = {
-  implicit_id: Ident.t;
-  implicit_env: Env.t;
-  implicit_loc: Location.t;
-  implicit_type: Path.t * Longident.t list * type_expr list;
-  mutable implicit_constraints: (type_expr * type_expr) list;
-  implicit_argument: argument;
-}
-
-let pending_implicits
-  : pending_implicit list ref
-  = ref []
-
-let instantiate_implicits loc env ty =
-  let rec has_implicit ty = match ty.desc with
-    | Tarrow (Tarr_implicit id,_,_,_) -> true
-    | Tarrow (_,_,rhs,_) -> has_implicit rhs
-    | _ -> false
-  in
-  if not (has_implicit ty) then Ident.empty, ty
-  else
-    let fresh_implicit id ty =
-      let ty = repr ty in
-      match ty.desc with
-      | Tpackage (p,nl,tl) -> {
-          implicit_id = id;
-          implicit_env = env;
-          implicit_loc = loc;
-          implicit_type = (p,nl,tl);
-          implicit_constraints = [];
-          implicit_argument = make_argument (Tapp_implicit, None);
-        }
-      | _ -> assert false
-    in
-    let rec extract_implicits ty =
-      let ty = repr ty in
-      match ty.desc with
-      | Tarrow (Tarr_implicit id, lhs, rhs, comm) ->
-          let id' = Ident.rename id in
-          let instances, subst, rhs' = extract_implicits rhs in
-          Ident.add id' (fresh_implicit id' lhs) instances,
-          Subst.add_implicit id (Path.Pident id') subst,
-          {ty with desc = Tarrow (Tarr_implicit id', lhs, rhs', comm)}
-      | Tarrow (arr, lhs, rhs, comm) ->
-          let instances, subst, rhs' = extract_implicits rhs in
-          instances, subst,
-          {ty with desc = Tarrow (arr, lhs, rhs', comm)}
-      | _ -> Ident.empty, Subst.identity, ty
-    in
-    let instances, subst, ty = extract_implicits ty in
-    let ty = Subst.type_expr subst ty in
-    (* Set of constraints : maintain a table mapping implicit binding
-       identifier to a list of type variable pairs.
-       An implicit instance is correct only iff, in an environment where the
-       ident is bound to the instance, all pairs in the list unify.
-    *)
-    let add_constraint inst ty ty' =
-      inst.implicit_constraints <- (ty,ty') :: inst.implicit_constraints
-    in
-    let rec unlink_constructors ty =
-      (* First recurse in sub expressions *)
-      iter_type_expr unlink_constructors ty;
-      (* Then replace current type if it is a constructor referring to an
-         implicit *)
-      match ty.desc with
-      | Tconstr (path,_,_) ->
-          begin try
-            let inst = Ident.find_same (Path.head path) instances in
-            (* Fresh variable *)
-            let ty' = newvar() in
-            (* Swap the content of ty and ty' … *)
-            let {desc = desc; level = lv; id = id} = ty in
-            let {desc = desc'; level = lv'; id = id'} = ty' in
-            ty.desc   <- desc';
-            ty.level  <- lv';
-            ty.id     <- id';
-            ty'.desc  <- desc;
-            ty'.level <- lv;
-            ty'.id    <- id;
-            add_constraint inst ty ty'
-          with Not_found -> ()
-          end
-      | _ -> ()
-    in
-    unlink_constructors ty;
-    instances, ty
-
-let link_implicit inst expr =
-  (* An implicit instance always have to be a path to a module in scope *)
-  let rec mod_path me = match me.mod_desc with
-    | Tmod_ident (path,_) -> path
-    | Tmod_constraint (me,_,_,_) ->
-        mod_path me
-    | _ -> assert false
-  in
-  let path = match expr.exp_desc with
-    | Texp_pack me -> mod_path me
-    | _ -> assert false
-  in
-  (* FIXME Check subtype relation between expr and instance *)
-  (* FIXME Check that all constraints are satisfied *)
-  let subst = Subst.add_module inst.implicit_id path Subst.identity in
-  List.iter (fun (ty,ty') ->
-      let ty = Subst.type_expr subst ty in
-      let ty' = Subst.type_expr subst ty' in
-      unify_exp_types inst.implicit_loc inst.implicit_env ty ty'
-    )
-    inst.implicit_constraints;
-  (* FIXME Update argument in Typedtree *)
-  inst.implicit_argument.arg_expression <- Some expr
-
-
 (* Typing of expressions *)
 
 let unify_exp env exp expected_ty =
@@ -2084,10 +1957,11 @@ and type_expect_ ?in_function env sexp ty_expected =
                  begin match expo with
                  | None ->
                      (* Add implicit to pending list *)
+                     prerr_endline "added one";
                      pending_implicits := inst :: !pending_implicits
                  | Some exp ->
                      (* Link implicit with actual instance *)
-                     link_implicit inst exp
+                     link_implicit_to_expr inst exp
                  end;
                  argument
              | _ -> make_argument (tapp_of_tarr arr, expo))
