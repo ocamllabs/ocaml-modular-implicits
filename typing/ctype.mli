@@ -275,3 +275,5 @@ val wrap_trace_gadt_instances: Env.t -> ('a -> 'b) -> 'a -> 'b
 val package_subtype :
     (Env.t -> Path.t -> Longident.t list -> type_expr list ->
       Path.t -> Longident.t list -> type_expr list -> bool) ref
+
+val generalize_implicits : (unit -> unit) ref
