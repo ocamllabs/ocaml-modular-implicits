@@ -1789,7 +1789,7 @@ and type_expect_ ?in_function env sexp ty_expected =
           let name = Path.name ~paren:Oprint.parenthesized_ident path in
           Stypes.record (Stypes.An_ident (loc, name, annot))
         end;
-        rue {
+        let expr = {
           exp_desc =
             begin match desc.val_kind with
               Val_ivar (_, cl_num) ->
@@ -1798,8 +1798,8 @@ and type_expect_ ?in_function env sexp ty_expected =
                 in
                 Texp_instvar(self_path, path,
                              match lid.txt with
-                                 Longident.Lident txt -> { txt; loc = lid.loc }
-                               | _ -> assert false)
+                               Longident.Lident txt -> { txt; loc = lid.loc }
+                             | _ -> assert false)
             | Val_self (_, _, cl_num, _) ->
                 let (path, _) =
                   Env.lookup_value (Longident.Lident ("self-" ^ cl_num)) env
@@ -1813,11 +1813,20 @@ and type_expect_ ?in_function env sexp ty_expected =
                 Texp_ident(path, lid, desc)*)
             | _ ->
                 Texp_ident(path, lid, desc)
-          end;
+            end;
           exp_loc = loc; exp_extra = [];
           exp_type = instance env desc.val_type;
           exp_attributes = sexp.pexp_attributes;
-          exp_env = env }
+          exp_env = env;
+        } in
+        let implicits, expr = instantiate_implicits_expr env expr in
+        let implicits =
+          Ident.fold_all (fun _ inst acc ->
+              prerr_endline "add pending implicit";
+              inst :: acc) implicits []
+        in
+        pending_implicits := implicits @ !pending_implicits;
+        rue expr
       end
   | Pexp_constant(Const_string (str, _) as cst) -> (
     (* Terrible hack for format strings *)
@@ -1938,33 +1947,10 @@ and type_expect_ ?in_function env sexp ty_expected =
       end_def ();
       wrap_trace_gadt_instances env (lower_args []) ty;
       begin_def ();
-      let implicits, funct_ty = instantiate_implicits loc env funct.exp_type in
-      let funct = {funct with exp_type = funct_ty} in
-      let (args, ty_res) = type_application env funct sargs in
+      let pending = extract_pending_implicits funct in
+      let (args, ty_res) = type_application env funct pending sargs in
       let args = List.map
-          (fun (arr,expo) ->
-             match arr with
-             | Tarr_implicit id' ->
-                 let inst =
-                   try Ident.find_same id' implicits
-                   with Not_found ->
-                     (* All implicits in the current function should be
-                        fresh, and as such bound in "implicits" table *)
-                     assert false
-                 in
-                 let argument = inst.implicit_argument  in
-                 argument.arg_expression <- expo;
-                 begin match expo with
-                 | None ->
-                     (* Add implicit to pending list *)
-                     prerr_endline "added one";
-                     pending_implicits := inst :: !pending_implicits
-                 | Some exp ->
-                     (* Link implicit with actual instance *)
-                     link_implicit_to_expr inst exp
-                 end;
-                 argument
-             | _ -> make_argument (tapp_of_tarr arr, expo))
+          (fun (arr,expo) -> make_argument (tapp_of_tarr arr, expo))
           args
       in
       end_def ();
@@ -3238,7 +3224,9 @@ and type_argument env sarg ty_expected' ty_expected =
       unify_exp env texp ty_expected;
       texp
 
-and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expression) list) =
+and type_application env funct
+    (pending : pending_implicit list)
+    (sargs : (Parsetree.apply_flag * Parsetree.expression) list) =
   (* funct.exp_type may be generic *)
   let sargs = List.map (fun (app,e) -> tapp_of_papp app, e) sargs in
   let has_label l ty_fun =
@@ -3421,8 +3409,6 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
         let omitted = match arr, arg with
           (* Applied arguments don't affect omitted list *)
           | _, Some _ -> omitted
-          (* Undefined implicit arguments will be instantiated later *)
-          | Tarr_implicit _, None -> omitted
           (* Other undefined arguments are remembered as omitted *)
           | _, None -> (arr,ty,lv) :: omitted
         in
@@ -3437,6 +3423,19 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
         | _ ->
             type_unknown_args typed omitted ty_fun0
               (sargs @ more_sargs)
+  in
+  let rec type_implicits args' args pending =
+    match pending, args with
+    | [], _
+    | _, [] -> List.rev_append args' args, pending
+    | (inst :: pending), ((Tapp_implicit,arg) :: args) ->
+        prerr_endline "applying implicits";
+        let p, nl, tl = inst.implicit_type in
+        let package_ty = newgenty (Tpackage (p,nl,tl)) in
+        link_implicit_to_expr inst (type_expect env arg package_ty);
+        type_implicits args' args pending
+    | _, (arg :: args) ->
+        type_implicits (arg :: args') args pending
   in
   match funct.exp_desc, sargs with
     (* Special case for ignore: avoid discarding warning *)
@@ -3454,6 +3453,7 @@ and type_application env funct (sargs : (Parsetree.apply_flag * Parsetree.expres
       ([Tarr_simple, Some exp], ty_res)
   | _ ->
       let ty = funct.exp_type in
+      let sargs, pending = type_implicits [] sargs pending in
       if ignore_labels then
         type_args [] [] ty (instance env ty) ty [] sargs
       else

@@ -39,13 +39,13 @@ let pending_implicits
   : pending_implicit list ref
   = ref []
 
-let instantiate_implicits loc env ty =
+let instantiate_implicits_ty loc env ty =
   let rec has_implicit ty = match ty.desc with
     | Tarrow (Tarr_implicit id,_,_,_) -> true
     | Tarrow (_,_,rhs,_) -> has_implicit rhs
     | _ -> false
   in
-  if not (has_implicit ty) then Ident.empty, ty
+  if not (has_implicit ty) then [], Ident.empty, ty
   else
     let fresh_implicit id ty =
       let ty = repr ty in
@@ -67,18 +67,23 @@ let instantiate_implicits loc env ty =
       let ty = repr ty in
       match ty.desc with
       | Tarrow (Tarr_implicit id, lhs, rhs, comm) ->
+          prerr_endline "found one";
           let id' = Ident.rename id in
-          let instances, subst, rhs' = extract_implicits rhs in
-          Ident.add id' (fresh_implicit id' lhs) instances,
+          let inst = fresh_implicit id' lhs in
+          let arguments, instances, subst, rhs' = extract_implicits rhs in
+          inst.implicit_argument :: arguments,
+          Ident.add id' inst instances,
           Subst.add_implicit id (Path.Pident id') subst,
-          {ty with desc = Tarrow (Tarr_implicit id', lhs, rhs', comm)}
+          rhs'
+          (*{ty with desc = Tarrow (Tarr_implicit id', lhs, rhs', comm)}*)
       | Tarrow (arr, lhs, rhs, comm) ->
-          let instances, subst, rhs' = extract_implicits rhs in
+          let arguments, instances, subst, rhs' = extract_implicits rhs in
+          {arg_flag = (tapp_of_tarr arr); arg_expression = None} :: arguments,
           instances, subst,
           {ty with desc = Tarrow (arr, lhs, rhs', comm)}
-      | _ -> Ident.empty, Subst.identity, ty
+      | _ -> [], Ident.empty, Subst.identity, ty
     in
-    let instances, subst, ty = extract_implicits ty in
+    let arguments, instances, subst, ty = extract_implicits ty in
     let ty = Subst.type_expr subst ty in
     (* Set of constraints : maintain a table mapping implicit binding
        identifier to a list of type variable pairs.
@@ -121,7 +126,26 @@ let instantiate_implicits loc env ty =
       | _ -> ()
     in
     unlink_constructors ty;
-    instances, ty
+    arguments, instances, ty
+
+let instantiate_implicits_expr env expr =
+  prerr_endline "instantiate_implicits_expr";
+  match
+    instantiate_implicits_ty expr.exp_loc env expr.exp_type
+  with
+  | [], implicits, _ ->
+      prerr_endline "none";
+      implicits,expr
+  | arguments, implicits, ty ->
+      implicits,
+      { exp_desc = Texp_apply (expr, arguments);
+        exp_type = ty;
+        exp_loc = expr.exp_loc;
+        exp_extra = [];
+        exp_env = env;
+        exp_attributes = []
+      }
+
 
 (* Pack module at given path to match a given implicit instance and
    update the instance to point to this module.
@@ -191,21 +215,42 @@ let find_instance inst =
   List.exists module_match modules
 
 let generalize_implicits () =
-  prerr_endline "generalize_implicits";
+  Printf.eprintf "generalize_implicits %d\n%!" (List.length !pending_implicits);
+
   let current_level = get_current_level () in
+  let _not_linked = function
+    | {implicit_argument = {arg_expression = Some _}} -> false
+    | _ -> true
+  in
+  let pending = (*List.filter not_linked*) !pending_implicits in
   let need_generalization inst =
-    prerr_endline "found one";
     List.exists
-      (fun (ty,ty') ->
-         (*assert (ty.level <> generic_level);
-         assert (ty'.level <> generic_level);*)
-         ty.level > current_level || ty'.level > current_level || true)
+      (fun (ty,var) ->
+         assert (var.level <> generic_level);
+         var.level >= current_level)
       inst.implicit_constraints
+    || inst.implicit_constraints = []
   in
   let to_generalize, rest =
-    List.partition need_generalization !pending_implicits
+    List.partition need_generalization pending
   in
   pending_implicits := rest;
   assert (List.for_all find_instance to_generalize)
 
 let () = Ctype.generalize_implicits := generalize_implicits
+
+(* Extraction of pending implicit arguments *)
+let extract_pending_implicits expr =
+  let rec traverse acc = function
+    | {exp_desc = Texp_apply (exp,args); _} ->
+        let is_pending = function
+          | {arg_flag = Tapp_implicit; arg_expression = None} -> true
+          | _ -> false
+        in
+        traverse (List.filter is_pending args @ acc) exp
+    | _ -> acc
+  in
+  List.map (fun argument ->
+      List.find (fun inst -> inst.implicit_argument == argument)
+        !pending_implicits)
+    (traverse [] expr)
