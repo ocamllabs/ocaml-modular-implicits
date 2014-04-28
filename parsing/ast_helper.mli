@@ -277,6 +277,7 @@ module Opn:
 module Incl:
   sig
     val mk: ?loc: loc -> ?attrs:attrs -> 'a -> 'a include_infos
+  end
 
 (** Implicit *)
 module Im:

@@ -126,22 +126,6 @@ let is_simple_construct :construct -> bool = function
 
 let pp = fprintf
 
-<<<<<<< HEAD
-=======
-let rec is_irrefut_patt x =
-  match x.ppat_desc with
-  | Ppat_any | Ppat_var _ | Ppat_unpack _ -> true
-  | Ppat_alias (p,_) -> is_irrefut_patt p
-  | Ppat_tuple (ps) -> List.for_all is_irrefut_patt ps
-  | Ppat_constraint (p,_) -> is_irrefut_patt p
-  | Ppat_or (l,r) -> is_irrefut_patt l || is_irrefut_patt r
-  | Ppat_record (ls,_) -> List.for_all (fun (_,x) -> is_irrefut_patt x) ls
-  | Ppat_lazy p -> is_irrefut_patt p
-  | Ppat_extension _ -> assert false
-  | Ppat_interval _
-  | Ppat_constant _ | Ppat_construct _  | Ppat_variant _ | Ppat_array _
-  | Ppat_type _-> false (*conservative*)
->>>>>>> Introduce "implicit" keyword and constructions in parser
 class printer  ()= object(self:'self)
   val pipe = false
   val semi = false
@@ -1007,9 +991,14 @@ class printer  ()= object(self:'self)
     | Psig_module pmd ->
         pp f "@[<hov>module@ %s@ :@ %a@]%a"
           pmd.pmd_name.txt
-<<<<<<< HEAD
           self#module_type pmd.pmd_type
           self#item_attributes pmd.pmd_attributes
+    | Psig_implicit pid ->
+        pp f "@[<hov>implicit %s@ %s@ :@ %a@]%a"
+          (if pid.pim_arity = 0 then "module" else "functor")
+          pid.pim_module.pmd_name.txt
+          (self#implicit_declaration pid.pim_arity) pid.pim_module.pmd_type
+          self#item_attributes pid.pim_module.pmd_attributes
     | Psig_open od ->
         pp f "@[<hov2>open%s@ %a@]%a"
            (override od.popen_override)
@@ -1021,21 +1010,6 @@ class printer  ()= object(self:'self)
           self#item_attributes incl.pincl_attributes
     | Psig_modtype {pmtd_name=s; pmtd_type=md; pmtd_attributes=attrs} ->
         pp f "@[<hov2>module@ type@ %s%a@]%a"
-=======
-          self#module_type  pmd.pmd_type
-    | Psig_implicit pid ->
-        pp f "@[<hov>implicit %s@ %s@ :@ %a@]"
-          (if pid.pim_arity = 0 then "module" else "functor")
-          pid.pim_module.pmd_name.txt
-          (self#implicit_declaration pid.pim_arity) pid.pim_module.pmd_type
-    | Psig_open (ovf, li, _attrs) ->
-        pp f "@[<hov2>open%s@ %a@]" (override ovf) self#longident_loc li
-    | Psig_include (mt, _attrs) ->
-        pp f "@[<hov2>include@ %a@]"
-          self#module_type  mt
-    | Psig_modtype {pmtd_name=s; pmtd_type=md} ->
-        pp f "@[<hov2>module@ type@ %s%a@]"
->>>>>>> Introduce "implicit" keyword and constructions in parser
           s.txt
           (fun f md -> match md with
           | None -> ()
