@@ -276,4 +276,7 @@ val package_subtype :
     (Env.t -> Path.t -> Longident.t list -> type_expr list ->
       Path.t -> Longident.t list -> type_expr list -> bool) ref
 
+val modtype_of_package : (Env.t -> Location.t -> Path.t -> Longident.t list ->
+                          type_expr list -> module_type) ref
+
 val generalize_implicits : (unit -> unit) ref

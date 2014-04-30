@@ -418,6 +418,17 @@ let rec transl_type env policy styp =
       end
     in
     ctyp (Ttyp_var name) ty
+  | Ptyp_arrow(Parr_implicit s, st1, st2) ->
+    let cty1 = transl_type env policy st1 in
+    let package = match cty1.ctyp_desc with
+      | Ttyp_package pkg -> pkg
+      | _ -> assert false
+    in
+    let id, env = Env.enter_module s package.pack_type env in
+    let cty2 = transl_type env policy st2 in
+    let arr = Tarr_implicit id in
+    let ty = newty (Tarrow(arr, cty1.ctyp_type, cty2.ctyp_type, Cok)) in
+    ctyp (Ttyp_arrow (arr, cty1, cty2)) ty
   | Ptyp_arrow(arr, st1, st2) ->
     let cty1 = transl_type env policy st1 in
     let cty2 = transl_type env policy st2 in

@@ -1484,8 +1484,10 @@ let rec approx_type env sty =
   | Ptyp_arrow (Parr_optional s, _, sty) ->
       let ty1 = type_option (newvar ()) in
       newty (Tarrow (Tarr_optional s, ty1, approx_type env sty, Cok))
+  | Ptyp_arrow (Parr_implicit s, _, sty) ->
+      let id, env = Env.enter_module s (Mty_signature []) env in
+      newty (Tarrow (Tarr_implicit id, newvar (), approx_type env sty, Cok))
   | Ptyp_arrow (p, _, sty) ->
-      (* def: TODO*)
       newty (Tarrow (tarr_of_parr p, newvar (), approx_type env sty, Cok))
   | Ptyp_tuple args ->
       newty (Ttuple (List.map (approx_type env) args))
@@ -1505,8 +1507,13 @@ let rec type_approx env sexp =
   match sexp.pexp_desc with
     Pexp_let (_, _, e) -> type_approx env e
   | Pexp_fun (Parr_optional s, _, _, e) ->
-       newty (Tarrow(Tarr_optional s, type_option (newvar ()), type_approx env e, Cok))
-  | Pexp_fun (p,_,_, e) ->
+      newty (Tarrow(Tarr_optional s, type_option (newvar ()),
+                    type_approx env e, Cok))
+  | Pexp_fun (Parr_implicit s, _, _, e) ->
+      let id, env = Env.enter_module s (Mty_signature []) env in
+      newty (Tarrow(Tarr_implicit id, newvar (),
+                    type_approx env e, Cok))
+  | Pexp_fun (p, _, _, e) ->
        newty (Tarrow(tarr_of_parr p, newvar (), type_approx env e, Cok))
   | Pexp_function ({pc_rhs=e}::_) ->
        newty (Tarrow(Tarr_simple, newvar (), type_approx env e, Cok))

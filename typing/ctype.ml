@@ -2029,6 +2029,14 @@ let arrows_are_compatible l1 l2 =
 let classic_arrows_are_compatible l1 l2 =
   l1 = l2 || !Clflags.classic && arrows_are_compatible l1 l2
 
+let modtype_of_package = ref (fun _ _ _ _ _ -> assert false)
+
+let modtype_of_tpackage env ty =
+  match (repr ty).desc with
+  | Tpackage (p1,nl1,tl1) ->
+      !modtype_of_package env Location.none p1 nl1 tl1
+  | _ -> assert false
+
 (* mcomp type_pairs subst env t1 t2 does not raise an
    exception if it is possible that t1 and t2 are actually
    equal, assuming the types in type_pairs are equal and
@@ -2059,6 +2067,13 @@ let rec mcomp type_pairs env t1 t2 =
         TypePairs.add type_pairs (t1', t2') ();
         match (t1'.desc, t2'.desc) with
           (Tvar _, Tvar _) -> assert false
+        | (Tarrow (Tarr_implicit id1, t1, u1, c1),
+           Tarrow (Tarr_implicit id2, t2, u2, c2)) ->
+            mcomp type_pairs env t1 t2;
+            let mty = modtype_of_tpackage env t1 in
+            let env = Env.add_module id1 mty env in
+            let env = Env.add_module id2 mty env in
+            mcomp type_pairs env u1 u2;
         | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
           when arrows_are_compatible l1 l2 ->
             mcomp type_pairs env t1 t2;
@@ -2447,7 +2462,21 @@ and unify3 env t1 t1' t2 t2' =
     end;
     try
       begin match (d1, d2) with
-        (Tarrow (l1, t1, u1, c1), Tarrow (l2, t2, u2, c2))
+        (Tarrow (Tarr_implicit id1, t1, u1, c1),
+         Tarrow (Tarr_implicit id2, t2, u2, c2)) ->
+          unify env t1 t2;
+          let env' = !env in
+          let mty = modtype_of_tpackage env' t1 in
+          let env' = Env.add_module id1 mty env' in
+          let env' = Env.add_module id2 mty env' in
+          env := env';
+          unify env u1 u2;
+          begin match commu_repr c1, commu_repr c2 with
+            Clink r, c2 -> set_commu r c2
+          | c1, Clink r -> set_commu r c1
+          | _ -> ()
+          end
+      | (Tarrow (l1, t1, u1, c1), Tarrow (l2, t2, u2, c2))
         when classic_arrows_are_compatible l1 l2 ->
           unify  env t1 t2; unify env  u1 u2;
           begin match commu_repr c1, commu_repr c2 with
@@ -2971,6 +3000,13 @@ let rec moregen inst_nongen type_pairs env t1 t2 =
             (Tvar _, _) when may_instantiate inst_nongen t1' ->
               moregen_occur env t1'.level t2;
               link_type t1' t2
+          | (Tarrow (Tarr_implicit id1, t1, u1, c1),
+             Tarrow (Tarr_implicit id2, t2, u2, c2)) ->
+              moregen inst_nongen type_pairs env t1 t2;
+              let mty = modtype_of_tpackage env t1 in
+              let env = Env.add_module id1 mty env in
+              let env = Env.add_module id2 mty env in
+              moregen inst_nongen type_pairs env u1 u2
           | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
             when classic_arrows_are_compatible l1 l2 ->
               moregen inst_nongen type_pairs env t1 t2;
@@ -3242,6 +3278,13 @@ let rec eqtype rename type_pairs subst env t1 t2 =
                 then raise (Unify []);
                 subst := (t1', t2') :: !subst
               end
+          | (Tarrow (Tarr_implicit id1, t1, u1, c1),
+             Tarrow (Tarr_implicit id2, t2, u2, c2)) ->
+              eqtype rename type_pairs subst env t1 t2;
+              let mty = modtype_of_tpackage env t1 in
+              let env = Env.add_module id1 mty env in
+              let env = Env.add_module id2 mty env in
+              eqtype rename type_pairs subst env u1 u2;
           | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
             when classic_arrows_are_compatible l1 l2 ->
               eqtype rename type_pairs subst env t1 t2;
@@ -3936,6 +3979,13 @@ let rec subtype_rec env trace t1 t2 cstrs =
     match (t1.desc, t2.desc) with
       (Tvar _, _) | (_, Tvar _) ->
         (trace, t1, t2, !univar_pairs)::cstrs
+    | (Tarrow (Tarr_implicit id1, t1, u1, c1),
+       Tarrow (Tarr_implicit id2, t2, u2, c2)) ->
+        let cstrs = subtype_rec env ((t2, t1)::trace) t2 t1 cstrs in
+        let mty = modtype_of_tpackage env t1 in
+        let env = Env.add_module id1 mty env in
+        let env = Env.add_module id2 mty env in
+        subtype_rec env ((u1, u2)::trace) u1 u2 cstrs
     | (Tarrow(l1, t1, u1, _), Tarrow(l2, t2, u2, _))
       when classic_arrows_are_compatible l1 l2 ->
         let cstrs = subtype_rec env ((t2, t1)::trace) t2 t1 cstrs in
