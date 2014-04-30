@@ -67,7 +67,7 @@ let instantiate_implicits_ty loc env ty =
       let ty = repr ty in
       match ty.desc with
       | Tarrow (Tarr_implicit id, lhs, rhs, comm) ->
-          prerr_endline "found one";
+          (*prerr_endline "found one";*)
           let id' = Ident.rename id in
           let inst = fresh_implicit id' lhs in
           let arguments, instances, subst, rhs' = extract_implicits rhs in
@@ -129,12 +129,12 @@ let instantiate_implicits_ty loc env ty =
     arguments, instances, ty
 
 let instantiate_implicits_expr env expr =
-  prerr_endline "instantiate_implicits_expr";
+  (*prerr_endline "instantiate_implicits_expr";*)
   match
     instantiate_implicits_ty expr.exp_loc env expr.exp_type
   with
   | [], implicits, _ ->
-      prerr_endline "none";
+      (*prerr_endline "none";*)
       implicits,expr
   | arguments, implicits, ty ->
       implicits,
@@ -205,7 +205,7 @@ let find_instance inst =
   let modules = Env.implicit_instances inst.implicit_env in
   let module_match (path,_) =
     try
-      prerr_endline ("try " ^ Path.last path);
+      (*prerr_endline ("try " ^ Path.last path);*)
       link_implicit_to_path inst path;
       true
     with _ ->
@@ -215,7 +215,7 @@ let find_instance inst =
   List.exists module_match modules
 
 let generalize_implicits () =
-  Printf.eprintf "generalize_implicits %d\n%!" (List.length !pending_implicits);
+  (*Printf.eprintf "generalize_implicits %d\n%!" (List.length !pending_implicits);*)
 
   let current_level = get_current_level () in
   let _not_linked = function
