@@ -2053,6 +2053,8 @@ core_type2:
       { mktyp(Ptyp_arrow(Parr_optional $1 , mkoption $2, $4)) }
   | LIDENT COLON core_type2 MINUSGREATER core_type2
       { mktyp(Ptyp_arrow(Parr_labelled $1, $3, $5)) }
+  | LPAREN IMPLICIT UIDENT COLON implicit_module_type RPAREN MINUSGREATER core_type2
+      { mktyp(Ptyp_arrow(Parr_implicit $3, $5, $8)) }
   | core_type2 MINUSGREATER core_type2
       { mktyp(Ptyp_arrow(Parr_simple, $1, $3)) }
 ;
