@@ -161,8 +161,8 @@ let pack_implicit inst path =
         implicit_loc  = loc } = inst in
   let md = Env.find_module path env in
   let md = {md with md_type = (Mty_alias path)} in
-  let _, env' = Env.enter_module_declaration "Pkg" md env in
-  let pmd = Ast_helper.(Mod.ident (Convenience.lid "Pkg")) in
+  let _, env' = Env.enter_module_declaration "%P" md env in
+  let pmd = Ast_helper.(Mod.ident (Convenience.lid "%P")) in
   let (modl, tl') = !type_package env' pmd p nl tl in
   {
     exp_desc = Texp_pack modl;
