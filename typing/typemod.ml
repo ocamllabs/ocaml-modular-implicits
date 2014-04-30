@@ -1116,6 +1116,7 @@ let package_subtype env p1 nl1 tl1 p2 nl2 tl2 =
   with Includemod.Error msg -> false
     (* raise(Error(Location.none, env, Not_included msg)) *)
 
+let () = Ctype.modtype_of_package := modtype_of_package
 let () = Ctype.package_subtype := package_subtype
 
 let wrap_constraint env arg mty explicit =
