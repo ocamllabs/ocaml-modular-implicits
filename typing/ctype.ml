@@ -17,8 +17,6 @@ open Asttypes
 open Types
 open Btype
 
-let generalize_implicits = ref (fun () -> assert false)
-
 (*
    Type manipulation after type inference
    ======================================
@@ -668,7 +666,6 @@ let iter_generalize tyl ty =
   iter_generalize tyl ty
 
 let generalize ty =
-  !generalize_implicits ();
   iter_generalize (ref []) ty
 
 (* Efficient repeated generalisation of the same type *)
