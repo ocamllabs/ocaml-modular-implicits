@@ -113,6 +113,7 @@ type error =
   | Invalid_for_loop_index
   | No_value_clauses
   | Exception_pattern_below_toplevel
+  | Pending_implicit of Typeimplicit.pending_implicit
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error

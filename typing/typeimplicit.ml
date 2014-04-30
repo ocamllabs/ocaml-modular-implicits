@@ -38,6 +38,8 @@ type pending_implicit = {
   implicit_argument: argument;
 }
 
+exception Uninstantiable_implicit of pending_implicit
+
 let pending_implicits
   : pending_implicit list ref
   = ref []
@@ -238,7 +240,11 @@ let generalize_implicits () =
     List.partition need_generalization pending
   in
   pending_implicits := rest;
-  assert (List.for_all find_instance to_generalize)
+  try
+    let not_instantiable inst = not (find_instance inst) in
+    let inst = List.find not_instantiable to_generalize in
+    raise (Uninstantiable_implicit inst)
+  with Not_found -> ()
 
 (* Extraction of pending implicit arguments *)
 let extract_pending_implicits expr =

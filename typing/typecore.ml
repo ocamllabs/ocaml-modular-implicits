@@ -69,6 +69,7 @@ type error =
   | Invalid_for_loop_index
   | No_value_clauses
   | Exception_pattern_below_toplevel
+  | Pending_implicit of pending_implicit
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -117,6 +118,11 @@ let case lhs rhs =
 
 let make_argument (f,e) =
   {arg_flag = f; arg_expression = e}
+
+let generalize_implicits () =
+  try generalize_implicits ()
+  with Uninstantiable_implicit inst ->
+    raise (Error (inst.implicit_loc, inst.implicit_env, Pending_implicit inst))
 
 (* Upper approximation of free identifiers on the parse tree *)
 
@@ -4174,6 +4180,9 @@ let report_error env ppf = function
   | Exception_pattern_below_toplevel ->
       fprintf ppf
         "@[Exception patterns must be at the top level of a match case.@]"
+  | Pending_implicit inst ->
+      fprintf ppf "Cannot find instance for implicit %s."
+        (Ident.name inst.implicit_id)
 
 let report_error env ppf err =
   wrap_printing_env env (fun () -> report_error env ppf err)
