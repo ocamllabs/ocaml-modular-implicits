@@ -3890,6 +3890,7 @@ and type_let ?(check = fun s -> Warnings.Unused_var s)
       ignore(check_partial env pat.pat_type pat.pat_loc [case pat exp]))
     pat_list exp_list;
   end_def();
+  generalize_implicits ();
   List.iter2
     (fun pat exp ->
        if not (is_nonexpansive exp) then
@@ -3933,6 +3934,7 @@ let type_expression env sexp =
   begin_def();
   let exp = type_exp env sexp in
   end_def();
+  generalize_implicits ();
   if is_nonexpansive exp then generalize exp.exp_type
   else generalize_expansive env exp.exp_type;
   match sexp.pexp_desc with

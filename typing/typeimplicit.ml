@@ -237,8 +237,6 @@ let generalize_implicits () =
   pending_implicits := rest;
   assert (List.for_all find_instance to_generalize)
 
-let () = Ctype.generalize_implicits := generalize_implicits
-
 (* Extraction of pending implicit arguments *)
 let extract_pending_implicits expr =
   let rec traverse acc = function
