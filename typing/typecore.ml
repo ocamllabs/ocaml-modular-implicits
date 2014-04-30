@@ -1825,7 +1825,7 @@ and type_expect_ ?in_function env sexp ty_expected =
         let implicits, expr = instantiate_implicits_expr env expr in
         let implicits =
           Ident.fold_all (fun _ inst acc ->
-              prerr_endline "add pending implicit";
+              (*prerr_endline "add pending implicit";*)
               inst :: acc) implicits []
         in
         pending_implicits := implicits @ !pending_implicits;
