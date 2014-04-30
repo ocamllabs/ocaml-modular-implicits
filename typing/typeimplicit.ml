@@ -31,7 +31,10 @@ type pending_implicit = {
   implicit_env: Env.t;
   implicit_loc: Location.t;
   implicit_type: Path.t * Longident.t list * type_expr list;
-  mutable implicit_constraints: (type_expr * type_expr) list;
+  mutable implicit_constraints: (Path.t * type_expr) list;
+  (* When linking with an implicit module M, a constraint (path, ty) is
+     satisfied iff path unify with ty when implicit_id is bound to M in
+     implicit_env *)
   implicit_argument: argument;
 }
 
@@ -91,14 +94,14 @@ let instantiate_implicits_ty loc env ty =
        ident is bound to the instance, all pairs in the list unify.
     *)
     let linked = Hashtbl.create 7 in
-    let add_constraint inst ~constr ~ty ~var =
+    let add_constraint inst ~path ~var =
       begin try
-        let var' = Hashtbl.find linked constr in
+        let var' = Hashtbl.find linked path in
         link_type var var'
       with Not_found ->
-        Hashtbl.add linked constr var
+        Hashtbl.add linked path var
       end;
-      inst.implicit_constraints <- (ty,var) :: inst.implicit_constraints
+      inst.implicit_constraints <- (path,var) :: inst.implicit_constraints
     in
     let rec unlink_constructors ty =
       (* First recurse in sub expressions *)
@@ -106,23 +109,22 @@ let instantiate_implicits_ty loc env ty =
       (* Then replace current type if it is a constructor referring to an
          implicit *)
       match ty.desc with
-      | Tconstr (path,_,_) as constr ->
+      | Tconstr (path,[],_) ->
           begin try
             let inst = Ident.find_same (Path.head path) instances in
-            (* Fresh variable *)
-            let ty' = newvar() in
-            (* Swap the content of ty and ty' … *)
-            let {desc = desc; level = lv; id = id} = ty in
-            let {desc = desc'; level = lv'; id = id'} = ty' in
+            (* Replace `ty' by a fresh variable *)
+            let {desc = desc'; level = lv'; id = id'} = newvar() in
             ty.desc   <- desc';
             ty.level  <- lv';
             ty.id     <- id';
-            ty'.desc  <- desc;
-            ty'.level <- lv;
-            ty'.id    <- id;
-            add_constraint inst ~constr ~ty:ty' ~var:ty
+            add_constraint inst ~path ~var:ty
           with Not_found -> ()
           end
+      (* No HKT *)
+      | Tconstr (path,_,_)
+        when (try ignore (Ident.find_same (Path.head path) instances); true
+              with Not_found -> false) ->
+          assert false
       | _ -> ()
     in
     unlink_constructors ty;
@@ -174,8 +176,9 @@ let pack_implicit inst path =
 let link_implicit_to_path inst path =
   (* Check that all constraints are satisfied *)
   let subst = Subst.add_module inst.implicit_id path Subst.identity in
-  List.iter (fun (ty,ty') ->
-      let ty = Subst.type_expr subst ty in
+  List.iter (fun (tpath,ty') ->
+      let tpath = Subst.type_path subst tpath in
+      let ty = newconstr tpath [] in
       let ty' = Subst.type_expr subst ty' in
       unify inst.implicit_env ty ty'
     )
