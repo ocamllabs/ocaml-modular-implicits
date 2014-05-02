@@ -5,8 +5,8 @@ open Typedtree
 
 (* Forward declaration, to be filled in by Typemod.type_package *)
 
-let type_package
-  : (Env.t -> Parsetree.module_expr -> Path.t -> Longident.t list ->
+let type_implicit_instance
+  : (Env.t -> Typedtree.module_expr -> Path.t -> Longident.t list ->
      type_expr list -> Typedtree.module_expr * type_expr list) ref
   = ref (fun _ -> assert false)
 
@@ -160,10 +160,15 @@ let pack_implicit inst path =
         implicit_env  = env;
         implicit_loc  = loc } = inst in
   let md = Env.find_module path env in
-  let md = {md with md_type = (Mty_alias path)} in
-  let _, env' = Env.enter_module_declaration "%P" md env in
-  let pmd = Ast_helper.(Mod.ident (Convenience.lid "%P")) in
-  let (modl, tl') = !type_package env' pmd p nl tl in
+  let lident = Location.mkloc (Path.to_longident path) loc in
+  let modl = {
+    mod_desc = Tmod_ident (path, lident);
+    mod_loc = loc;
+    mod_type = md.md_type;
+    mod_env = env;
+    mod_attributes = [];
+  } in
+  let (modl, tl') = !type_implicit_instance env modl p nl tl in
   {
     exp_desc = Texp_pack modl;
     exp_loc = loc; exp_extra = [];
