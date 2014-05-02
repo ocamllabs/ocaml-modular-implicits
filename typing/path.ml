@@ -52,3 +52,8 @@ let rec last = function
   | Pident id -> Ident.name id
   | Pdot(_, s, _) -> s
   | Papply(_, p) -> last p
+
+let rec to_longident = function
+  | Pident id -> Longident.Lident (Ident.name id)
+  | Pdot(p, s, _) -> Longident.Ldot (to_longident p, s)
+  | Papply (p1, p2) -> Longident.Lapply (to_longident p1, to_longident p2)

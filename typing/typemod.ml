@@ -1653,16 +1653,11 @@ let type_package env m p nl tl =
     nl tl';
   (wrap_constraint env modl mty Tmodtype_implicit, tl')
 
-let type_implicit_instance env m p nl tl =
-  (* Same as Pexp_letmodule *)
-  (* remember original level *)
+let type_implicit_instance env modl p nl tl =
+  (* Same as type_package *)
   let lv = Ctype.get_current_level () in
   Ctype.begin_def ();
   Ident.set_current_time lv;
-  let context = Typetexp.narrow () in
-  let modl = type_module env m in
-  Ctype.init_def(Ident.current_time());
-  Typetexp.widen context;
   let (mp, env) =
     match modl.mod_desc with
       Tmod_ident (mp,_) -> (mp, env)
@@ -1688,7 +1683,7 @@ let type_implicit_instance env m p nl tl =
     (fun n ty ->
       try Ctype.unify env ty (Ctype.newvar ())
       with Ctype.Unify _ ->
-        raise (Error(m.pmod_loc, env, Scoping_pack (n,ty))))
+        raise (Error(modl.mod_loc, env, Scoping_pack (n,ty))))
     nl tl';
   (wrap_constraint env modl mty Tmodtype_implicit, tl')
 
@@ -1699,7 +1694,7 @@ let () =
   Typetexp.transl_modtype := transl_modtype;
   Typecore.type_open := type_open_ ?toplevel:None;
   Typecore.type_package := type_package;
-  Typeimplicit.type_package := type_package;
+  Typeimplicit.type_implicit_instance := type_implicit_instance;
   type_module_type_of_fwd := type_module_type_of
 
 
