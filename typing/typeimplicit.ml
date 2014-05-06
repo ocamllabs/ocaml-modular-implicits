@@ -209,55 +209,6 @@ let link_implicit_to_expr inst expr =
   in
   link_implicit_to_path inst path
 
-(**************************)
-(** Resolution procedure **)
-(**************************)
-
-(*let implicit_mty inst =
-  let open Ast_helper in
-  let (path, nl, tl) = inst.implicit_type in
-  let mtd = { mtd_type = Some (Mty_ident path);
-              mtd_attributes = [];
-              mtd_loc = Location.none; }
-  in
-  let _, env = Env.enter_modtype "%M" mtd inst.implicit_env in
-  let mty =
-    Typetexp.create_package_mty Location.none env
-      (Location.mknoloc (Longident.Lident "%M"), nl, tl)
-  in
-  let mty =
-
-
-
-type sign = {
-  sign_type : Types.module_type;
-  (*sign_constraints :*)
-}*)
-
-
-
-
-let find_instance inst =
-  let snapshot = Btype.snapshot () in
-  let modules = Env.implicit_instances inst.implicit_env in
-  let module_match (path,_) =
-    try
-      (*prerr_endline ("try " ^ Path.last path);*)
-      link_implicit_to_path inst path;
-      true
-    with _ ->
-      Btype.backtrack snapshot;
-      false
-  in
-  List.exists module_match modules
-
-let generalize_implicits_ref
-  : (unit -> unit) ref
-  = ref (fun () -> assert false)
-
-let generalize_implicits () =
-  !generalize_implicits_ref ()
-
 (* Extraction of pending implicit arguments *)
 let extract_pending_implicits expr =
   let rec traverse acc = function
@@ -273,3 +224,11 @@ let extract_pending_implicits expr =
       List.find (fun inst -> inst.implicit_argument == argument)
         !pending_implicits)
     (traverse [] expr)
+
+(* Forward reference to be initialized by Implicitsearch *)
+let generalize_implicits_ref
+  : (unit -> unit) ref
+  = ref (fun () -> assert false)
+
+let generalize_implicits () =
+  !generalize_implicits_ref ()
