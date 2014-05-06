@@ -38,6 +38,46 @@ type pending_implicit = {
   implicit_argument: argument;
 }
 
+module Unlink
+    (P : sig
+       val register_constraints_for
+         : Ident.t -> (Path.t -> type_expr -> unit) option
+     end) = struct
+
+  let path_table = Hashtbl.create 7
+
+  let add_constraint register ~path ~var =
+    begin try
+      let var' = Hashtbl.find path_table path in
+      link_type var var'
+    with Not_found ->
+      Hashtbl.add path_table path var
+    end;
+    register path var
+
+  let rec type_expr ty =
+    (* First recurse in sub expressions *)
+    iter_type_expr type_expr ty;
+    (* Then replace current type if it is a constructor referring to an
+       implicit *)
+    match ty.desc with
+    | Tconstr (path,[],_) ->
+        begin match P.register_constraints_for (Path.head path) with
+        | None -> ()
+        | Some register_constraint ->
+            (* Replace `ty' by a fresh variable *)
+            let {desc = desc'; level = lv'; id = id'} = newvar() in
+            ty.desc   <- desc';
+            ty.level  <- lv';
+            ty.id     <- id';
+            add_constraint register_constraint ~path ~var:ty
+        end
+    (* No HKT *)
+    | Tconstr (path,_,_) ->
+        assert (P.register_constraints_for (Path.head path) = None)
+    | _ -> ()
+end
+
 let pending_implicits
   : pending_implicit list ref
   = ref []
@@ -93,41 +133,20 @@ let instantiate_implicits_ty loc env ty =
        An implicit instance is correct only iff, in an environment where the
        ident is bound to the instance, all pairs in the list unify.
     *)
-    let linked = Hashtbl.create 7 in
-    let add_constraint inst ~path ~var =
-      begin try
-        let var' = Hashtbl.find linked path in
-        link_type var var'
-      with Not_found ->
-        Hashtbl.add linked path var
-      end;
-      inst.implicit_constraints <- (path,var) :: inst.implicit_constraints
+    let module Unlink = Unlink (struct
+        let register_constraints_for ident =
+          try
+            let inst = Ident.find_same ident instances in
+            let add_constraint path var=
+              inst.implicit_constraints <-
+                (path,var) :: inst.implicit_constraints
+            in
+            Some add_constraint
+          with Not_found ->
+            None
+      end)
     in
-    let rec unlink_constructors ty =
-      (* First recurse in sub expressions *)
-      iter_type_expr unlink_constructors ty;
-      (* Then replace current type if it is a constructor referring to an
-         implicit *)
-      match ty.desc with
-      | Tconstr (path,[],_) ->
-          begin try
-            let inst = Ident.find_same (Path.head path) instances in
-            (* Replace `ty' by a fresh variable *)
-            let {desc = desc'; level = lv'; id = id'} = newvar() in
-            ty.desc   <- desc';
-            ty.level  <- lv';
-            ty.id     <- id';
-            add_constraint inst ~path ~var:ty
-          with Not_found -> ()
-          end
-      (* No HKT *)
-      | Tconstr (path,_,_)
-        when (try ignore (Ident.find_same (Path.head path) instances); true
-              with Not_found -> false) ->
-          assert false
-      | _ -> ()
-    in
-    unlink_constructors ty;
+    Unlink.type_expr ty;
     arguments, instances, ty
 
 let instantiate_implicits_expr env expr =

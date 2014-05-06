@@ -160,7 +160,7 @@ type sign = {
   sign_constraints : (Path.t * Types.type_expr) list;
 }
 
-let sign_instance inst =
+let sign_of_pending inst =
   let env = inst.implicit_env in
   let path, nl, tl = inst.implicit_type in
   let mtd = Env.find_modtype path env in
@@ -191,6 +191,20 @@ let sign_instance inst =
   let constraints = List.map unflatten_cstr failed in
   { sign_type = mty; sign_id = ident; sign_constraints = constraints }
 
+let sign_of_implicit_declaration imd =
+  let rec find_mty acc n mty =
+    assert (n >= 0);
+    if n = 0 then
+      List.rev acc, mty
+    else match mty with
+      | Mty_functor (arg_id, Some arg_ty, mty) ->
+          find_mty ((arg_id, arg_ty) :: acc) (n - 1) mty
+      | _ -> assert false
+  in
+  let _mty = find_mty [] imd.imd_arity imd.imd_module.md_type in
+  failwith "TODO"
+
+
 let sign_match env sign (path,imd) =
   let subst = Subst.add_module sign.sign_id path Subst.identity in
   List.iter (fun (tpath,ty') ->
@@ -201,13 +215,23 @@ let sign_match env sign (path,imd) =
     )
     sign.sign_constraints
 
+let sign_in_stack _sign stack =
+  List.length stack >= 4 (* TODO *)
+
+let find_sign env stack sign =
+  if sign_in_stack sign stack then
+    raise Not_found
+  else begin
+    let _candidates = Env.implicit_instances env in
+    failwith "TODO"
+  end
+
 let find_instance inst =
   let snapshot = Btype.snapshot () in
-  let modules = Env.implicit_instances inst.implicit_env in
-  let sign = sign_instance inst in
+  let candidates = Env.implicit_instances inst.implicit_env in
+  let sign = sign_of_pending inst in
   let module_match (path,_ as candidate) =
     try
-      (*prerr_endline ("try " ^ Path.last path);*)
       sign_match inst.implicit_env sign candidate;
       link_implicit_to_path inst path;
       true
@@ -215,7 +239,7 @@ let find_instance inst =
       Btype.backtrack snapshot;
       false
   in
-  List.exists module_match modules
+  List.exists module_match candidates
 
 
 let generalize_implicits () =
