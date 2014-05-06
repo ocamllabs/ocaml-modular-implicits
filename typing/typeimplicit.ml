@@ -38,8 +38,6 @@ type pending_implicit = {
   implicit_argument: argument;
 }
 
-exception Uninstantiable_implicit of pending_implicit
-
 let pending_implicits
   : pending_implicit list ref
   = ref []
@@ -133,22 +131,24 @@ let instantiate_implicits_ty loc env ty =
     arguments, instances, ty
 
 let instantiate_implicits_expr env expr =
-  (*prerr_endline "instantiate_implicits_expr";*)
-  match
-    instantiate_implicits_ty expr.exp_loc env expr.exp_type
-  with
-  | [], implicits, _ ->
-      (*prerr_endline "none";*)
-      implicits,expr
-  | arguments, implicits, ty ->
-      implicits,
-      { exp_desc = Texp_apply (expr, arguments);
-        exp_type = ty;
-        exp_loc = expr.exp_loc;
-        exp_extra = [];
-        exp_env = env;
-        exp_attributes = []
-      }
+  let implicits, expr =
+    match instantiate_implicits_ty expr.exp_loc env expr.exp_type with
+    | [], implicits, _ ->
+        implicits,expr
+    | arguments, implicits, ty ->
+        implicits,
+        { exp_desc = Texp_apply (expr, arguments);
+          exp_type = ty;
+          exp_loc = expr.exp_loc;
+          exp_extra = [];
+          exp_env = env;
+          exp_attributes = []
+        }
+  in
+  let cons _ inst acc = inst :: acc in
+  let implicits = Ident.fold_all cons implicits [] in
+  pending_implicits := implicits @ !pending_implicits;
+  expr
 
 
 (* Pack module at given path to match a given implicit instance and
@@ -209,7 +209,34 @@ let link_implicit_to_expr inst expr =
   in
   link_implicit_to_path inst path
 
-(* Naive resolution procedure *)
+(**************************)
+(** Resolution procedure **)
+(**************************)
+
+(*let implicit_mty inst =
+  let open Ast_helper in
+  let (path, nl, tl) = inst.implicit_type in
+  let mtd = { mtd_type = Some (Mty_ident path);
+              mtd_attributes = [];
+              mtd_loc = Location.none; }
+  in
+  let _, env = Env.enter_modtype "%M" mtd inst.implicit_env in
+  let mty =
+    Typetexp.create_package_mty Location.none env
+      (Location.mknoloc (Longident.Lident "%M"), nl, tl)
+  in
+  let mty =
+
+
+
+type sign = {
+  sign_type : Types.module_type;
+  (*sign_constraints :*)
+}*)
+
+
+
+
 let find_instance inst =
   let snapshot = Btype.snapshot () in
   let modules = Env.implicit_instances inst.implicit_env in
@@ -224,32 +251,12 @@ let find_instance inst =
   in
   List.exists module_match modules
 
-let generalize_implicits () =
-  (*Printf.eprintf "generalize_implicits %d\n%!" (List.length !pending_implicits);*)
+let generalize_implicits_ref
+  : (unit -> unit) ref
+  = ref (fun () -> assert false)
 
-  let current_level = get_current_level () in
-  let _not_linked = function
-    | {implicit_argument = {arg_expression = Some _}} -> false
-    | _ -> true
-  in
-  let pending = (*List.filter not_linked*) !pending_implicits in
-  let need_generalization inst =
-    List.exists
-      (fun (ty,var) ->
-         assert (var.level <> generic_level);
-         var.level >= current_level)
-      inst.implicit_constraints
-    || inst.implicit_constraints = []
-  in
-  let to_generalize, rest =
-    List.partition need_generalization pending
-  in
-  pending_implicits := rest;
-  try
-    let not_instantiable inst = not (find_instance inst) in
-    let inst = List.find not_instantiable to_generalize in
-    raise (Uninstantiable_implicit inst)
-  with Not_found -> ()
+let generalize_implicits () =
+  !generalize_implicits_ref ()
 
 (* Extraction of pending implicit arguments *)
 let extract_pending_implicits expr =

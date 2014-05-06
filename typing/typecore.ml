@@ -17,7 +17,6 @@ open Asttypes
 open Parsetree
 open Types
 open Typedtree
-open Typeimplicit
 open Btype
 open Ctype
 
@@ -69,7 +68,7 @@ type error =
   | Invalid_for_loop_index
   | No_value_clauses
   | Exception_pattern_below_toplevel
-  | Pending_implicit of pending_implicit
+  | Pending_implicit of Typeimplicit.pending_implicit
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -118,11 +117,6 @@ let case lhs rhs =
 
 let make_argument (f,e) =
   {arg_flag = f; arg_expression = e}
-
-let generalize_implicits () =
-  try generalize_implicits ()
-  with Uninstantiable_implicit inst ->
-    raise (Error (inst.implicit_loc, inst.implicit_env, Pending_implicit inst))
 
 (* Upper approximation of free identifiers on the parse tree *)
 
@@ -1828,13 +1822,7 @@ and type_expect_ ?in_function env sexp ty_expected =
           exp_attributes = sexp.pexp_attributes;
           exp_env = env;
         } in
-        let implicits, expr = instantiate_implicits_expr env expr in
-        let implicits =
-          Ident.fold_all (fun _ inst acc ->
-              (*prerr_endline "add pending implicit";*)
-              inst :: acc) implicits []
-        in
-        pending_implicits := implicits @ !pending_implicits;
+        let expr = Typeimplicit.instantiate_implicits_expr env expr in
         rue expr
       end
   | Pexp_constant(Const_string (str, _) as cst) -> (
@@ -1956,7 +1944,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       end_def ();
       wrap_trace_gadt_instances env (lower_args []) ty;
       begin_def ();
-      let pending = extract_pending_implicits funct in
+      let pending = Typeimplicit.extract_pending_implicits funct in
       let (args, ty_res) = type_application env funct pending sargs in
       let args = List.map
           (fun (arr,expo) -> make_argument (tapp_of_tarr arr, expo))
@@ -3225,7 +3213,7 @@ and type_argument env sarg ty_expected' ty_expected =
       texp
 
 and type_application env funct
-    (pending : pending_implicit list)
+    (pending : Typeimplicit.pending_implicit list)
     (sargs : (Parsetree.apply_flag * Parsetree.expression) list) =
   (* funct.exp_type may be generic *)
   let sargs = List.map (fun (app,e) -> tapp_of_papp app, e) sargs in
@@ -3429,10 +3417,10 @@ and type_application env funct
     | [], _
     | _, [] -> List.rev_append args' args, pending
     | (inst :: pending), ((Tapp_implicit,arg) :: args) ->
-        prerr_endline "applying implicits";
-        let p, nl, tl = inst.implicit_type in
+        let p, nl, tl = inst.Typeimplicit.implicit_type in
         let package_ty = newgenty (Tpackage (p,nl,tl)) in
-        link_implicit_to_expr inst (type_expect env arg package_ty);
+        Typeimplicit.link_implicit_to_expr
+          inst (type_expect env arg package_ty);
         type_implicits args' args pending
     | _, (arg :: args) ->
         type_implicits (arg :: args') args pending
@@ -3882,7 +3870,7 @@ and type_let ?(check = fun s -> Warnings.Unused_var s)
     (fun pat exp -> ignore(Parmatch.check_partial pat.pat_loc [case pat exp]))
     pat_list exp_list;
   end_def();
-  generalize_implicits ();
+  Typeimplicit.generalize_implicits ();
   List.iter2
     (fun pat exp ->
        if not (is_nonexpansive exp) then
@@ -3926,7 +3914,7 @@ let type_expression env sexp =
   begin_def();
   let exp = type_exp env sexp in
   end_def();
-  generalize_implicits ();
+  Typeimplicit.generalize_implicits ();
   if is_nonexpansive exp then generalize exp.exp_type
   else generalize_expansive env exp.exp_type;
   match sexp.pexp_desc with
@@ -4168,7 +4156,7 @@ let report_error env ppf = function
         "@[Exception patterns must be at the top level of a match case.@]"
   | Pending_implicit inst ->
       fprintf ppf "Cannot find instance for implicit %s."
-        (Ident.name inst.implicit_id)
+        (Ident.name inst.Typeimplicit.implicit_id)
 
 let report_error env ppf err =
   wrap_printing_env env (fun () -> report_error env ppf err)
