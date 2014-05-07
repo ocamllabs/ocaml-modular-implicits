@@ -91,46 +91,42 @@ module Constraints = struct
   and try_sig_item env prj failed (locs, subs as cstrs) field =
     match field with
     | Sig_value _ | Sig_modtype _ | Sig_class _
-    | Sig_class_type _ | Sig_exception _ ->
-        failed, cstrs, field
+    | Sig_class_type _ | Sig_typext _ ->
+        failed, cstrs, env, field
     | Sig_type (id,decl,recst) ->
+        (*FIXME: handling of recursive types*)
         let name = Ident.name id in
-        begin try
-          let (qname, ty), locs = list_extract (name_match prj name) locs in
-          begin match decl.type_manifest with
-          | None -> ()
-          | Some ty' ->
-              let ty' = instance env ty' in
-              unify env ty ty';
-          end;
-          failed, (locs, subs),
-          Sig_type (id,{decl with type_manifest = Some ty},recst)
-        with Not_found ->
-          failed, cstrs, field
-        end
+        let failed, cstrs, decl =
+          try
+            let (qname, ty), locs = list_extract (name_match prj name) locs in
+            begin match decl.type_manifest with
+            | None -> ()
+            | Some ty' ->
+                let ty' = instance env ty' in
+                unify env ty ty';
+            end;
+            failed, (locs, subs),
+            {decl with type_manifest = Some ty}
+          with Not_found ->
+            failed, cstrs, decl
+        in
+        let env = Env.add_type ~check:false id decl env in
+        failed, cstrs, env,
+        Sig_type (id,decl,recst)
     | Sig_module (id,decl,recst) ->
         let name = Ident.name id in
-        begin try
-          let (qname, sub), subs = list_extract (name_match prj name) subs in
-          let subfailed, md_type = try_mty env prj sub decl.md_type in
-          let subfailed = List.rev_map (fun(xs,t)->(qname::xs,t)) subfailed in
-          (subfailed @ failed), (locs, subs),
-          Sig_module (id,{decl with md_type},recst)
-        with Not_found ->
-          failed, cstrs, field
-        end
-    | Sig_implicit (id,decl) ->
-        let name = Ident.name id in
-        begin try
-          let (qname, sub), subs = list_extract (name_match prj name) subs in
-          let imd = decl.imd_module in
-          let subfailed, md_type = try_mty env prj sub imd.md_type in
-          let subfailed = List.rev_map (fun(xs,t)->(qname::xs,t)) subfailed in
-          (subfailed @ failed), (locs, subs),
-          Sig_implicit (id,{decl with imd_module = {imd with md_type}})
-        with Not_found ->
-          failed, cstrs, field
-        end
+        let failed, cstrs, decl =
+          try
+            let (qname, sub), subs = list_extract (name_match prj name) subs in
+            let subfailed, md_type = try_mty env prj sub decl.md_type in
+            let subfailed = List.rev_map (fun(xs,t)->(qname::xs,t)) subfailed in
+            (subfailed @ failed), (locs, subs), {decl with md_type}
+          with Not_found ->
+            failed, cstrs, decl
+        in
+        let env = Env.add_module_declaration id decl env in
+        failed, cstrs, env,
+        Sig_module (id,decl,recst)
 
   and try_sig' env prj fields failed cstrs = function
     | [] ->
@@ -144,7 +140,8 @@ module Constraints = struct
         failed, List.rev fields
 
     | item :: items ->
-        let failed, cstrs, item' = try_sig_item env prj failed cstrs item in
+        let failed, cstrs, env, item' =
+          try_sig_item env prj failed cstrs item in
         try_sig' env prj (item' :: fields) failed cstrs items
 
   and try_sig env prj cstrs sg =
@@ -192,7 +189,11 @@ let sign_of_pending inst =
   let constraints = List.map unflatten_cstr failed in
   { sign_type = mty; sign_id = ident; sign_constraints = constraints }
 
-let sign_of_implicit_declaration imd =
+let sign_of_implicit_declaration md =
+  let arity = match md.Types.md_implicit with
+    | Asttypes.Nonimplicit -> assert false
+    | Asttypes.Implicit n -> n
+  in
   let rec find_mty acc n mty =
     assert (n >= 0);
     if n = 0 then
@@ -202,7 +203,7 @@ let sign_of_implicit_declaration imd =
           find_mty ((arg_id, arg_ty) :: acc) (n - 1) mty
       | _ -> assert false
   in
-  let _mty = find_mty [] imd.imd_arity imd.imd_module.md_type in
+  let _mty = find_mty [] arity md.Types.md_type in
   failwith "TODO"
 
 

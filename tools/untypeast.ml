@@ -62,10 +62,6 @@ and untype_structure_item item =
         Pstr_exception (untype_extension_constructor ext)
     | Tstr_module mb ->
         Pstr_module (untype_module_binding mb)
-    | Tstr_implicit imb ->
-        let mb = imb.im_module in
-        let pmb = untype_module_binding mb in
-        Pstr_implicit { pim_module = pmb; pim_arity = imb.im_arity }
     | Tstr_recmodule list ->
         Pstr_recmodule (List.map untype_module_binding list)
     | Tstr_modtype mtd ->
@@ -112,6 +108,7 @@ and untype_module_binding mb =
    pmb_expr = untype_module_expr mb.mb_expr;
    pmb_attributes = mb.mb_attributes;
    pmb_loc = mb.mb_loc;
+   pmb_implicit = mb.mb_implicit;
   }
 
 and untype_type_declaration decl =
@@ -355,11 +352,6 @@ and untype_expression exp =
           ) list)
     | Texp_letmodule (mb, exp) ->
         Pexp_letmodule (untype_module_binding mb, untype_expression exp)
-    | Texp_letimplicit (imb, exp) ->
-        let mb = imb.im_module in
-        let pmb = untype_module_binding mb in
-        let pib = { pim_module = pmb; pim_arity = imb.im_arity } in
-        Pexp_letimplicit (pib, untype_expression exp)
     | Texp_assert exp -> Pexp_assert (untype_expression exp)
     | Texp_lazy exp -> Pexp_lazy (untype_expression exp)
     | Texp_object (cl, _) ->
@@ -399,19 +391,13 @@ and untype_signature_item item =
         Psig_module {pmd_name = md.md_name;
                      pmd_type = untype_module_type md.md_type;
                      pmd_attributes = md.md_attributes; pmd_loc = md.md_loc;
+                     pmd_implicit = md.md_implicit;
                     }
-    | Tsig_implicit imd ->
-        let md = imd.im_module in
-        let pmd = {pmd_name = md.md_name;
-                   pmd_type = untype_module_type md.md_type;
-                   pmd_attributes = md.md_attributes; pmd_loc = md.md_loc;
-                  } in
-        Psig_implicit { pim_module = pmd; pim_arity = imd.im_arity }
-
     | Tsig_recmodule list ->
         Psig_recmodule (List.map (fun md ->
               {pmd_name = md.md_name; pmd_type = untype_module_type md.md_type;
-               pmd_attributes = md.md_attributes; pmd_loc = md.md_loc}) list)
+               pmd_attributes = md.md_attributes; pmd_loc = md.md_loc;
+               pmd_implicit = md.md_implicit}) list)
     | Tsig_modtype mtd ->
         Psig_modtype {pmtd_name=mtd.mtd_name;
                       pmtd_type=option untype_module_type mtd.mtd_type;
@@ -645,14 +631,16 @@ and untype_class_field cf =
         Pcf_method (lab, priv, Cfk_virtual (untype_core_type cty))
     | Tcf_method (lab, priv, Tcfk_concrete (o, exp)) ->
         let remove_fun_self = function
-          | { exp_desc = Texp_function("", [case], _) } when is_self_pat case.c_lhs && case.c_guard = None -> case.c_rhs
+          | { exp_desc = Texp_function(Types.Tarr_simple, [case], _) }
+            when is_self_pat case.c_lhs && case.c_guard = None -> case.c_rhs
           | e -> e
         in
         let exp = remove_fun_self exp in
         Pcf_method (lab, priv, Cfk_concrete (o, untype_expression exp))
     | Tcf_initializer exp ->
         let remove_fun_self = function
-          | { exp_desc = Texp_function("", [case], _) } when is_self_pat case.c_lhs && case.c_guard = None -> case.c_rhs
+          | { exp_desc = Texp_function(Types.Tarr_simple, [case], _) }
+            when is_self_pat case.c_lhs && case.c_guard = None -> case.c_rhs
           | e -> e
         in
         let exp = remove_fun_self exp in

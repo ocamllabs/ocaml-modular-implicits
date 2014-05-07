@@ -19,6 +19,8 @@ open Types
 
 type symptom =
     Missing_field of Ident.t * Location.t * string (* kind *)
+  | Implicit_flags of Ident.t * Asttypes.implicit_flag * Location.t *
+                                Asttypes.implicit_flag * Location.t
   | Value_descriptions of Ident.t * value_description * value_description
   | Type_declarations of Ident.t * type_declaration
         * type_declaration * Includecore.type_mismatch list
@@ -47,6 +49,15 @@ exception Error of error list
 (* All functions "blah env x1 x2" check that x1 is included in x2,
    i.e. that x1 is the type of an implementation that fulfills the
    specification x2. If not, Error is raised with a backtrace of the error. *)
+
+(* Inclusion between implicit flags *)
+
+let implicit_flags env cxt id f1 l1 f2 l2 =
+  match f1, f2 with
+  | Asttypes.Implicit x , Asttypes.Implicit x' when x = x' -> ()
+  | Asttypes.Implicit _ , Asttypes.Nonimplicit -> ()
+  | Asttypes.Nonimplicit, Asttypes.Nonimplicit -> ()
+  | _ -> raise(Error[cxt, env, Implicit_flags(id, f1, l1, f2, l2)])
 
 (* Inclusion between value descriptions *)
 
@@ -125,7 +136,6 @@ type field_desc =
   | Field_type of string
   | Field_typext of string
   | Field_module of string
-  | Field_implicit of string
   | Field_modtype of string
   | Field_class of string
   | Field_classtype of string
@@ -135,7 +145,6 @@ let kind_of_field_desc = function
   | Field_type _ -> "type"
   | Field_typext _ -> "extension constructor"
   | Field_module _ -> "module"
-  | Field_implicit _ -> "implicit"
   | Field_modtype _ -> "module type"
   | Field_class _ -> "class"
   | Field_classtype _ -> "class type"
@@ -145,7 +154,6 @@ let item_ident_name = function
   | Sig_type(id, d, _) -> (id, d.type_loc, Field_type(Ident.name id))
   | Sig_typext(id, d, _) -> (id, d.ext_loc, Field_typext(Ident.name id))
   | Sig_module(id, d, _) -> (id, d.md_loc, Field_module(Ident.name id))
-  | Sig_implicit(id, d) -> (id, d.imd_module.md_loc, Field_implicit(Ident.name id))
   | Sig_modtype(id, d) -> (id, d.mtd_loc, Field_modtype(Ident.name id))
   | Sig_class(id, d, _) -> (id, d.cty_loc, Field_class(Ident.name id))
   | Sig_class_type(id, d, _) -> (id, d.clty_loc, Field_classtype(Ident.name id))
@@ -158,7 +166,6 @@ let is_runtime_component = function
   | Sig_value(_,_)
   | Sig_typext(_,_,_)
   | Sig_module(_,_,_)
-  | Sig_implicit(_,_)
   | Sig_class(_, _,_) -> true
 
 (* Print a coercion *)
@@ -287,8 +294,7 @@ and signatures env cxt subst sig1 sig2 =
   let (id_pos_list,_) =
     List.fold_left
       (fun (l,pos) -> function
-           Sig_module (id, _, _)
-         | Sig_implicit (id, _) ->
+           Sig_module (id, _, _) ->
              ((id,pos,Tcoerce_none)::l , pos+1)
          | item -> (l, if is_runtime_component item then pos+1 else pos))
       ([], 0) sig1 in
@@ -347,8 +353,6 @@ and signatures env cxt subst sig1 sig2 =
                 Subst.add_type id2 (Pident id1) subst
             | Sig_module _ ->
                 Subst.add_module id2 (Pident id1) subst
-            | Sig_implicit _ ->
-                Subst.add_implicit id2 (Pident id1) subst
             | Sig_modtype _ ->
                 Subst.add_modtype id2 (Mty_ident (Pident id1)) subst
             | Sig_value _ | Sig_typext _
@@ -389,11 +393,9 @@ and signature_components env cxt subst = function
       let cc =
         modtypes env (Module id1::cxt) subst
           (Mtype.strengthen env mty1.md_type (Pident id1)) mty2.md_type in
-      (pos, cc) :: signature_components env cxt subst rem
-  | (Sig_implicit(id1, im1), Sig_implicit(id2, im2), pos) :: rem ->
-      let cc =
-        modtypes env (Module id1::cxt) subst
-          (Mtype.strengthen env im1.imd_module.md_type (Pident id1)) im2.imd_module.md_type in
+      implicit_flags env cxt id1
+        mty1.md_implicit mty1.md_loc
+        mty2.md_implicit mty2.md_loc;
       (pos, cc) :: signature_components env cxt subst rem
   | (Sig_modtype(id1, info1), Sig_modtype(id2, info2), pos) :: rem ->
       modtype_infos env cxt subst id1 info1 info2;
@@ -486,6 +488,20 @@ let include_err ppf = function
   | Missing_field (id, loc, kind) ->
       fprintf ppf "The %s `%a' is required but not provided" kind ident id;
       show_loc "Expected declaration" ppf loc
+  | Implicit_flags (id, f1, l1, f2, l2) ->
+      let lhs ppf = function
+        | Asttypes.Nonimplicit -> fprintf ppf "it is non implicit"
+        | Asttypes.Implicit 0 -> fprintf ppf "it is implicit"
+        | Asttypes.Implicit n -> fprintf ppf "it has arity %d" n
+      in
+      let rhs ppf = function
+        | Asttypes.Nonimplicit -> fprintf ppf "be non implicit"
+        | Asttypes.Implicit 0 -> fprintf ppf "be directly implicit"
+        | Asttypes.Implicit n -> fprintf ppf "have arity %d" n
+      in
+      fprintf ppf "Implicit annotation of `%a' is not compatible: %a while it was expected to %a"
+        ident id lhs f1 rhs f2;
+      show_locs ppf (l1, l2)
   | Value_descriptions(id, d1, d2) ->
       fprintf ppf
         "@[<hv 2>Values do not match:@ %a@;<1 -2>is not included in@ %a@]"

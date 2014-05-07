@@ -35,6 +35,8 @@ type override_flag = Override | Fresh
 
 type closed_flag = Closed | Open
 
+type implicit_flag = Nonimplicit | Implicit of int (*arity*)
+
 type label = string
 
 type 'a loc = 'a Location.loc = {

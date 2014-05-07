@@ -198,10 +198,7 @@ let rec pr_item env items =
       let tree = Printtyp.tree_of_extension_constructor id ext es in
       Some (tree, None, rem)
   | Sig_module(id, md, rs) :: rem ->
-      let tree = Printtyp.tree_of_module id md.md_type rs in
-      Some (tree, None, rem)
-  | Sig_implicit(id, imd) :: rem ->
-      let tree = Printtyp.tree_of_implicit id imd in
+      let tree = Printtyp.tree_of_module id ~implicit_:md.md_implicit md.md_type rs in
       Some (tree, None, rem)
   | Sig_modtype(id, decl) :: rem ->
       let tree = Printtyp.tree_of_modtype_declaration id decl in

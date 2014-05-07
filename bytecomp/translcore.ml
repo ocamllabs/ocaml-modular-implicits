@@ -860,8 +860,7 @@ and transl_exp0 e =
                 Lsequence(transl_setinstvar (Lvar cpy) path expr, rem))
              modifs
              (Lvar cpy))
-  | Texp_letmodule({mb_id = id; mb_expr = modl}, body)
-  | Texp_letimplicit({im_module = { mb_id = id; mb_expr = modl }}, body) ->
+  | Texp_letmodule({mb_id = id; mb_expr = modl}, body) ->
       Llet(Strict, id, !transl_module Tcoerce_none None modl, transl_exp body)
   | Texp_pack modl ->
       !transl_module Tcoerce_none None modl

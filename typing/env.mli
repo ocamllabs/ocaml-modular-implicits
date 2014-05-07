@@ -20,13 +20,11 @@ type summary =
   | Env_type of summary * Ident.t * type_declaration
   | Env_extension of summary * Ident.t * extension_constructor
   | Env_module of summary * Ident.t * module_declaration
-  | Env_implicit of summary * Ident.t * implicit_declaration
   | Env_modtype of summary * Ident.t * modtype_declaration
   | Env_class of summary * Ident.t * class_declaration
   | Env_cltype of summary * Ident.t * class_type_declaration
   | Env_open of summary * Path.t
   | Env_functor_arg of summary * Ident.t
-  | Env_implicit_arg of summary * Ident.t
 
 type t
 
@@ -80,7 +78,7 @@ val gadt_instance_level: t -> type_expr -> int option
 val add_gadt_instances: t -> int -> type_expr list -> unit
 val add_gadt_instance_chain: t -> int -> type_expr -> unit
 
-val implicit_instances: t -> (Path.t * implicit_declaration) list
+val implicit_instances: t -> (Path.t * module_declaration) list
 
 (* Lookup by long identifiers *)
 
@@ -108,10 +106,8 @@ val add_value:
     ?check:(string -> Warnings.t) -> Ident.t -> value_description -> t -> t
 val add_type: check:bool -> Ident.t -> type_declaration -> t -> t
 val add_extension: check:bool -> Ident.t -> extension_constructor -> t -> t
-val add_module: ?arg:bool -> Ident.t -> module_type -> t -> t
+val add_module: ?arg:bool -> ?implicit_:Asttypes.implicit_flag -> Ident.t -> module_type -> t -> t
 val add_module_declaration: ?arg:bool -> Ident.t -> module_declaration -> t -> t
-val add_implicit: ?arg:bool ->Ident.t -> arity:int -> module_type -> t -> t
-val add_implicit_declaration: ?arg:bool ->Ident.t -> implicit_declaration -> t -> t
 val add_modtype: Ident.t -> modtype_declaration -> t -> t
 val add_class: Ident.t -> class_declaration -> t -> t
 val add_cltype: Ident.t -> class_type_declaration -> t -> t
@@ -137,12 +133,9 @@ val enter_value:
     string -> value_description -> t -> Ident.t * t
 val enter_type: string -> type_declaration -> t -> Ident.t * t
 val enter_extension: string -> extension_constructor -> t -> Ident.t * t
-val enter_module: ?arg:bool -> string -> module_type -> t -> Ident.t * t
+val enter_module: ?arg:bool -> implicit_:Asttypes.implicit_flag -> string -> module_type -> t -> Ident.t * t
 val enter_module_declaration:
     ?arg:bool -> string -> module_declaration -> t -> Ident.t * t
-val enter_implicit: string -> arity:int -> module_type -> t -> Ident.t * t
-val enter_implicit_declaration:
-  string -> implicit_declaration -> t -> Ident.t * t
 val enter_modtype: string -> modtype_declaration -> t -> Ident.t * t
 val enter_class: string -> class_declaration -> t -> Ident.t * t
 val enter_cltype: string -> class_type_declaration -> t -> Ident.t * t

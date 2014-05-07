@@ -107,7 +107,6 @@ module Exp = struct
   let setinstvar ?loc ?attrs a b = mk ?loc ?attrs (Pexp_setinstvar (a, b))
   let override ?loc ?attrs a = mk ?loc ?attrs (Pexp_override a)
   let letmodule ?loc ?attrs a b = mk ?loc ?attrs (Pexp_letmodule (a, b))
-  let letimplicit ?loc ?attrs ib e = mk ?loc ?attrs (Pexp_letimplicit (ib, e))
   let assert_ ?loc ?attrs a = mk ?loc ?attrs (Pexp_assert a)
   let lazy_ ?loc ?attrs a = mk ?loc ?attrs (Pexp_lazy a)
   let poly ?loc ?attrs a b = mk ?loc ?attrs (Pexp_poly (a, b))
@@ -162,7 +161,6 @@ module Sig = struct
   let type_extension ?loc a = mk ?loc (Psig_typext a)
   let exception_ ?loc a = mk ?loc (Psig_exception a)
   let module_ ?loc a = mk ?loc (Psig_module a)
-  let implicit_ ?loc a = mk ?loc (Psig_implicit a)
   let rec_module ?loc a = mk ?loc (Psig_recmodule a)
   let modtype ?loc a = mk ?loc (Psig_modtype a)
   let open_ ?loc a = mk ?loc (Psig_open a)
@@ -183,7 +181,6 @@ module Str = struct
   let type_extension ?loc a = mk ?loc (Pstr_typext a)
   let exception_ ?loc a = mk ?loc (Pstr_exception a)
   let module_ ?loc a = mk ?loc (Pstr_module a)
-  let implicit_ ?loc a = mk ?loc (Pstr_implicit a)
   let rec_module ?loc a = mk ?loc (Pstr_recmodule a)
   let modtype ?loc a = mk ?loc (Pstr_modtype a)
   let open_ ?loc a = mk ?loc (Pstr_open a)
@@ -277,13 +274,22 @@ module Val = struct
 end
 
 module Md = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) name typ =
+  let mk ?(loc = !default_loc) ?(attrs = []) ?(implicit_ = Nonimplicit) name typ =
     {
      pmd_name = name;
      pmd_type = typ;
      pmd_attributes = attrs;
      pmd_loc = loc;
+     pmd_implicit = implicit_;
     }
+
+  let implicit_ ?loc ?attrs name params mty =
+    let mty = List.fold_right
+        (fun (name,mty) acc ->
+           Mty.mk ?loc (Pmty_functor(name, Some mty, acc)))
+        params mty
+    in
+    mk ?loc ?attrs ~implicit_:(Implicit (List.length params)) name mty
 end
 
 module Mtd = struct
@@ -297,13 +303,22 @@ module Mtd = struct
 end
 
 module Mb = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) name expr =
+  let mk ?(loc = !default_loc) ?(attrs = []) ?(implicit_ = Nonimplicit) name expr =
     {
      pmb_name = name;
      pmb_expr = expr;
      pmb_attributes = attrs;
      pmb_loc = loc;
+     pmb_implicit = implicit_;
     }
+
+  let implicit_ ?loc ?attrs name params me =
+    let me = List.fold_right
+        (fun (name,mty) acc ->
+          Mod.mk ?loc (Pmod_functor(name, Some mty, acc)))
+        params me
+    in
+    mk ?loc ?attrs ~implicit_:(Implicit (List.length params)) name me
 end
 
 module Opn = struct
@@ -323,30 +338,6 @@ module Incl = struct
      pincl_loc = loc;
      pincl_attributes = attrs;
     }
-end
-
-module Im = struct
-  let mk md arity =
-    {
-      pim_module = md;
-      pim_arity = arity;
-    }
-
-  let binding ?loc ?attrs name params me =
-    let me = List.fold_right
-        (fun (name,mty) acc ->
-           Mod.mk ?loc (Pmod_functor(name, Some mty, acc)))
-        params me
-    in
-    mk (Mb.mk ?loc ?attrs name me) (List.length params)
-
-  let declaration ?loc ?attrs name params mty =
-    let mty = List.fold_right
-        (fun (name,mty) acc ->
-           Mty.mk ?loc (Pmty_functor(name, Some mty, acc)))
-        params mty
-    in
-    mk (Md.mk ?loc ?attrs name mty) (List.length params)
 end
 
 module Vb = struct

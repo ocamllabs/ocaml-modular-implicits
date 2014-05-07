@@ -131,8 +131,6 @@ module Exp:
                   -> expression
     val letmodule: ?loc:loc -> ?attrs:attrs -> module_binding -> expression
                    -> expression
-    val letimplicit: ?loc:loc -> ?attrs:attrs -> implicit_binding -> expression
-                     -> expression
     val assert_: ?loc:loc -> ?attrs:attrs -> expression -> expression
     val lazy_: ?loc:loc -> ?attrs:attrs -> expression -> expression
     val poly: ?loc:loc -> ?attrs:attrs -> expression -> core_type option -> expression
@@ -215,7 +213,6 @@ module Sig:
     val type_extension: ?loc:loc -> type_extension -> signature_item
     val exception_: ?loc:loc -> extension_constructor -> signature_item
     val module_: ?loc:loc -> module_declaration -> signature_item
-    val implicit_: ?loc:loc -> implicit_declaration -> signature_item
     val rec_module: ?loc:loc -> module_declaration list -> signature_item
     val modtype: ?loc:loc -> module_type_declaration -> signature_item
     val open_: ?loc:loc -> open_description -> signature_item
@@ -238,7 +235,6 @@ module Str:
     val type_extension: ?loc:loc -> type_extension -> structure_item
     val exception_: ?loc:loc -> extension_constructor -> structure_item
     val module_: ?loc:loc -> module_binding -> structure_item
-    val implicit_: ?loc:loc -> implicit_binding -> structure_item
     val rec_module: ?loc:loc -> module_binding list -> structure_item
     val modtype: ?loc:loc -> module_type_declaration -> structure_item
     val open_: ?loc:loc -> open_description -> structure_item
@@ -252,7 +248,8 @@ module Str:
 (** Module declarations *)
 module Md:
   sig
-    val mk: ?loc:loc -> ?attrs:attrs -> str -> module_type -> module_declaration
+    val mk: ?loc:loc -> ?attrs:attrs -> ?implicit_:implicit_flag -> str -> module_type -> module_declaration
+    val implicit_: ?loc:loc -> ?attrs:attrs -> str -> (str * module_type) list -> module_type -> module_declaration
   end
 
 (** Module type declarations *)
@@ -264,7 +261,8 @@ module Mtd:
 (** Module bindings *)
 module Mb:
   sig
-    val mk: ?loc:loc -> ?attrs:attrs -> str -> module_expr -> module_binding
+    val mk: ?loc:loc -> ?attrs:attrs -> ?implicit_:implicit_flag -> str -> module_expr -> module_binding
+    val implicit_: ?loc:loc -> ?attrs:attrs -> str -> (str * module_type) list -> module_expr -> module_binding
   end
 
 (* Opens *)
@@ -277,14 +275,6 @@ module Opn:
 module Incl:
   sig
     val mk: ?loc: loc -> ?attrs:attrs -> 'a -> 'a include_infos
-  end
-
-(** Implicit *)
-module Im:
-  sig
-    val mk: 'a -> int -> 'a implicit_infos
-    val binding: ?loc:loc -> ?attrs:attrs -> str -> (str * module_type) list -> module_expr -> implicit_binding
-    val declaration: ?loc:loc -> ?attrs:attrs -> str -> (str * module_type) list -> module_type -> implicit_declaration
   end
 
 (** Value bindings *)

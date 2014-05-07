@@ -661,7 +661,7 @@ structure_item:
                               ~typ:$5 ~attrs:$6 ~loc:(symbol_rloc()))) }
   | open_statement { mkstr(Pstr_open $1) }
   | IMPLICIT implicit_binding
-      { mkstr(Pstr_implicit $2) }
+      { mkstr(Pstr_module $2) }
   | CLASS class_declarations
       { mkstr(Pstr_class (List.rev $2)) }
   | CLASS TYPE class_type_declarations
@@ -704,9 +704,9 @@ implicit_parameters:
 
 implicit_binding:
     MODULE UIDENT implicit_binding_body post_item_attributes
-    { Im.binding (mkrhs $2 2) [] $3 ~loc:(symbol_rloc ()) ~attrs:$4 }
+    { Mb.implicit_ (mkrhs $2 2) [] $3 ~loc:(symbol_rloc ()) ~attrs:$4 }
   | FUNCTOR UIDENT implicit_parameters implicit_binding_body post_item_attributes
-    { Im.binding (mkrhs $2 2) (List.rev $3) $4 ~loc:(symbol_rloc ()) ~attrs:$5 }
+    { Mb.implicit_ (mkrhs $2 2) (List.rev $3) $4 ~loc:(symbol_rloc ()) ~attrs:$5 }
 ;
 
 implicit_binding_body:
@@ -718,9 +718,9 @@ implicit_binding_body:
 
 implicit_declaration:
   | MODULE UIDENT implicit_declaration_body post_item_attributes
-    { Im.declaration (mkrhs $2 2) [] $3 ~attrs:$4 ~loc:(symbol_rloc()) }
+    { Md.implicit_ (mkrhs $2 2) [] $3 ~attrs:$4 ~loc:(symbol_rloc()) }
   | FUNCTOR UIDENT implicit_parameters implicit_declaration_body post_item_attributes
-    { Im.declaration (mkrhs $2 2) (List.rev $3) $4 ~attrs:$5 ~loc:(symbol_rloc()) }
+    { Md.implicit_ (mkrhs $2 2) (List.rev $3) $4 ~attrs:$5 ~loc:(symbol_rloc()) }
 ;
 implicit_declaration_body:
   | COLON module_type
@@ -787,7 +787,7 @@ signature_item:
                              ~loc:(symbol_rloc())
                           )) }
   | IMPLICIT implicit_declaration
-      { mksig(Psig_implicit $2) }
+      { mksig(Psig_module $2) }
   | MODULE REC module_rec_declarations
       { mksig(Psig_recmodule (List.rev $3)) }
   | MODULE TYPE ident post_item_attributes
@@ -1137,7 +1137,7 @@ expr:
   | LET MODULE ext_attributes module_binding IN seq_expr
       { mkexp_attrs (Pexp_letmodule($4, $6)) $3 }
   | LET IMPLICIT ext_attributes implicit_binding IN seq_expr
-      { mkexp_attrs (Pexp_letimplicit($4, $6)) $3 }
+      { mkexp_attrs (Pexp_letmodule($4, $6)) $3 }
   | LET OPEN override_flag ext_attributes mod_longident IN seq_expr
       { mkexp_attrs (Pexp_open($3, mkrhs $5 5, $7)) $4 }
   | FUNCTION ext_attributes opt_bar match_cases

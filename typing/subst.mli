@@ -32,7 +32,6 @@ val identity: t
 
 val add_type: Ident.t -> Path.t -> t -> t
 val add_module: Ident.t -> Path.t -> t -> t
-val add_implicit: Ident.t -> Path.t -> t -> t
 val add_modtype: Ident.t -> module_type -> t -> t
 val for_saving: t -> t
 val reset_for_saving: unit -> unit
@@ -52,7 +51,6 @@ val modtype: t -> module_type -> module_type
 val signature: t -> signature -> signature
 val modtype_declaration: t -> modtype_declaration -> modtype_declaration
 val module_declaration: t -> module_declaration -> module_declaration
-val implicit_declaration: t -> implicit_declaration -> implicit_declaration
 
 (* Composition of substitutions:
      apply (compose s1 s2) x = apply s2 (apply s1 x) *)

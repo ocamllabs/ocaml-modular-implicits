@@ -416,8 +416,8 @@ class printer  ()= object(self:'self)
           | _ ->
               (match opt with
                | Some o ->
-                   pp f "%s:(%a=@;%a)@;" l self#pattern1 p self#expression o
-               | None -> pp f "%s:%a@;" l self#simple_pattern p)
+                   pp f "%s:(%a=@;%a)@;" s self#pattern1 p self#expression o
+               | None -> pp f "%s:%a@;" s self#simple_pattern p)
         end
     | Parr_labelled s ->
         begin match p.ppat_desc with
@@ -984,21 +984,22 @@ class printer  ()= object(self:'self)
                  (class_description "class") x
                  (self#list ~sep:"@," (class_description "and")) xs
         end
-    | Psig_module ({pmd_type={pmty_desc=Pmty_alias alias};_} as pmd) ->
-        pp f "@[<hov>module@ %s@ =@ %a@]%a" pmd.pmd_name.txt
+    | Psig_module ({pmd_type={pmty_desc=Pmty_alias alias}; pmd_implicit = Nonimplicit} as pmd) ->
+        pp f "@[<hov>module@ %s@ =@ %a@]%a"
+          pmd.pmd_name.txt
           self#longident_loc alias
           self#item_attributes pmd.pmd_attributes
-    | Psig_module pmd ->
+    | Psig_module ({pmd_implicit = Nonimplicit} as pmd) ->
         pp f "@[<hov>module@ %s@ :@ %a@]%a"
           pmd.pmd_name.txt
           self#module_type pmd.pmd_type
           self#item_attributes pmd.pmd_attributes
-    | Psig_implicit pid ->
+    | Psig_module ({pmd_implicit = Implicit arity} as pmd) ->
         pp f "@[<hov>implicit %s@ %s@ :@ %a@]%a"
-          (if pid.pim_arity = 0 then "module" else "functor")
-          pid.pim_module.pmd_name.txt
-          (self#implicit_declaration pid.pim_arity) pid.pim_module.pmd_type
-          self#item_attributes pid.pim_module.pmd_attributes
+          (if arity = 0 then "module" else "functor")
+          pmd.pmd_name.txt
+          (self#implicit_declaration arity) pmd.pmd_type
+          self#item_attributes pmd.pmd_attributes
     | Psig_open od ->
         pp f "@[<hov2>open%s@ %a@]%a"
            (override od.popen_override)
@@ -1163,17 +1164,20 @@ class printer  ()= object(self:'self)
         pp f "@[<2>%a@]" self#bindings (rf,l)
     | Pstr_typext te -> self#type_extension f te
     | Pstr_exception ed -> self#exception_declaration f ed
-    | Pstr_module x ->
+    | Pstr_module ({pmb_implicit = Nonimplicit} as x) ->
         pp f "@[<hov2>module@ %a@]" self#module_binding x
-    | Pstr_implicit pib ->
+    | Pstr_module {pmb_implicit = Implicit arity; pmb_name; pmb_expr} ->
         pp f "@[<hov2>implicit %s@ %s@ %a@]"
-          (if pib.pim_arity = 0 then "module" else "functor")
-          pib.pim_module.pmb_name.txt
-          (self#implicit_binding pib.pim_arity) pib.pim_module.pmb_expr
-    | Pstr_open (ovf, li, _attrs) ->
-        pp f "@[<2>open%s@;%a@]" (override ovf) self#longident_loc li;
-    | Pstr_modtype {pmtd_name=s; pmtd_type=md} ->
-        pp f "@[<hov2>module@ type@ %s%a@]"
+          (if arity = 0 then "module" else "functor")
+          pmb_name.txt
+          (self#implicit_binding arity) pmb_expr
+    | Pstr_open od ->
+        pp f "@[<2>open%s@;%a@]%a"
+           (override od.popen_override)
+           self#longident_loc od.popen_lid
+           self#item_attributes od.popen_attributes
+    | Pstr_modtype {pmtd_name=s; pmtd_type=md; pmtd_attributes=attrs} ->
+        pp f "@[<hov2>module@ type@ %s%a@]%a"
           s.txt
           (fun f md -> match md with
           | None -> ()

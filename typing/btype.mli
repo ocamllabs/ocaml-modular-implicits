@@ -97,7 +97,6 @@ type type_iterators =
     it_type_declaration: type_iterators -> type_declaration -> unit;
     it_extension_constructor: type_iterators -> extension_constructor -> unit;
     it_module_declaration: type_iterators -> module_declaration -> unit;
-    it_implicit_declaration: type_iterators -> implicit_declaration -> unit;
     it_modtype_declaration: type_iterators -> modtype_declaration -> unit;
     it_class_declaration: type_iterators -> class_declaration -> unit;
     it_class_type_declaration: type_iterators -> class_type_declaration -> unit;
@@ -170,9 +169,6 @@ val arrow_is_optional : arrow_flag -> bool
 
 val label_name : arrow_flag -> label
 val label_raw : arrow_flag -> label
-
-(* Returns the label name with first character '?' or '~' as appropriate. *)
-val prefixed_label_name : arrow_flag -> label
 
 val tarr_of_parr : Parsetree.arrow_flag -> Types.arrow_flag
 val tapp_of_papp : Parsetree.apply_flag -> Types.apply_flag

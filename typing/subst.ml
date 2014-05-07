@@ -32,7 +32,6 @@ let identity =
 let add_type id p s = { s with types = Tbl.add id p s.types }
 
 let add_module id p s = { s with modules = Tbl.add id p s.modules }
-let add_implicit = add_module
 
 let add_modtype id ty s = { s with modtypes = Tbl.add id ty s.modtypes }
 
@@ -328,10 +327,6 @@ let rec rename_bound_idents s idents = function
   | Sig_module(id, mty, _) :: sg ->
       let id' = Ident.rename id in
       rename_bound_idents (add_module id (Pident id') s) (id' :: idents) sg
-    (* Implicits behave like modules at this point? *)
-  | Sig_implicit(id, imd) :: sg ->
-      let id' = Ident.rename id in
-      rename_bound_idents (add_implicit id (Pident id') s) (id' :: idents) sg
   | Sig_modtype(id, d) :: sg ->
       let id' = Ident.rename id in
       rename_bound_idents (add_modtype id (Mty_ident(Pident id')) s)
@@ -378,8 +373,6 @@ and signature_component s comp newid =
       Sig_typext(newid, extension_constructor s ext, es)
   | Sig_module(id, d, rs) ->
       Sig_module(newid, module_declaration s d, rs)
-  | Sig_implicit (id, imd) ->
-      Sig_implicit(newid, implicit_declaration s imd)
   | Sig_modtype(id, d) ->
       Sig_modtype(newid, modtype_declaration s d)
   | Sig_class(id, d, rs) ->
@@ -392,12 +385,7 @@ and module_declaration s decl =
     md_type = modtype s decl.md_type;
     md_attributes = attrs s decl.md_attributes;
     md_loc = loc s decl.md_loc;
-  }
-
-and implicit_declaration s decl =
-  {
-    imd_module = module_declaration s decl.imd_module;
-    imd_arity = decl.imd_arity;
+    md_implicit = decl.md_implicit;
   }
 
 and modtype_declaration s decl  =
