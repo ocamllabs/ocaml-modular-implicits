@@ -97,13 +97,14 @@ module Constraints = struct
         let name = Ident.name id in
         begin try
           let (qname, ty), locs = list_extract (name_match prj name) locs in
-          match decl.type_manifest with
-          | None ->
-              failed, (locs, subs),
-              Sig_type (id,{decl with type_manifest = Some ty},recst)
-          | Some _ ->
-              (([qname], ty) :: failed), (locs, subs),
-              Sig_type (id,decl,recst)
+          begin match decl.type_manifest with
+          | None -> ()
+          | Some ty' ->
+              let ty' = instance env ty' in
+              unify env ty ty';
+          end;
+          failed, (locs, subs),
+          Sig_type (id,{decl with type_manifest = Some ty},recst)
         with Not_found ->
           failed, cstrs, field
         end
