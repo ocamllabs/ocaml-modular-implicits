@@ -222,9 +222,6 @@ let init_shape modl =
     | Sig_module(id, md, _) :: rem ->
         init_shape_mod env md.md_type ::
         init_shape_struct (Env.add_module_declaration id md env) rem
-    | Sig_implicit(id, imd) :: rem ->
-        init_shape_mod env imd.imd_module.md_type ::
-        init_shape_struct (Env.add_implicit_declaration id imd env) rem
     | Sig_modtype(id, minfo) :: rem ->
         init_shape_struct (Env.add_modtype id minfo env) rem
     | Sig_class(id, cdecl, _) :: rem ->
@@ -419,7 +416,7 @@ and transl_structure fields cc rootpath = function
       let path = field_path rootpath id in
       Llet(Strict, id, transl_extension_constructor item.str_env path ext,
            transl_structure (id :: fields) cc rootpath rem)
-  | Tstr_module mb | Tstr_implicit {im_module = mb; _} ->
+  | Tstr_module mb ->
       let id = mb.mb_id in
       Llet(pure_module mb.mb_expr, id,
            transl_module Tcoerce_none (field_path rootpath id) mb.mb_expr,
@@ -498,8 +495,7 @@ let rec defined_idents = function
       List.map (fun ext -> ext.ext_id) tyext.tyext_constructors
       @ defined_idents rem
     | Tstr_exception ext -> ext.ext_id :: defined_idents rem
-    | Tstr_module mb | Tstr_implicit {im_module = mb; _} ->
-      mb.mb_id :: defined_idents rem
+    | Tstr_module mb -> mb.mb_id :: defined_idents rem
     | Tstr_recmodule decls ->
       List.map (fun mb -> mb.mb_id) decls @ defined_idents rem
     | Tstr_modtype _ -> defined_idents rem
@@ -532,7 +528,6 @@ let rec more_idents = function
     | Tstr_module {mb_expr={mod_desc = Tmod_structure str}} ->
         all_idents str.str_items @ more_idents rem
     | Tstr_module _ -> more_idents rem
-    | Tstr_implicit _ -> more_idents rem
     | Tstr_attribute _ -> more_idents rem
 
 and all_idents = function
@@ -555,12 +550,11 @@ and all_idents = function
     | Tstr_class cl_list ->
       List.map (fun (ci, _, _) -> ci.ci_id_class) cl_list @ all_idents rem
     | Tstr_class_type cl_list -> all_idents rem
-    | Tstr_module mb | Tstr_implicit {im_module = mb; _} ->
-      begin match mb with
-      | {mb_id;mb_expr={mod_desc = Tmod_structure str}} ->
-          mb_id :: all_idents str.str_items @ all_idents rem
-      | mb -> mb.mb_id :: all_idents rem
-      end
+    | Tstr_include incl ->
+      bound_value_identifiers incl.incl_type @ all_idents rem
+    | Tstr_module {mb_id;mb_expr={mod_desc = Tmod_structure str}} ->
+        mb_id :: all_idents str.str_items @ all_idents rem
+    | Tstr_module mb -> mb.mb_id :: all_idents rem
     | Tstr_attribute _ -> all_idents rem
 
 
@@ -617,33 +611,30 @@ let transl_store_structure glob map prims str =
       let lam = transl_extension_constructor item.str_env path ext in
       Lsequence(Llet(Strict, id, subst_lambda subst lam, store_ident id),
                 transl_store rootpath (add_ident false id subst) rem)
-  | Tstr_module mb | Tstr_implicit {im_module = mb; _} ->
-      begin match mb with
-      | {mb_id=id; mb_expr={mod_desc = Tmod_structure str}} ->
-          let lam = transl_store (field_path rootpath id) subst str.str_items in
-          (* Careful: see next case *)
-          let subst = !transl_store_subst in
-          Lsequence(lam,
-                    Llet(Strict, id,
-                         subst_lambda subst
-                           (Lprim(Pmakeblock(0, Immutable),
-                                  List.map (fun id -> Lvar id)
-                                    (defined_idents str.str_items))),
-                         Lsequence(store_ident id,
-                                   transl_store rootpath (add_ident true id subst)
-                                     rem)))
-      | {mb_id=id; mb_expr=modl} ->
-          let lam = transl_module Tcoerce_none (field_path rootpath id) modl in
-          (* Careful: the module value stored in the global may be different
-             from the local module value, in case a coercion is applied.
-             If so, keep using the local module value (id) in the remainder of
-             the compilation unit (add_ident true returns subst unchanged).
-             If not, we can use the value from the global
-             (add_ident true adds id -> Pgetglobal... to subst). *)
-          Llet(Strict, id, subst_lambda subst lam,
-               Lsequence(store_ident id,
-                         transl_store rootpath (add_ident true id subst) rem))
-      end
+  | Tstr_module{mb_id=id; mb_expr={mod_desc = Tmod_structure str}} ->
+    let lam = transl_store (field_path rootpath id) subst str.str_items in
+      (* Careful: see next case *)
+    let subst = !transl_store_subst in
+    Lsequence(lam,
+              Llet(Strict, id,
+                   subst_lambda subst
+                   (Lprim(Pmakeblock(0, Immutable),
+                          List.map (fun id -> Lvar id)
+                                   (defined_idents str.str_items))),
+                   Lsequence(store_ident id,
+                             transl_store rootpath (add_ident true id subst)
+                                          rem)))
+  | Tstr_module{mb_id=id; mb_expr=modl} ->
+      let lam = transl_module Tcoerce_none (field_path rootpath id) modl in
+      (* Careful: the module value stored in the global may be different
+         from the local module value, in case a coercion is applied.
+         If so, keep using the local module value (id) in the remainder of
+         the compilation unit (add_ident true returns subst unchanged).
+         If not, we can use the value from the global
+         (add_ident true adds id -> Pgetglobal... to subst). *)
+      Llet(Strict, id, subst_lambda subst lam,
+        Lsequence(store_ident id,
+                  transl_store rootpath (add_ident true id subst) rem))
   | Tstr_recmodule bindings ->
       let ids = List.map (fun mb -> mb.mb_id) bindings in
       compile_recmodule
@@ -836,8 +827,7 @@ let transl_toplevel_item item =
   | Tstr_exception ext ->
       toploop_setvalue ext.ext_id
         (transl_extension_constructor item.str_env None ext)
-  | Tstr_module {mb_id=id; mb_expr=modl}
-  | Tstr_implicit {im_module = {mb_id=id; mb_expr=modl}; _} ->
+  | Tstr_module {mb_id=id; mb_expr=modl} ->
       (* we need to use the unique name for the module because of issues
          with "open" (PR#1672) *)
       set_toplevel_unique_name id;

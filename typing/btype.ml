@@ -243,7 +243,6 @@ type type_iterators =
     it_type_declaration: type_iterators -> type_declaration -> unit;
     it_extension_constructor: type_iterators -> extension_constructor -> unit;
     it_module_declaration: type_iterators -> module_declaration -> unit;
-    it_implicit_declaration: type_iterators -> implicit_declaration -> unit;
     it_modtype_declaration: type_iterators -> modtype_declaration -> unit;
     it_class_declaration: type_iterators -> class_declaration -> unit;
     it_class_type_declaration: type_iterators -> class_type_declaration -> unit;
@@ -261,7 +260,6 @@ let type_iterators =
       Sig_value (_, vd)     -> it.it_value_description it vd
     | Sig_type (_, td, _)   -> it.it_type_declaration it td
     | Sig_typext (_, td, _) -> it.it_extension_constructor it td
-    | Sig_implicit (_, imd) -> it.it_implicit_declaration it imd
     | Sig_module (_, md, _) -> it.it_module_declaration it md
     | Sig_modtype (_, mtd)  -> it.it_modtype_declaration it mtd
     | Sig_class (_, cd, _)  -> it.it_class_declaration it cd
@@ -277,8 +275,6 @@ let type_iterators =
     List.iter (it.it_type_expr it) td.ext_type_params;
     List.iter (it.it_type_expr it) td.ext_args;
     may (it.it_type_expr it) td.ext_ret_type
-  and it_implicit_declaration it imd =
-    it.it_module_declaration it imd.imd_module
   and it_module_declaration it md =
     it.it_module_type it md.md_type
   and it_modtype_declaration it mtd =
@@ -339,8 +335,7 @@ let type_iterators =
     it_type_kind; it_class_type; it_module_type;
     it_signature; it_class_type_declaration; it_class_declaration;
     it_modtype_declaration; it_module_declaration; it_extension_constructor;
-    it_type_declaration; it_value_description; it_signature_item;
-    it_implicit_declaration; }
+    it_type_declaration; it_value_description; it_signature_item; }
 
 let copy_row f fixed row keep more =
   let fields = List.map

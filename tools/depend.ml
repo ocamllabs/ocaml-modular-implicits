@@ -186,9 +186,6 @@ let rec add_expr bv exp =
   | Pexp_override sel -> List.iter (fun (_s, e) -> add_expr bv e) sel
   | Pexp_letmodule(x, e) ->
       add_module bv x.pmb_expr; add_expr (StringSet.add x.pmb_name.txt bv) e
-  | Pexp_letimplicit(pib, e) ->
-      let x = pib.pim_module in
-      add_module bv x.pmb_expr; add_expr (StringSet.add x.pmb_name.txt bv) e
   | Pexp_assert (e) -> add_expr bv e
   | Pexp_lazy (e) -> add_expr bv e
   | Pexp_poly (e, t) -> add_expr bv e; add_opt add_type bv t
@@ -257,9 +254,6 @@ and add_sig_item bv item =
       in
       List.iter (fun pmd -> add_modtype bv' pmd.pmd_type) decls;
       bv'
-  | Psig_implicit pim ->
-      let pmd = pim.pim_module in
-      add_modtype bv pmd.pmd_type; StringSet.add pmd.pmd_name.txt bv
   | Psig_modtype x ->
       begin match x.pmtd_type with
         None -> ()
@@ -312,9 +306,6 @@ and add_struct_item bv item =
   | Pstr_exception pext ->
       add_extension_constructor bv pext; bv
   | Pstr_module x ->
-      add_module bv x.pmb_expr; StringSet.add x.pmb_name.txt bv
-  | Pstr_implicit pim ->
-      let x = pim.pim_module in
       add_module bv x.pmb_expr; StringSet.add x.pmb_name.txt bv
   | Pstr_recmodule bindings ->
       let bv' =

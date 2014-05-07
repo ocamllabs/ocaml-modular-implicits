@@ -451,16 +451,19 @@ and print_out_sig_item ppf =
       fprintf ppf "@[<2>module type %s@]" name
   | Osig_modtype (name, mty) ->
       fprintf ppf "@[<2>module type %s =@ %a@]" name !out_module_type mty
-  | Osig_module (name, Omty_alias id, _) ->
+  | Osig_module (name, Omty_alias id, _, _) ->
       fprintf ppf "@[<2>module %s =@ %a@]" name print_ident id
-  | Osig_module (name, mty, rs) ->
+  | Osig_module (name, mty, rs, Asttypes.Nonimplicit) ->
       fprintf ppf "@[<2>%s %s :@ %a@]"
         (match rs with Orec_not -> "module"
                      | Orec_first -> "module rec"
                      | Orec_next -> "and")
         name !out_module_type mty
-  | Osig_implicit (name, n, mty) ->
-      fprintf ppf "@[<2>implicit %s %s %a@]"
+  | Osig_module (name, mty, rs, Asttypes.Implicit n) ->
+      fprintf ppf "@[<2>%s %s %s %a@]"
+        (match rs with Orec_not -> "implicit"
+                     | Orec_first -> "implicit rec"
+                     | Orec_next -> "and")
         (if n = 0 then "module" else "functor")
         name
         (print_out_implicit_functor n) mty

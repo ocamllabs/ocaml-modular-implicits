@@ -54,8 +54,6 @@ type mapper = {
   module_type: mapper -> module_type -> module_type;
   module_type_declaration: mapper -> module_type_declaration
                            -> module_type_declaration;
-  implicit_binding: mapper -> implicit_binding -> implicit_binding;
-  implicit_declaration: mapper -> implicit_declaration -> implicit_declaration;
   open_description: mapper -> open_description -> open_description;
   pat: mapper -> pattern -> pattern;
   payload: mapper -> payload -> payload;
@@ -246,8 +244,6 @@ module MT = struct
     | Psig_module x -> module_ ~loc (sub.module_declaration sub x)
     | Psig_recmodule l ->
         rec_module ~loc (List.map (sub.module_declaration sub) l)
-    | Psig_implicit x ->
-        implicit_ ~loc (sub.implicit_declaration sub x)
     | Psig_modtype x -> modtype ~loc (sub.module_type_declaration sub x)
     | Psig_open x -> open_ ~loc (sub.open_description sub x)
     | Psig_include x -> include_ ~loc (sub.include_description sub x)
@@ -294,7 +290,6 @@ module M = struct
     | Pstr_typext te -> type_extension ~loc (sub.type_extension sub te)
     | Pstr_exception ed -> exception_ ~loc (sub.extension_constructor sub ed)
     | Pstr_module x -> module_ ~loc (sub.module_binding sub x)
-    | Pstr_implicit x -> implicit_ ~loc (sub.implicit_binding sub x)
     | Pstr_recmodule l -> rec_module ~loc (List.map (sub.module_binding sub) l)
     | Pstr_modtype x -> modtype ~loc (sub.module_type_declaration sub x)
     | Pstr_open x -> open_ ~loc (sub.open_description sub x)
@@ -367,9 +362,6 @@ module E = struct
           (List.map (map_tuple (map_loc sub) (sub.expr sub)) sel)
     | Pexp_letmodule (mb, e) ->
         letmodule ~loc ~attrs (sub.module_binding sub mb) (sub.expr sub e)
-    | Pexp_letimplicit (pib, e) ->
-        letimplicit ~loc ~attrs (sub.implicit_binding sub pib)
-          (sub.expr sub e)
     | Pexp_assert e -> assert_ ~loc ~attrs (sub.expr sub e)
     | Pexp_lazy e -> lazy_ ~loc ~attrs (sub.expr sub e)
     | Pexp_poly (e, t) ->
@@ -521,10 +513,11 @@ let default_mapper =
     expr = E.map;
 
     module_declaration =
-      (fun this {pmd_name; pmd_type; pmd_attributes; pmd_loc} ->
+      (fun this {pmd_name; pmd_type; pmd_attributes; pmd_loc; pmd_implicit} ->
          Md.mk
            (map_loc this pmd_name)
            (this.module_type this pmd_type)
+           ~implicit_:pmd_implicit
            ~attrs:(this.attributes this pmd_attributes)
            ~loc:(this.location this pmd_loc)
       );
@@ -539,24 +532,13 @@ let default_mapper =
       );
 
     module_binding =
-      (fun this {pmb_name; pmb_expr; pmb_attributes; pmb_loc} ->
-         Mb.mk (map_loc this pmb_name) (this.module_expr this pmb_expr)
+      (fun this {pmb_name; pmb_expr; pmb_attributes; pmb_loc; pmb_implicit} ->
+         Mb.mk
+           (map_loc this pmb_name)
+           (this.module_expr this pmb_expr)
+           ~implicit_:pmb_implicit
            ~attrs:(this.attributes this pmb_attributes)
            ~loc:(this.location this pmb_loc)
-      );
-
-    implicit_declaration =
-      (fun this {pim_module; pim_arity} ->
-         Im.mk
-           (this.module_declaration this pim_module)
-           pim_arity
-      );
-
-    implicit_binding =
-      (fun this {pim_module; pim_arity} ->
-         Im.mk
-           (this.module_binding this pim_module)
-           pim_arity
       );
 
 

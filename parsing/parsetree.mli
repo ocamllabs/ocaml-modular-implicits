@@ -306,9 +306,6 @@ and expression_desc =
         (* {< x1 = E1; ...; Xn = En >} *)
   | Pexp_letmodule of module_binding * expression
         (* let module M = ME in E *)
-  | Pexp_letimplicit of implicit_binding * expression
-        (* let implicit module M = ME in E *)
-        (* let implicit functor F (_) = ME in E *)
   | Pexp_assert of expression
         (* assert E
            Note: "assert false" is treated in a special way by the
@@ -668,8 +665,6 @@ and signature_item_desc =
         (* module X : MT *)
   | Psig_recmodule of module_declaration list
         (* module rec X1 : MT1 and ... and Xn : MTn *)
-  | Psig_implicit of implicit_declaration
-        (* implicit module X : MT *)
   | Psig_modtype of module_type_declaration
         (* module type S = MT
            module type S *)
@@ -692,6 +687,7 @@ and module_declaration =
      pmd_type: module_type;
      pmd_attributes: attributes; (* ... [@@id1] [@@id2] *)
      pmd_loc: Location.t;
+     pmd_implicit: implicit_flag;
     }
 (* S : MT *)
 
@@ -797,8 +793,6 @@ and structure_item_desc =
         (* module X = ME *)
   | Pstr_recmodule of module_binding list
         (* module rec X1 = ME1 and ... and Xn = MEn *)
-  | Pstr_implicit of implicit_binding
-        (* implicit module X = ME *)
   | Pstr_modtype of module_type_declaration
         (* module type S = MT *)
   | Pstr_open of open_description
@@ -828,18 +822,9 @@ and module_binding =
      pmb_expr: module_expr;
      pmb_attributes: attributes;
      pmb_loc: Location.t;
+     pmb_implicit: implicit_flag;
     }
 (* X = ME *)
-
-and 'a implicit_infos =
-  {
-    pim_module: 'a;
-    pim_arity: int;
-  }
-
-and implicit_binding = module_binding implicit_infos
-
-and implicit_declaration = module_declaration implicit_infos
 
 (** {2 Toplevel} *)
 

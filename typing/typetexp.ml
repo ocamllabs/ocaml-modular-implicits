@@ -425,7 +425,10 @@ let rec transl_type env policy styp =
       | Ttyp_package pkg -> pkg
       | _ -> assert false
     in
-    let id, env = Env.enter_module s package.pack_type env in
+    let id, env =
+      Env.enter_module ~arg:true ~implicit_:(Implicit 0)
+        s package.pack_type env
+    in
     let cty2 = transl_type env policy st2 in
     let arr = Tarr_implicit id in
     let ty = newty (Tarrow(arr, cty1.ctyp_type, cty2.ctyp_type, Cok)) in

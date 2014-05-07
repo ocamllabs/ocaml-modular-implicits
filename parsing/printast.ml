@@ -103,6 +103,12 @@ let fmt_private_flag f x =
   | Private -> fprintf f "Private";
 ;;
 
+let fmt_implicit_flag f x =
+  match x with
+  | Nonimplicit -> fprintf f "Nonimplicit";
+  | Implicit n -> fprintf f "Implicit %d" n;
+;;
+
 let line i f s (*...*) =
   fprintf f "%s" (String.make ((2*i) mod 72) ' ');
   fprintf f s (*...*)
@@ -345,10 +351,6 @@ and expression i ppf x =
   | Pexp_letmodule (mb, e) ->
       line i ppf "Pexp_letmodule\n";
       module_binding i ppf mb;
-      expression i ppf e;
-  | Pexp_letimplicit (pib, e) ->
-      line i ppf "Pexp_letimplicit\n";
-      module_binding i ppf pib.pim_module;
       expression i ppf e;
   | Pexp_assert (e) ->
       line i ppf "Pexp_assert\n";
@@ -673,9 +675,6 @@ and signature_item i ppf x =
   | Psig_recmodule decls ->
       line i ppf "Psig_recmodule\n";
       list i module_declaration ppf decls;
-  | Psig_implicit pid ->
-      line i ppf "Psig_implicit %d\n" pid.pim_arity;
-      module_declaration i ppf pid.pim_module
   | Psig_modtype x ->
       line i ppf "Psig_modtype %a\n" fmt_string_loc x.pmtd_name;
       attributes i ppf x.pmtd_attributes;
@@ -783,9 +782,6 @@ and structure_item i ppf x =
   | Pstr_recmodule bindings ->
       line i ppf "Pstr_recmodule\n";
       list i module_binding ppf bindings;
-  | Pstr_implicit pib ->
-      line i ppf "Pstr_implicit %d\n" pib.pim_arity;
-      module_binding i ppf pib.pim_module
   | Pstr_modtype x ->
       line i ppf "Pstr_modtype %a\n" fmt_string_loc x.pmtd_name;
       attributes i ppf x.pmtd_attributes;
@@ -815,13 +811,15 @@ and structure_item i ppf x =
 
 and module_declaration i ppf pmd =
   string_loc i ppf pmd.pmd_name;
+  line i ppf "%a\n" fmt_implicit_flag pmd.pmd_implicit;
   attributes i ppf pmd.pmd_attributes;
   module_type (i+1) ppf pmd.pmd_type;
 
-and module_binding i ppf x =
-  string_loc i ppf x.pmb_name;
-  attributes i ppf x.pmb_attributes;
-  module_expr (i+1) ppf x.pmb_expr
+and module_binding i ppf pmb =
+  string_loc i ppf pmb.pmb_name;
+  line i ppf "%a\n" fmt_implicit_flag pmb.pmb_implicit;
+  attributes i ppf pmb.pmb_attributes;
+  module_expr (i+1) ppf pmb.pmb_expr
 
 and core_type_x_core_type_x_location i ppf (ct1, ct2, l) =
   line i ppf "<constraint> %a\n" fmt_location l;

@@ -53,7 +53,6 @@ type error =
   | Too_many_arguments of bool * type_expr
   | Abstract_wrong_label of arrow_flag * type_expr
   | Scoping_let_module of string * type_expr
-  | Scoping_let_implicit of string * type_expr
   | Masked_instance_variable of Longident.t
   | Not_a_variant_type of Longident.t
   | Incoherent_label_order
@@ -158,7 +157,6 @@ let iter_expression f e =
     | Pexp_for (_, e1, e2, _, e3) -> expr e1; expr e2; expr e3
     | Pexp_override sel -> List.iter (fun (_, e) -> expr e) sel
     | Pexp_letmodule (pmb, e) -> expr e; module_expr pmb.pmb_expr
-    | Pexp_letimplicit (pib, e) -> expr e; module_expr pib.pim_module.pmb_expr
     | Pexp_object { pcstr_fields = fs } -> List.iter class_field fs
     | Pexp_pack me -> module_expr me
 
@@ -194,7 +192,6 @@ let iter_expression f e =
     | Pstr_attribute _
     | Pstr_extension _ -> ()
     | Pstr_include {pincl_mod = me}
-    | Pstr_implicit {pim_module = {pmb_expr = me}}
     | Pstr_module {pmb_expr = me} -> module_expr me
     | Pstr_recmodule l -> List.iter (fun x -> module_expr x.pmb_expr) l
     | Pstr_class cdl -> List.iter (fun c -> class_expr c.pci_expr) cdl
@@ -1458,7 +1455,6 @@ and is_nonexpansive_mod mexp =
           | Tstr_value (_, pat_exp_list) ->
               List.for_all (fun vb -> is_nonexpansive vb.vb_expr) pat_exp_list
           | Tstr_module {mb_expr=m;_}
-          | Tstr_implicit {im_module = {mb_expr = m; _}; _}
           | Tstr_include {incl_mod=m;_} -> is_nonexpansive_mod m
           | Tstr_recmodule id_mod_list ->
               List.for_all (fun {mb_expr=m;_} -> is_nonexpansive_mod m)
@@ -1489,7 +1485,10 @@ let rec approx_type env sty =
       let ty1 = type_option (newvar ()) in
       newty (Tarrow (Tarr_optional s, ty1, approx_type env sty, Cok))
   | Ptyp_arrow (Parr_implicit s, _, sty) ->
-      let id, env = Env.enter_module s (Mty_signature []) env in
+      let id, env =
+        Env.enter_module ~arg:true ~implicit_:(Implicit 0)
+          s (Mty_signature []) env
+      in
       newty (Tarrow (Tarr_implicit id, newvar (), approx_type env sty, Cok))
   | Ptyp_arrow (p, _, sty) ->
       newty (Tarrow (tarr_of_parr p, newvar (), approx_type env sty, Cok))
@@ -1514,7 +1513,10 @@ let rec type_approx env sexp =
       newty (Tarrow(Tarr_optional s, type_option (newvar ()),
                     type_approx env e, Cok))
   | Pexp_fun (Parr_implicit s, _, _, e) ->
-      let id, env = Env.enter_module s (Mty_signature []) env in
+      let id, env =
+        Env.enter_module ~arg:true ~implicit_:(Implicit 0)
+          s (Mty_signature []) env
+      in
       newty (Tarrow(Tarr_implicit id, newvar (),
                     type_approx env e, Cok))
   | Pexp_fun (p, _, _, e) ->
@@ -2541,7 +2543,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       | _ ->
           assert false
       end
-  | Pexp_letmodule({pmb_name = name; pmb_expr = smodl;
+  | Pexp_letmodule({pmb_name = name; pmb_expr = smodl; pmb_implicit;
                     pmb_attributes; pmb_loc}, sbody) ->
       let ty = newvar() in
       (* remember original level *)
@@ -2549,7 +2551,9 @@ and type_expect_ ?in_function env sexp ty_expected =
       Ident.set_current_time ty.level;
       let context = Typetexp.narrow () in
       let modl = !type_module env smodl in
-      let (id, new_env) = Env.enter_module name.txt modl.mod_type env in
+      let (id, new_env) =
+        Env.enter_module ~implicit_:pmb_implicit name.txt modl.mod_type env
+      in
       Ctype.init_def(Ident.current_time());
       Typetexp.widen context;
       let body = type_expect new_env sbody ty_expected in
@@ -2565,40 +2569,9 @@ and type_expect_ ?in_function env sexp ty_expected =
       with Unify _ ->
         raise(Error(loc, env, Scoping_let_module(name.txt, body.exp_type)))
       end;
-      let mb = { mb_id = id; mb_name = name; mb_expr = modl;
-                 mb_attributes = pmb_attributes; mb_loc = pmb_loc } in
-      re {
-        exp_desc = Texp_letmodule (mb, body);
-        exp_loc = loc; exp_extra = [];
-        exp_type = ty;
-        exp_attributes = sexp.pexp_attributes;
-        exp_env = env }
-  | Pexp_letimplicit ({pim_module = pmb; pim_arity = arity}, sbody) ->
-      let {pmb_name = name; pmb_expr = smodl; pmb_attributes; pmb_loc} = pmb in
-      let ty = newvar() in
-      (* remember original level *)
-      begin_def ();
-      Ident.set_current_time ty.level;
-      let context = Typetexp.narrow () in
-      let modl = !type_module env smodl in
-      let (id, new_env) = Env.enter_implicit name.txt ~arity modl.mod_type env in
-      Ctype.init_def(Ident.current_time());
-      Typetexp.widen context;
-      let body = type_expect new_env sbody ty_expected in
-      (* go back to original level *)
-      end_def ();
-      (* Unification of body.exp_type with the fresh variable ty
-         fails if and only if the prefix condition is violated,
-         i.e. if generative types rooted at id show up in the
-         type body.exp_type.  Thus, this unification enforces the
-         scoping condition on "let module". *)
-      begin try
-        Ctype.unify_var new_env ty body.exp_type
-      with Unify _ ->
-        raise(Error(loc, env, Scoping_let_implicit(name.txt, body.exp_type)))
-      end;
-      let mb = { mb_id = id; mb_name = name; mb_expr = modl;
-                 mb_attributes = pmb_attributes; mb_loc = pmb_loc } in
+      let mb = { mb_id = id; mb_name = name; mb_expr = modl; mb_loc = pmb_loc;
+                 mb_implicit = pmb_implicit; mb_attributes = pmb_attributes }
+      in
       re {
         exp_desc = Texp_letmodule (mb, body);
         exp_loc = loc; exp_extra = [];
@@ -3207,7 +3180,9 @@ and type_argument env sarg ty_expected' ty_expected =
           Texp_function(Tarr_simple, [case eta_pat e], Total) }
       in
       Location.prerr_warning texp.exp_loc
-        (Warnings.Eliminated_optional_arguments (List.map (fun (l, _, _) -> l) args));
+        (Warnings.Eliminated_optional_arguments (List.map
+             (fun (l, _) -> match l with Tapp_optional s -> s
+                                       | _ -> assert false) args));
       if warn then Location.prerr_warning texp.exp_loc
           (Warnings.Without_principality "eliminated optional argument");
       if is_nonexpansive texp then func texp else
@@ -3693,7 +3668,7 @@ and type_implicit_arg id ?in_function env sbody ty_res =
     Mod.unpack (Exp.ident (mknoloc (Longident.Lident name)))
   in
   let modl = !type_module env smodl in
-  let new_env = Env.add_implicit ~arg:true id ~arity:0 modl.mod_type env in
+  let new_env = Env.add_module ~arg:true ~implicit_:(Implicit 0) id modl.mod_type env in
   Ctype.init_def(Ident.current_time());
   Typetexp.widen context;
   let body = type_expect ?in_function new_env sbody ty_res in
@@ -3707,10 +3682,12 @@ and type_implicit_arg id ?in_function env sbody ty_res =
   begin try
     Ctype.unify_var new_env ty body.exp_type
   with Unify _ ->
-    raise(Error(sbody.pexp_loc, env, Scoping_let_implicit(name, body.exp_type)))
+    raise(Error(sbody.pexp_loc, env, Scoping_let_module(name, body.exp_type)))
   end;
   let mb = { mb_id = id; mb_name = mknoloc name; mb_expr = modl;
-             mb_attributes = []; mb_loc = sbody.pexp_loc } in
+             mb_implicit = Implicit 0;
+             mb_attributes = []; mb_loc = sbody.pexp_loc }
+  in
   re {
     exp_desc = Texp_letmodule(mb, body);
     exp_loc = sbody.pexp_loc; exp_extra = [];
@@ -4107,12 +4084,6 @@ let report_error env ppf = function
       reset_and_mark_loops ty;
       fprintf ppf
        "This `let module' expression has type@ %a@ " type_expr ty;
-      fprintf ppf
-       "In this type, the locally bound module name %s escapes its scope" id
-  | Scoping_let_implicit(id, ty) ->
-      reset_and_mark_loops ty;
-      fprintf ppf
-       "This `let implicit' expression has type@ %a@ " type_expr ty;
       fprintf ppf
        "In this type, the locally bound module name %s escapes its scope" id
   | Masked_instance_variable lid ->

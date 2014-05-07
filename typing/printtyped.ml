@@ -107,6 +107,12 @@ let fmt_private_flag f x =
   | Private -> fprintf f "Private";
 ;;
 
+let fmt_implicit_flag f x =
+  match x with
+  | Nonimplicit -> fprintf f "Nonimplicit";
+  | Implicit n -> fprintf f "Implicit %d" n;
+;;
+
 let line i f s (*...*) =
   fprintf f "%s" (String.make (2*i) ' ');
   fprintf f s (*...*)
@@ -376,10 +382,6 @@ and expression i ppf x =
       line i ppf "Pexp_letmodule\n";
       module_binding i ppf mb;
       expression i ppf e;
-  | Texp_letimplicit (imb,e) ->
-      line i ppf "Pexp_letimplicit %d\n" imb.im_arity;
-      module_binding i ppf imb.im_module;
-      expression i ppf e;
   | Texp_assert (e) ->
       line i ppf "Pexp_assert";
       expression i ppf e;
@@ -533,9 +535,8 @@ and class_expr i ppf x =
   | Tcl_structure (cs) ->
       line i ppf "Pcl_structure\n";
       class_structure i ppf cs;
-  | Tcl_fun (l, p, _, ce, _) ->
-      line i ppf "Pcl_fun\n";
-      label i ppf l;
+  | Tcl_fun (arr, p, _, ce, _) ->
+      line i ppf "Pcl_fun %a\n" arrow_flag arr;
       pattern i ppf p;
       class_expr i ppf ce
   | Tcl_apply (ce, l) ->
@@ -646,9 +647,6 @@ and signature_item i ppf x =
       line i ppf "Psig_module \"%a\"\n" fmt_ident md.md_id;
       attributes i ppf md.md_attributes;
       module_type i ppf md.md_type
-  | Tsig_implicit imd ->
-      line i ppf "Psig_implicit %d\n" imd.im_arity;
-      module_declaration i ppf imd.im_module
   | Tsig_recmodule decls ->
       line i ppf "Psig_recmodule\n";
       list i module_declaration ppf decls;
@@ -677,13 +675,15 @@ and signature_item i ppf x =
 
 and module_declaration i ppf md =
   line i ppf "%a" fmt_ident md.md_id;
+  line i ppf "%a\n" fmt_implicit_flag md.md_implicit;
   attributes i ppf md.md_attributes;
   module_type (i+1) ppf md.md_type;
 
-and module_binding i ppf x =
-  line i ppf "%a\n" fmt_ident x.mb_id;
-  attributes i ppf x.mb_attributes;
-  module_expr (i+1) ppf x.mb_expr
+and module_binding i ppf mb =
+  line i ppf "%a\n" fmt_ident mb.mb_id;
+  line i ppf "%a\n" fmt_implicit_flag mb.mb_implicit;
+  attributes i ppf mb.mb_attributes;
+  module_expr (i+1) ppf mb.mb_expr
 
 and modtype_declaration i ppf = function
   | None -> line i ppf "#abstract"
@@ -754,9 +754,6 @@ and structure_item i ppf x =
   | Tstr_module x ->
       line i ppf "Pstr_module\n";
       module_binding i ppf x
-  | Tstr_implicit imb ->
-      line i ppf "Pstr_implicit %d\n" imb.im_arity;
-      module_binding i ppf imb.im_module
   | Tstr_recmodule bindings ->
       line i ppf "Pstr_recmodule\n";
       list i module_binding ppf bindings

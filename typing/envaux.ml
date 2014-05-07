@@ -55,10 +55,6 @@ let rec env_from_summary sum subst =
           Env.add_module_declaration id
             (Subst.module_declaration subst desc)
             (env_from_summary s subst)
-      | Env_implicit(s, id, desc) ->
-          Env.add_implicit_declaration id
-            (Subst.implicit_declaration subst desc)
-            (env_from_summary s subst)
       | Env_modtype(s, id, desc) ->
           Env.add_modtype id (Subst.modtype_declaration subst desc)
                           (env_from_summary s subst)
@@ -83,12 +79,6 @@ let rec env_from_summary sum subst =
           Env.add_module_declaration id (Subst.module_declaration subst desc)
             ~arg:true (env_from_summary s subst)
       | Env_functor_arg _ -> assert false
-
-      | Env_implicit_arg(Env_implicit(s, id, desc), id') when Ident.same id id' ->
-          Env.add_implicit_declaration id ~arg:true
-            (Subst.implicit_declaration subst desc)
-            (env_from_summary s subst)
-      | Env_implicit_arg _ -> assert false
     in
       Hashtbl.add env_cache (sum, subst) env;
       env

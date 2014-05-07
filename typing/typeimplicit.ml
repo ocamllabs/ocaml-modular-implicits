@@ -116,7 +116,7 @@ let instantiate_implicits_ty loc env ty =
           let arguments, instances, subst, rhs' = extract_implicits rhs in
           inst.implicit_argument :: arguments,
           Ident.add id' inst instances,
-          Subst.add_implicit id (Path.Pident id') subst,
+          Subst.add_module id (Path.Pident id') subst,
           rhs'
           (*{ty with desc = Tarrow (Tarr_implicit id', lhs, rhs', comm)}*)
       | Tarrow (arr, lhs, rhs, comm) ->
