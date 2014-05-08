@@ -351,6 +351,54 @@ let find_pending_instance inst =
   with _ ->
     false
 
+(* Pack module at given path to match a given implicit instance and
+   update the instance to point to this module.
+   Return the correct package if any.
+*)
+let pack_implicit inst path =
+  let { implicit_type = p,nl,tl;
+        implicit_env  = env;
+        implicit_loc  = loc } = inst in
+  let rec translpath = function
+    | Path.Pident _ | Path.Pdot _ as path ->
+        let md = Env.find_module path env in
+        let lident = Location.mkloc (Path.to_longident path) loc in
+        {
+          mod_desc = Tmod_ident (path, lident);
+          mod_loc = loc;
+          mod_type = md.md_type;
+          mod_env = env;
+          mod_attributes = [];
+        }
+    | Path.Papply (p1,p2) ->
+        let mfun = translpath p1 and marg = translpath p2 in
+        match mfun.mod_type with
+        | Mty_functor (param, Some mty_param, mty_res) ->
+            let coercion = Includemod.modtypes env marg.mod_type mty_param in
+            let mty_appl = Subst.modtype
+                (Subst.add_module param path Subst.identity)  mty_res
+            in
+            { mod_desc = Tmod_apply(mfun, marg, coercion);
+              mod_type = mty_appl;
+              mod_env = env;
+              mod_attributes = [];
+              mod_loc = loc;
+            }
+        | _ -> assert false
+  in
+  let modl = translpath path in
+  let (modl, tl') = !type_implicit_instance env modl p nl tl in
+  {
+    exp_desc = Texp_pack modl;
+    exp_loc = loc; exp_extra = [];
+    exp_type = newty (Tpackage (p, nl, tl'));
+    exp_attributes = [];
+    exp_env = env;
+  }
+
+let () =
+  Typeimplicit.pack_implicit_ref := pack_implicit
+
 let generalize_implicits () =
   let current_level = get_current_level () in
   let not_linked = function

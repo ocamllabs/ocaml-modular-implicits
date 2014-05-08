@@ -179,31 +179,12 @@ let instantiate_implicits_expr env expr =
   expr
 
 
-(* Pack module at given path to match a given implicit instance and
-   update the instance to point to this module.
-   Return the correct package if any.
-*)
+let pack_implicit_ref
+  : (pending_implicit -> Path.t -> Typedtree.expression) ref
+  = ref (fun _ _ -> assert false)
+
 let pack_implicit inst path =
-  let { implicit_type = p,nl,tl;
-        implicit_env  = env;
-        implicit_loc  = loc } = inst in
-  let md = Env.find_module path env in
-  let lident = Location.mkloc (Path.to_longident path) loc in
-  let modl = {
-    mod_desc = Tmod_ident (path, lident);
-    mod_loc = loc;
-    mod_type = md.md_type;
-    mod_env = env;
-    mod_attributes = [];
-  } in
-  let (modl, tl') = !type_implicit_instance env modl p nl tl in
-  {
-    exp_desc = Texp_pack modl;
-    exp_loc = loc; exp_extra = [];
-    exp_type = newty (Tpackage (p, nl, tl'));
-    exp_attributes = [];
-    exp_env = env;
-  }
+  !pack_implicit_ref inst path
 
 module Link = struct
   (* Link a pending implicit to the module at specified path.
