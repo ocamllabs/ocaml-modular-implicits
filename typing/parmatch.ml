@@ -153,8 +153,6 @@ let rec pretty_val ppf v =
         begin match cstr with
           | Tpat_unpack ->
             fprintf ppf "@[(module %a)@]" pretty_val { v with pat_extra = rem }
-          | Tpat_implicit ->
-            fprintf ppf "@[(implicit %a)@]" pretty_val { v with pat_extra = rem }
           | Tpat_constraint ctyp ->
             fprintf ppf "@[(%a : _)@]" pretty_val { v with pat_extra = rem }
           | Tpat_type _ ->
