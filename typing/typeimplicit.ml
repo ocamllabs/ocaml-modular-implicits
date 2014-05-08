@@ -55,9 +55,9 @@ module Unlink
     end;
     register path var
 
-  let rec type_expr ty =
+  let it_type_expr it ty =
     (* First recurse in sub expressions *)
-    iter_type_expr type_expr ty;
+    type_iterators.it_type_expr it ty;
     (* Then replace current type if it is a constructor referring to an
        implicit *)
     match ty.desc with
@@ -76,6 +76,15 @@ module Unlink
     | Tconstr (path,_,_) ->
         assert (P.register_constraints_for (Path.head path) = None)
     | _ -> ()
+
+  let type_iterators = {type_iterators with it_type_expr}
+
+  let type_expr ty =
+    type_iterators.it_type_expr type_iterators ty
+
+  let module_type mty =
+    type_iterators.it_module_type type_iterators mty
+
 end
 
 let pending_implicits
@@ -196,37 +205,39 @@ let pack_implicit inst path =
     exp_env = env;
   }
 
-(* Link a pending implicit to the module at specified path.
-   May fail with unifications or module subtyping errors.
-*)
-let link_implicit_to_path inst path =
-  (* Check that all constraints are satisfied *)
-  let subst = Subst.add_module inst.implicit_id path Subst.identity in
-  List.iter (fun (tpath,ty') ->
-      let tpath = Subst.type_path subst tpath in
-      let ty = newconstr tpath [] in
-      let ty' = Subst.type_expr subst ty' in
-      unify inst.implicit_env ty ty'
-    )
-    inst.implicit_constraints;
-  (* Pack the module to appropriate signature *)
-  let expr = pack_implicit inst path in
-  (* Update the argument *)
-  inst.implicit_argument.arg_expression <- Some expr
+module Link = struct
+  (* Link a pending implicit to the module at specified path.
+     May fail with unifications or module subtyping errors.
+  *)
+  let to_path inst path =
+    (* Check that all constraints are satisfied *)
+    let subst = Subst.add_module inst.implicit_id path Subst.identity in
+    List.iter (fun (tpath,ty') ->
+        let tpath = Subst.type_path subst tpath in
+        let ty = newconstr tpath [] in
+        let ty' = Subst.type_expr subst ty' in
+        unify inst.implicit_env ty ty'
+      )
+      inst.implicit_constraints;
+    (* Pack the module to appropriate signature *)
+    let expr = pack_implicit inst path in
+    (* Update the argument *)
+    inst.implicit_argument.arg_expression <- Some expr
 
-let link_implicit_to_expr inst expr =
-  (* An implicit instance always have to be a path to a module in scope *)
-  let rec mod_path me = match me.mod_desc with
-    | Tmod_ident (path,_) -> path
-    | Tmod_constraint (me,_,_,_) ->
-        mod_path me
-    | _ -> assert false
-  in
-  let path = match expr.exp_desc with
-    | Texp_pack me -> mod_path me
-    | _ -> assert false
-  in
-  link_implicit_to_path inst path
+  let to_expr inst expr =
+    (* An implicit instance always have to be a path to a module in scope *)
+    let rec mod_path me = match me.mod_desc with
+      | Tmod_ident (path,_) -> path
+      | Tmod_constraint (me,_,_,_) ->
+          mod_path me
+      | _ -> assert false
+    in
+    let path = match expr.exp_desc with
+      | Texp_pack me -> mod_path me
+      | _ -> assert false
+    in
+    to_path inst path
+end
 
 (* Extraction of pending implicit arguments *)
 let extract_pending_implicits expr =

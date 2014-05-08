@@ -3394,7 +3394,7 @@ and type_application env funct
     | (inst :: pending), ((Tapp_implicit,arg) :: args) ->
         let p, nl, tl = inst.Typeimplicit.implicit_type in
         let package_ty = newgenty (Tpackage (p,nl,tl)) in
-        Typeimplicit.link_implicit_to_expr
+        Typeimplicit.Link.to_expr
           inst (type_expect env arg package_ty);
         type_implicits args' args pending
     | _, (arg :: args) ->
