@@ -65,9 +65,7 @@ and untype_structure_item item =
     | Tstr_recmodule list ->
         Pstr_recmodule (List.map untype_module_binding list)
     | Tstr_modtype mtd ->
-        Pstr_modtype {pmtd_name=mtd.mtd_name;
-                      pmtd_type=option untype_module_type mtd.mtd_type;
-                      pmtd_loc=mtd.mtd_loc;pmtd_attributes=mtd.mtd_attributes;}
+        Pstr_modtype (untype_module_type_declaration mtd)
     | Tstr_open od ->
         Pstr_open {popen_lid = od.open_txt; popen_override = od.open_override;
                    popen_attributes = od.open_attributes;
@@ -109,6 +107,23 @@ and untype_module_binding mb =
    pmb_attributes = mb.mb_attributes;
    pmb_loc = mb.mb_loc;
    pmb_implicit = mb.mb_implicit;
+  }
+
+and untype_module_declaration md =
+  {
+    pmd_name = md.md_name;
+    pmd_type = untype_module_type md.md_type;
+    pmd_attributes = md.md_attributes;
+    pmd_loc = md.md_loc;
+    pmd_implicit = md.md_implicit;
+  }
+
+and untype_module_type_declaration mtd =
+  {
+    pmtd_name = mtd.mtd_name;
+    pmtd_type = option untype_module_type mtd.mtd_type;
+    pmtd_attributes = mtd.mtd_attributes;
+    pmtd_loc = mtd.mtd_loc;
   }
 
 and untype_type_declaration decl =
@@ -388,20 +403,11 @@ and untype_signature_item item =
     | Tsig_exception ext ->
         Psig_exception (untype_extension_constructor ext)
     | Tsig_module md ->
-        Psig_module {pmd_name = md.md_name;
-                     pmd_type = untype_module_type md.md_type;
-                     pmd_attributes = md.md_attributes; pmd_loc = md.md_loc;
-                     pmd_implicit = md.md_implicit;
-                    }
+        Psig_module (untype_module_declaration md)
     | Tsig_recmodule list ->
-        Psig_recmodule (List.map (fun md ->
-              {pmd_name = md.md_name; pmd_type = untype_module_type md.md_type;
-               pmd_attributes = md.md_attributes; pmd_loc = md.md_loc;
-               pmd_implicit = md.md_implicit}) list)
+        Psig_recmodule (List.map untype_module_declaration list)
     | Tsig_modtype mtd ->
-        Psig_modtype {pmtd_name=mtd.mtd_name;
-                      pmtd_type=option untype_module_type mtd.mtd_type;
-                      pmtd_attributes=mtd.mtd_attributes; pmtd_loc=mtd.mtd_loc}
+        Psig_modtype (untype_module_type_declaration mtd)
     | Tsig_open od ->
         Psig_open {popen_lid = od.open_txt;
                    popen_override = od.open_override;

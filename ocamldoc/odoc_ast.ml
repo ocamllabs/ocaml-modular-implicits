@@ -116,8 +116,6 @@ module Typedtree_search =
       | Typedtree.Tstr_include _ -> ()
       | Typedtree.Tstr_eval _ -> ()
       | Typedtree.Tstr_attribute _ -> ()
-      | Typedtree.Tstr_implicit _ ->
-          failwith "TODO"
 
     let tables typedtree =
       let t = Hashtbl.create 13 in
@@ -1463,9 +1461,6 @@ module Analyser =
                let complete_name = Name.concat current_module_name name.txt in
                raise (Failure (Odoc_messages.module_not_found_in_typedtree complete_name))
           )
-
-      | Parsetree.Pstr_implicit _ ->
-          failwith "TODO"
 
       | Parsetree.Pstr_recmodule mods ->
           (* A VOIR ICI pb: pas de lien avec les module type

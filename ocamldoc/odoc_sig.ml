@@ -58,8 +58,6 @@ module Signature_search =
           Hashtbl.add table (CT (Name.from_ident ident)) signat
       | Types.Sig_module (ident, _, _) ->
           Hashtbl.add table (M (Name.from_ident ident)) signat
-      | Types.Sig_implicit _ ->
-          failwith "TODO"
       | Types.Sig_modtype (ident,_) ->
           Hashtbl.add table (MT (Name.from_ident ident)) signat
 
@@ -338,7 +336,6 @@ module Analyser =
         | Parsetree.Psig_module {Parsetree.pmd_name=name}
         | Parsetree.Psig_modtype {Parsetree.pmtd_name=name} as m ->
           if Name.Set.mem name.txt erased then acc else take_item m
-        | Parsetree.Psig_implicit _ -> failwith "TODO"
         | Parsetree.Psig_recmodule mods ->
           (match List.filter (fun pmd -> not (Name.Set.mem pmd.Parsetree.pmd_name.txt erased)) mods with
           | [] -> acc
@@ -893,8 +890,6 @@ module Analyser =
             in
             (maybe_more, new_env2, [ Element_module new_module ])
 
-        | Parsetree.Psig_implicit _ ->
-            failwith "TODO"
         | Parsetree.Psig_recmodule decls ->
             (* we start by extending the environment *)
             let new_env =
