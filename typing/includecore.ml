@@ -229,6 +229,7 @@ let type_declarations ?(equality = false) env name decl1 id decl2 =
         if Ctype.equal env true decl1.type_params decl2.type_params
         then [] else [Constraint]
     | (Some ty1, Some ty2) ->
+        Ctype.unify env ty1 ty2;
         if type_manifest env ty1 decl1.type_params ty2 decl2.type_params
             decl2.type_private
         then [] else [Manifest]
