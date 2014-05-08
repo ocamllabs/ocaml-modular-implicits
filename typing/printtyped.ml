@@ -222,10 +222,6 @@ and pattern i ppf x =
         line i ppf "Tpat_unpack\n";
         attributes i ppf attrs;
         pattern i ppf { x with pat_extra = rem }
-    | (Tpat_implicit, _, attrs) :: rem ->
-        line i ppf "Tpat_implicit\n";
-        attributes i ppf attrs;
-        pattern i ppf { x with pat_extra = rem }
     | (Tpat_constraint cty, _, attrs) :: rem ->
         line i ppf "Tpat_constraint\n";
         attributes i ppf attrs;
