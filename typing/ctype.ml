@@ -3220,6 +3220,16 @@ let matches env ty ty' =
                  (*  Equivalence between parameterized types  *)
                  (*********************************************)
 
+let equality_equations
+  : (Path.t * type_expr) list ref Ident.tbl ref
+  = ref Ident.empty
+
+let with_equality_equations tbl f =
+  let equality_equations' = !equality_equations in
+  equality_equations := tbl;
+  try_finally f
+    (fun () -> equality_equations := equality_equations')
+
 let rec get_object_row ty =
   match repr ty with
   | {desc=Tfield (_, _, _, tl)} -> get_object_row tl
@@ -3312,6 +3322,28 @@ let rec eqtype rename type_pairs subst env t1 t2 =
                 (eqtype rename type_pairs subst env)
           | (Tunivar _, Tunivar _) ->
               unify_univar t1' t2' !univar_pairs
+
+          | Tconstr (p, [], _), ty
+          | ty, Tconstr (p, [], _) ->
+            begin try
+              let equations = Ident.find_same (Path.head p) !equality_equations in
+              try
+                (* Equations allowed on this identifier *)
+                try
+                  let ty' = List.assoc p !equations in
+                  (* An equation already apply to this path *)
+                  if t1'.desc == ty then
+                    eqtype rename type_pairs subst env t1 ty
+                  else
+                    eqtype rename type_pairs subst env ty t2
+                with Not_found ->
+                  (* Not yet any equation on this path *)
+                  equations := (p, ty) :: !equations
+              (* No equations allowed on this identifier *)
+              with Not_found ->
+                raise (Unify [])
+            end
+
           | (_, _) ->
               raise (Unify [])
         end
