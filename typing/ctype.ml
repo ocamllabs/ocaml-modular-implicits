@@ -3323,11 +3323,11 @@ let rec eqtype rename type_pairs subst env t1 t2 =
           | (Tunivar _, Tunivar _) ->
               unify_univar t1' t2' !univar_pairs
 
-          | Tconstr (p1, [], _), ty
-            ty, Tconstr (p1, [], _)
+          | Tconstr (p, [], _), ty
+          | ty, Tconstr (p, [], _)
               (* FIXME: handle the case Tconstr (p1, _), Tconstr (p2, _) *)
-            when Ident.mem (Path.head p1) !equality_equations ->
-              let equations = Ident.find_same (Path.head p1) !equality_equations in
+            when Ident.mem (Path.head p) !equality_equations ->
+              let equations = Ident.find_same (Path.head p) !equality_equations in
               begin try
                 let ty' = List.assoc p !equations in
                 (* An equation already apply to this path *)
