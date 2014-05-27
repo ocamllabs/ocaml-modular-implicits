@@ -4,6 +4,28 @@ open Types
 open Typedtree
 open Typeimplicit
 
+let rec list_extract f acc = function
+  | x :: xs when f x -> x, List.rev_append acc xs
+  | x :: xs -> list_extract f (x :: acc) xs
+  | [] -> raise Not_found
+
+let list_extract f xs = list_extract f [] xs
+
+let rec list_findmap f = function
+  | [] -> raise Not_found
+  | x :: xs ->
+      match f x with
+      | None -> list_findmap f xs
+      | Some x' -> x'
+
+let string_of_path path =
+  Path.to_longident path |> Longident.flatten |> String.concat "."
+
+let print_inst (path,_) =
+  Printf.eprintf "%s\n%!" (string_of_path path)
+
+let papply path arg = Path.Papply (path, arg)
+
 module Constraints = struct
 
   (* Apply constraints to a module type.
@@ -20,16 +42,10 @@ module Constraints = struct
 
      2. Do a second pass, rebuilding the environment and unifying constraints.
 
-      Envirnoment is rebuilt with the types obtained after substitution.
+      Environment is rebuilt with the types obtained after substitution.
       For each type in the unify list, instantiate it in its local
       environment and unify it with the constrained type.
   *)
-
-  let rec list_extract f acc = function
-    | x :: xs when f x -> x, List.rev_append acc xs
-    | x :: xs -> list_extract f (x :: acc) xs
-    | [] -> raise Not_found
-  let list_extract f xs = list_extract f [] xs
 
   let name_match name (qname,_) = name = qname
 
@@ -203,6 +219,12 @@ module Constraints = struct
     constraint_mty env to_unify mty;
     mty
 
+  let apply_abstract env mty cstrs =
+    let cstrs = split_constraints env cstrs in
+    let to_unify, mty = prepare_mty env cstrs mty in
+    assert (to_unify = []);
+    mty
+
   let flatten ~root cstrs =
     let flatten_cstr (n,t) =
       let id', dots = Path.flatten n in
@@ -216,8 +238,29 @@ end
 
 type target = {
   target_type : Types.module_type;
-  target_id : Ident.t;
+  target_id   : Ident.t;
+  target_uid  : Ident.t;
 }
+
+let remove_type_variables mty =
+  let variables = ref [] in
+  let it_type_expr it ty =
+    let ty = repr ty in
+    match ty.desc with
+    | Tvar name ->
+        let name = match name with
+          | None -> "ex"
+          | Some name -> name
+        in
+        let ident = Ident.create name in
+        variables := ident :: !variables;
+        let ty' = newgenty (Tconstr (Path.Pident ident, [], ref Mnil)) in
+        link_type ty ty'
+    | _ -> type_iterators.it_type_expr it ty;
+  in
+  let it = {type_iterators with it_type_expr} in
+  it.it_module_type it mty;
+  !variables
 
 let target_of_pending inst =
   let env = inst.implicit_env in
@@ -236,116 +279,146 @@ let target_of_pending inst =
     (Constraints.flatten ~root:ident inst.implicit_constraints)
   in
   let mty = Constraints.apply env mty cstrs in
-  { target_type = mty; target_id = inst.implicit_id }
+  let variables = remove_type_variables mty in
+  let id = inst.implicit_id in
+  variables, {target_type = mty; target_id = id; target_uid = id}
 
-let candidate_of_implicit_declaration env {Types. md_type; md_implicit} =
-  let rec find_mty targets n mty =
-    assert (n >= 0);
-    if n = 0 then
-      List.rev targets, mty
-    else match mty with
-      | Mty_functor (target_id, Some target_type, mty) ->
-          find_mty ({target_id; target_type} :: targets) (n - 1) mty
-      | _ -> assert false
-  in
-  let arity = match md_implicit with
-    | Asttypes.Nonimplicit -> assert false
-    | Asttypes.Implicit n -> n
-  in
-  (* Take a fresh copy of the module type, as unlinking is a destructive
-     operation *)
-  let md_type = Subst.modtype Subst.identity md_type in
+let rec extract_implicit_parameters targets n omty nmty =
+  assert (n >= 0);
+  if n = 0 then
+    List.rev targets, nmty
+  else match omty, nmty with
+    | Mty_functor (target_uid, Some _, omty'),
+      Mty_functor (target_id, Some target_type, nmty') ->
+        extract_implicit_parameters
+          ({target_uid; target_id; target_type} :: targets) (n - 1) omty' nmty'
+    | _ -> assert false
 
-  let targets, md_type = find_mty [] arity md_type in
-  let targets_constraints = List.fold_left
-      (fun tbl target -> Ident.add target.target_id (ref []) tbl)
-      Ident.empty targets
-  in
-  (* Unlink types, generate constraints *)
-  begin match targets with
-  | [] -> ()
-  | _ :: targets' ->
-      let module Unlink = Unlink (struct
-          let register_constraints_for ident =
-            try
-              let lst = Ident.find_same ident targets_constraints in
-              let add_constraint path var = lst := (path,var) :: !lst in
-              Some add_constraint
-            with Not_found ->
-              None
-        end)
-      in
-      List.iter Unlink.module_type
-        (md_type :: List.map (fun t -> t.target_type) targets')
-  end;
-  (* Apply constraints to module types *)
-  let targets =
-    List.map (fun target ->
-        let cstrs = Constraints.flatten
-            ~root:target.target_id
-            !(Ident.find_same target.target_id targets_constraints)
-        in
-        let target_type = Constraints.apply env target.target_type cstrs in
-        {target with target_type})
-      targets
-  in
-  targets,
-  md_type
+let find_implicit_parameters {Types. md_type = omty; md_implicit} =
+  match md_implicit with
+  | Asttypes.Nonimplicit -> assert false
+  | Asttypes.Implicit 0 ->
+      (* No copy, so we don't lose equality *)
+      [], omty
 
-let target_in_stack stack _ =
-  List.length stack >= 4 (* TODO *)
+  | Asttypes.Implicit arity ->
+      let nmty = Subst.modtype Subst.identity omty in
+      extract_implicit_parameters [] arity omty nmty
 
-let rec list_findmap f = function
-  | [] -> raise Not_found
-  | x :: xs ->
-      match f x with
-      | None -> list_findmap f xs
-      | Some x' -> x'
-
-let string_of_path path =
-  Path.to_longident path |> Longident.flatten |> String.concat "."
+(* Validate targets *)
+let check_targets stack targets =
+  List.length stack <= 4
 
 let report_error exn =
   try
     Location.report_exception Format.err_formatter exn
   with exn ->
-    prerr_endline (Printexc.to_string exn)
+    Printf.eprintf "%s\n%!" (Printexc.to_string exn)
 
-let rec find_target env stack target =
-  prerr_endline "enter find_target\n";
+let constraint_targets env targets constraints =
+  (* [env] is needed only to expand module type names *)
+  let register_constraint table (path, ty) =
+    let id, path = Path.flatten path in
+    let path = List.map fst path in
+    let cstrs =
+      try Ident.find_same id table
+      with Not_found -> []
+    in
+    Ident.add id ((path, ty) :: cstrs) table
+  in
+  let constraint_table =
+    List.fold_left register_constraint Ident.empty constraints in
+  let constraint_target (targets,env) target =
+    let target =
+      try
+        let cstrs = Ident.find_same target.target_id constraint_table in
+        let mty = Constraints.apply_abstract env target.target_type cstrs in
+        {target with target_type = mty}
+      with Not_found ->
+        target
+    in
+    let env = Env.add_module target.target_id target.target_type env in
+    (target :: targets, env)
+  in
+  let rtargets, _env = List.fold_left constraint_target ([],env) targets in
+  List.rev rtargets
+
+let rec find_target_ env variables eq_table stack target =
+  let stack = target :: stack in
+  let build_path (path, md) =
+    Printf.eprintf "trying candidate %s\n%!" (string_of_path path);
+
+    let sub_targets, candidate = find_implicit_parameters md in
+    let variables' = !variables in
+
+    try
+      let new_equations = ref [] in
+
+      let _ : module_coercion =
+        let eq_table, env = List.fold_left
+            (fun (eq_table, env) {target_id} ->
+               Ident.add target_id new_equations eq_table,
+               Env.add_module target.target_id target.target_type env)
+            (eq_table, env) sub_targets
+        in
+        (*Ctype.with_equality_equations eq_table*)
+          (fun () -> Includemod.modtypes env candidate target.target_type)
+          ()
+      in
+
+      let sub_targets = constraint_targets env sub_targets !new_equations in
+
+      assert (check_targets sub_targets stack);
+
+      let find_parameter (path, env) target =
+        let arg_path = find_target env variables eq_table stack target in
+        let md = Env.find_module path env in
+        let env = Env.add_module_declaration target.target_id md env in
+        papply path arg_path, env
+      in
+
+      let path, _env = List.fold_left find_parameter (path, env) sub_targets in
+
+      Some path
+
+    with exn ->
+      variables := variables';
+      report_error exn;
+      None
+
+  in
+  list_findmap build_path (Env.implicit_instances env)
+
+and find_target env variables eq_table stack target =
+  Printf.eprintf "enter find_target\n%!";
   Misc.try_finally
-    (fun () ->
-       let snapshot = Btype.snapshot () in
-       let stack = target :: stack in
-       let papply path arg = Path.Papply (path, arg) in
-       let build_path (path, md) =
-         prerr_endline ("trying candidate " ^ (string_of_path path));
-         let targets, candidate = candidate_of_implicit_declaration env md in
-         try
-           if List.exists (target_in_stack stack) targets then
-             failwith "loop";
-           ignore (Includemod.modtypes env candidate target.target_type
-                   : module_coercion);
-           let args = List.map (find_target env stack) targets in
-           Some (List.fold_left papply path args)
-         with exn ->
-           Btype.backtrack snapshot;
-           report_error exn;
-           None
-       in
-       list_findmap build_path (Env.implicit_instances env)
-    )
-    (fun () -> prerr_endline "exit find_target\n")
+    (fun () -> find_target_ env variables eq_table stack target)
+    (fun () -> Printf.eprintf "exit find_target\n%!")
 
 let find_pending_instance inst =
-  let print_inst (path,_) =
-    prerr_endline (string_of_path path)
+  let env = inst.implicit_env in
+
+  Printf.eprintf "entering search\ncandidates:\n%!";
+  List.iter print_inst (Env.implicit_instances env);
+  let variables, target = target_of_pending inst in
+
+  let level = get_current_level () in
+
+  Printf.eprintf "%d variables\n%!" (List.length variables);
+
+  let env = List.fold_left (fun env variable ->
+      Env.add_type ~check:false variable
+        (new_declaration (Some (level, level)) None) env)
+      env variables
   in
-  prerr_endline "entering search\ncandidates:";
-  List.iter print_inst (Env.implicit_instances inst.implicit_env);
-  let target = target_of_pending inst in
+
+  let variables_equation = ref [] in
+  let eq_table = List.fold_left
+      (fun tbl id -> Ident.add id variables_equation tbl)
+      Ident.empty variables
+  in
   try
-    let path = find_target inst.implicit_env [] target in
+    let path = find_target env variables_equation eq_table [] target in
     Link.to_path inst path;
     true
   with _ ->
