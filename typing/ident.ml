@@ -210,6 +210,10 @@ let rec iter f = function
   | Node(l, k, r, _) ->
       iter f l; f k.ident k.data; iter f r
 
+let mem id (tbl : 'a tbl) =
+  try ignore (find_same id tbl : 'a); true
+  with Not_found -> false
+
 (* Idents for sharing keys *)
 
 (* They should be 'totally fresh' -> neg numbers *)
