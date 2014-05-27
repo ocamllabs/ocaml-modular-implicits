@@ -283,3 +283,4 @@ val package_subtype :
 val modtype_of_package : (Env.t -> Location.t -> Path.t -> Longident.t list ->
                           type_expr list -> module_type) ref
 
+val new_declaration : (int * int) option -> type_expr option -> type_declaration
