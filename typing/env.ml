@@ -1390,18 +1390,21 @@ and store_extension ~check slot id path ext env renv =
     summary = Env_extension(env.summary, id, ext) }
 
 and store_module slot id path md env renv =
-  { env with
-    modules = EnvTbl.add "module" slot id (path, md) env.modules renv.modules;
-    components =
-      EnvTbl.add "module" slot id
-                 (path, components_of_module env Subst.identity path md.md_type)
-                   env.components renv.components;
-    summary = Env_module(env.summary, id, md);
-    implicit_instances =
-      match md.md_implicit with
-      | Asttypes.Nonimplicit -> env.implicit_instances
-      | Asttypes.Implicit _ -> (path, md) :: env.implicit_instances;
-  }
+  let env =
+    { env with
+      modules = EnvTbl.add "module" slot id (path, md) env.modules renv.modules;
+      components =
+        EnvTbl.add "module" slot id
+          (path, components_of_module env Subst.identity path md.md_type)
+          env.components renv.components;
+      summary = Env_module(env.summary, id, md);
+    }
+  in
+  match md.md_implicit with
+  | Asttypes.Nonimplicit -> env
+  | Asttypes.Implicit _ ->
+      let md = {md with md_type = !strengthen env md.md_type path} in
+      {env with implicit_instances = (path, md) :: env.implicit_instances}
 
 and store_modtype slot id path info env renv =
   { env with
