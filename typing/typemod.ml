@@ -1308,6 +1308,13 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
           }
         in
         let (id, newenv) = Env.enter_module_declaration name.txt md env in
+        begin match pmb_implicit with
+        | Nonimplicit -> ()
+        | Implicit _ ->
+            if not (closed_modtype modl.mod_type) then
+              raise(Error(modl.mod_loc, env,
+                          Non_generalizable_module modl.mod_type))
+        end;
         Tstr_module {mb_id = id; mb_name = name; mb_expr = modl;
                      mb_attributes = attrs; mb_loc = pmb_loc;
                      mb_implicit = pmb_implicit;
