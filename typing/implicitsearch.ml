@@ -306,8 +306,82 @@ let find_implicit_parameters {Types. md_type = omty; md_implicit} =
       extract_implicit_parameters [] arity omty nmty
 
 (* Validate targets *)
-let check_targets stack targets =
-  List.length stack <= 4
+module Termination = struct
+
+  let normalize_equations targets equations
+    : (Ident.t * (string list * type_expr) list) list =
+    (* Map target_id to target_uid *)
+    let table = List.fold_left
+        (fun table {target_id; target_uid} ->
+           Ident.add target_id (target_uid,ref []) table)
+        Ident.empty targets
+    in
+    (* Add equations to target_id *)
+    List.iter
+      (fun (path, eq) ->
+         try
+           let id, path = Path.flatten path in
+           let path = List.map fst path in
+           let _uid, eqns = Ident.find_same id table in
+           eqns := (path, eq) :: !eqns
+         with Not_found -> assert false)
+      equations;
+    List.map
+      (fun {target_id} ->
+         try
+           let uid, eqns = Ident.find_same target_id table in
+           uid, List.sort (fun (a,_) (b,_) -> compare a b) !eqns
+         with Not_found -> assert false)
+      targets
+
+  exception Type_is_smaller
+  let smaller env t1 t2 =
+    let rec check_ty t =
+      if equal env true [t1] [t] then
+        raise Type_is_smaller;
+      iter_type_expr check_ty t
+    in
+    try if equal env true [t1] [t2]
+      then `Equal
+      else (iter_type_expr check_ty t2; `Different)
+    with Type_is_smaller ->
+      `Smaller
+
+  let rec stronger_equations env acc neqns oeqns =
+    match neqns, oeqns with
+      (* Equation on same path, check inclusion of type *)
+    | (n, nt) :: neqns, (o, ot) :: oeqns when n = o ->
+        begin match smaller env nt ot with
+        | `Equal -> stronger_equations env acc neqns oeqns
+        | `Smaller -> stronger_equations env true neqns oeqns
+        | `Different -> false
+        end
+
+      (* Same number of equations, at least one must have been stronger *)
+    | [], [] -> acc
+
+      (* More equations, always stronger *)
+    | _, [] -> true
+    | (n, _) :: neqns, (o, _) :: _ when n < o ->
+      stronger_equations env true neqns oeqns
+
+      (* Less equations, always weaker *)
+    | [], _ -> false
+    | (n, _) :: neqns, (o, _) :: _  ->
+      assert (n > o);
+      false
+
+  exception Terminate
+  let try_add_equations env (uid, eqns) stack =
+    let eqns' =
+      try Ident.find_same uid stack
+      with Not_found -> []
+    in
+    if not (stronger_equations env false eqns eqns') then
+      (prerr_endline "Termination-checker pruned branch"; raise Terminate);
+    Ident.add uid eqns stack
+
+end
 
 let report_error exn =
   try
@@ -344,7 +418,6 @@ let constraint_targets env targets constraints =
   List.rev rtargets
 
 let rec find_target_ env variables eq_table stack target =
-  let stack = target :: stack in
   let build_path (path, md) =
     Printf.eprintf "trying candidate %s\n%!" (string_of_path path);
 
@@ -361,23 +434,26 @@ let rec find_target_ env variables eq_table stack target =
                Env.add_module target.target_id target.target_type env)
             (eq_table, env) sub_targets
         in
-        (*Ctype.with_equality_equations eq_table*)
+        Ctype.with_equality_equations eq_table
           (fun () -> Includemod.modtypes env candidate target.target_type)
-          ()
       in
 
       let sub_targets = constraint_targets env sub_targets !new_equations in
+      let equations = Termination.normalize_equations sub_targets !new_equations in
+      let sub_targets = List.combine equations sub_targets in
 
-      assert (check_targets sub_targets stack);
-
-      let find_parameter (path, env) target =
+      let find_parameter (path, env, stack) (equations, target) =
+        let stack = Termination.try_add_equations env equations stack in
         let arg_path = find_target env variables eq_table stack target in
         let md = Env.find_module path env in
         let env = Env.add_module_declaration target.target_id md env in
-        papply path arg_path, env
+        papply path arg_path, env, stack
       in
 
-      let path, _env = List.fold_left find_parameter (path, env) sub_targets in
+      let path, _env, _stack = List.fold_left
+          find_parameter
+          (path, env, stack) sub_targets
+      in
 
       Some path
 
@@ -418,7 +494,7 @@ let find_pending_instance inst =
       Ident.empty variables
   in
   try
-    let path = find_target env variables_equation eq_table [] target in
+    let path = find_target env variables_equation eq_table Ident.empty target in
     Link.to_path inst path;
     true
   with _ ->
