@@ -4,6 +4,8 @@ open Types
 open Typedtree
 open Typeimplicit
 
+(** Misc functions *)
+
 let rec list_extract f acc = function
   | x :: xs when f x -> x, List.rev_append acc xs
   | x :: xs -> list_extract f (x :: acc) xs
@@ -26,6 +28,40 @@ let print_inst (path,_) =
 
 let papply path arg = Path.Papply (path, arg)
 
+(** [target] is the point from which a search starts *)
+type target = {
+  (* The module type we try to find an instance for *)
+  target_type : Types.module_type;
+  (* The identifier to which bound the result of the search to.
+     E.g we are trying to fill the hole in
+     module %target_id : %target_type = _
+  *)
+  target_id   : Ident.t;
+
+  (* A unique identifier that will be used for termination checking.
+     When the target is the argument to a functor instantiation, if this functor is instantiated multiple times
+     we enforce that the constraints on the argument are stronger.
+
+     Pair (Arg_1) (Pair (Arg_1') (Arg_2))
+
+     Arg_1 and Arg_1' targets will have a different target_id but the same
+     target_uid. We check that constraints on Arg_1' are stronger than those on
+     Arg_1'.
+
+     Note: This is also true of (Pair (Arg_1') (Arg_2)) and Arg_2, used as second
+     arguments to Pair.
+  *)
+  target_uid  : Ident.t;
+}
+
+(** Constraints are a list of equations of the form [path] = [type_expr].
+    The [Constraints] module apply those equations to a module type by
+    setting [type_expr] as a manifest for type at [path].
+
+    [Constraints.apply_abstract] expects all pointed types to be abstract (no
+    manifest), and fail if this is not the case.
+    [Constraints.apply] will try to unify those types.
+*)
 module Constraints = struct
 
   (* Apply constraints to a module type.
@@ -37,8 +73,8 @@ module Constraints = struct
       If the type declaration already had a manifest, keep the original
       manifest in a separate list to unify it in a later pass.
 
-      During traversal, register module and submodule types in
-      environment because find_modtype_expansion might need them.
+      During traversal, we register module and submodule types in environment
+      because find_modtype_expansion might need them.
 
      2. Do a second pass, rebuilding the environment and unifying constraints.
 
@@ -46,12 +82,14 @@ module Constraints = struct
       For each type in the unify list, instantiate it in its local
       environment and unify it with the constrained type.
   *)
-
   let name_match name (qname,_) = name = qname
 
+  (* A tree of constraints, sub levels correspond to constraints applied to sub
+     modules *)
   type ('n,'cstr) t =
     | Local of 'cstr
-    | Sub of ('n * ('n,'cstr) t) list
+    | Sub of ('n,'cstr) ts
+  and ('n,'cstr) ts = ('n * ('n,'cstr) t) list
 
   let local_constraint = function
     | Local cstr -> cstr
@@ -84,7 +122,12 @@ module Constraints = struct
   let split_constraints env l =
     List.fold_left (add_constraint env) [] l
 
-  let register_items env = function
+  (* Register possibly recursive definitions in environment
+     (again, we need a populated environment because find_modtype_expansion
+      might need to lookup local definitions ) *)
+  let register_items env
+    : Types.signature_item list -> Env.t
+    = function
     | Sig_type (id, ty, (Trec_not | Trec_first)) :: items ->
         let rec aux env id ty items =
           let env = Env.add_type ~check:false id ty env in
@@ -107,7 +150,10 @@ module Constraints = struct
         Env.add_modtype id mtd env
     | _ -> env
 
-  let rec prepare_mty env cstrs mty =
+  let rec prepare_mty
+    : Env.t -> (string, type_expr) ts -> Types.module_type ->
+      (Ident.t, type_expr) ts * Types.module_type
+    = fun env cstrs mty ->
     if cstrs = [] then [], mty else
       match mty with
       | Mty_functor _ | Mty_alias _ -> assert false
@@ -171,7 +217,10 @@ module Constraints = struct
         let to_unify', cstrs, item' = prepare_sig_item env cstrs item in
         prepare_sig' env (to_unify' @ to_unify) (item' :: fields) cstrs items
 
-  and prepare_sig env cstrs sg =
+  and prepare_sig
+    : Env.t -> (string, type_expr) ts -> Types.signature ->
+      (Ident.t, type_expr) ts * Types.signature
+    = fun env cstrs sg ->
     if cstrs = [] then
       [], sg
     else
@@ -234,13 +283,165 @@ module Constraints = struct
     in
     List.map flatten_cstr cstrs
 
+  (* Apply a list of equations to a list of targets.
+     Types referred to by paths *must* be abstract. *)
+  let targets
+    : Env.t -> target list -> (Path.t * type_expr) list -> target list
+    = fun env targets constraints ->
+    (* [env] is needed only to expand module type names *)
+    let register_constraint table (path, ty) =
+      let id, path = Path.flatten path in
+      let path = List.map fst path in
+      let cstrs =
+        try Ident.find_same id table
+        with Not_found -> []
+      in
+      Ident.add id ((path, ty) :: cstrs) table
+    in
+    let constraint_table =
+      List.fold_left register_constraint Ident.empty constraints in
+    let constraint_target (targets,env) target =
+      let target =
+        try
+          let cstrs = Ident.find_same target.target_id constraint_table in
+          let mty = apply_abstract env target.target_type cstrs in
+          {target with target_type = mty}
+        with Not_found ->
+          target
+      in
+      let env = Env.add_module target.target_id target.target_type env in
+      (target :: targets, env)
+    in
+    let rtargets, _env = List.fold_left constraint_target ([],env) targets in
+    List.rev rtargets
+
 end
 
-type target = {
-  target_type : Types.module_type;
-  target_id   : Ident.t;
-  target_uid  : Ident.t;
-}
+(** Termination checking **)
+module Termination : sig
+  (* A termination criterion is a set of constraints applying on a target_uid.
+     It's satisfied in a given state iff its constraints are stronger than
+     those found the state. *)
+  type t
+  type state
+  val initial : state
+
+  (* From a list of target and constraints applying on those targets,
+     returns a termination criterion for each target *)
+  val normalize_equations
+    : target list -> (Path.t * type_expr) list -> (target * t) list
+
+  (* [check env t state] ensures that termination criterion for [t] is
+     satisfied in [state] and returns the stronger state.
+     Otherwise, [Terminate] is raised *)
+  exception Terminate
+  val check : Env.t -> t -> state -> state
+
+end = struct
+
+  (* Set of equations used for computing termination criterion.
+     The list of equations is sorted by path, and each path is unique. *)
+  type eqns = (string list * type_expr) list
+
+  let rec wellformed_eqns = function
+    | (path1, _) :: ((path2, _) :: _ as tail) ->
+      (path1 < path2) && wellformed_eqns tail
+    | _ -> true
+
+  (* Checking that an individial type is smaller than another one.
+     The exception never escapes. *)
+  exception Type_is_smaller
+  let smaller env t1 t2 : [`Smaller | `Equal | `Different] =
+    let rec check_ty t =
+      if equal env true [t1] [t] then
+        raise Type_is_smaller;
+      iter_type_expr check_ty t
+    in
+    try if equal env true [t1] [t2]
+      then `Equal
+      else (iter_type_expr check_ty t2; `Different)
+    with Type_is_smaller ->
+      `Smaller
+
+  (* Check that a set of equations is stronger than another one.
+     [stronger env neqns oeqns] returns true iff
+     - all equations from oeqns must be smaller or equal in neqns, AND
+     - one equation must be strictly smaller or neqns must contain more
+       equations. *)
+  let rec stronger env acc (neqns : eqns) (oeqns : eqns) =
+    match neqns, oeqns with
+      (* Equation on same path, check inclusion of type *)
+    | (n, nt) :: neqns, (o, ot) :: oeqns when n = o ->
+        begin match smaller env nt ot with
+        | `Equal -> stronger env acc neqns oeqns
+        | `Smaller -> stronger env true neqns oeqns
+        | `Different -> false
+        end
+      (* Same number of equations, at least one must have been stronger *)
+    | [], [] -> acc
+      (* More equations, always stronger *)
+    | _, [] -> true
+    | (n, _) :: neqns, (o, _) :: _ when n < o ->
+      stronger env true neqns oeqns
+      (* Less equations, always weaker *)
+    | [], _ -> false
+    | (n, _) :: neqns, (o, _) :: _  ->
+      assert (n > o);
+      false
+
+  let stronger env neqns oeqns = stronger env false neqns oeqns
+
+  (* Checking for termination starts from a target uid and a list of equations.
+     A state is table mapping uids to the strongest set of equations seen so
+     far. *)
+  type t = Ident.t * eqns
+  type state = eqns Ident.tbl
+  let initial = Ident.empty
+
+  let normalize_equations
+      (* List of targets *)
+      (targets : target list)
+      (* All path must refer to some target_id *)
+      (equations : (Path.t * type_expr) list)
+      (* List of equations applying to each target *)
+    : (target * t) list =
+    (* Map target_id to target_uid *)
+    let table = List.fold_left
+        (fun table {target_id; target_uid} ->
+           Ident.add target_id (target_uid,ref []) table)
+        Ident.empty targets
+    in
+    (* Add equations to target_id *)
+    List.iter
+      (fun (path, eq) ->
+         try
+           let id, path = Path.flatten path in
+           let path = List.map fst path in
+           let _uid, eqns = Ident.find_same id table in
+           eqns := (path, eq) :: !eqns
+         with Not_found -> assert false)
+      equations;
+    List.map
+      (fun target ->
+         try
+           let uid, eqns = Ident.find_same target.target_id table in
+           let eqns = List.sort (fun (a,_) (b,_) -> compare a b) !eqns in
+           assert (wellformed_eqns eqns);
+           target, (uid, eqns)
+         with Not_found -> assert false)
+      targets
+
+  exception Terminate
+  let check env (uid, eqns) stack =
+    let eqns' =
+      try Ident.find_same uid stack
+      with Not_found -> []
+    in
+    if not (stronger env eqns eqns') then
+      (prerr_endline "Termination-checker pruned branch"; raise Terminate);
+    Ident.add uid eqns stack
+
+end
 
 let remove_type_variables mty =
   let variables = ref [] in
@@ -305,119 +506,14 @@ let find_implicit_parameters {Types. md_type = omty; md_implicit} =
       let nmty = Subst.modtype Subst.identity omty in
       extract_implicit_parameters [] arity omty nmty
 
-(* Validate targets *)
-module Termination = struct
-
-  let normalize_equations targets equations
-    : (Ident.t * (string list * type_expr) list) list =
-    (* Map target_id to target_uid *)
-    let table = List.fold_left
-        (fun table {target_id; target_uid} ->
-           Ident.add target_id (target_uid,ref []) table)
-        Ident.empty targets
-    in
-    (* Add equations to target_id *)
-    List.iter
-      (fun (path, eq) ->
-         try
-           let id, path = Path.flatten path in
-           let path = List.map fst path in
-           let _uid, eqns = Ident.find_same id table in
-           eqns := (path, eq) :: !eqns
-         with Not_found -> assert false)
-      equations;
-    List.map
-      (fun {target_id} ->
-         try
-           let uid, eqns = Ident.find_same target_id table in
-           uid, List.sort (fun (a,_) (b,_) -> compare a b) !eqns
-         with Not_found -> assert false)
-      targets
-
-  exception Type_is_smaller
-  let smaller env t1 t2 =
-    let rec check_ty t =
-      if equal env true [t1] [t] then
-        raise Type_is_smaller;
-      iter_type_expr check_ty t
-    in
-    try if equal env true [t1] [t2]
-      then `Equal
-      else (iter_type_expr check_ty t2; `Different)
-    with Type_is_smaller ->
-      `Smaller
-
-  let rec stronger_equations env acc neqns oeqns =
-    match neqns, oeqns with
-      (* Equation on same path, check inclusion of type *)
-    | (n, nt) :: neqns, (o, ot) :: oeqns when n = o ->
-        begin match smaller env nt ot with
-        | `Equal -> stronger_equations env acc neqns oeqns
-        | `Smaller -> stronger_equations env true neqns oeqns
-        | `Different -> false
-        end
-
-      (* Same number of equations, at least one must have been stronger *)
-    | [], [] -> acc
-
-      (* More equations, always stronger *)
-    | _, [] -> true
-    | (n, _) :: neqns, (o, _) :: _ when n < o ->
-      stronger_equations env true neqns oeqns
-
-      (* Less equations, always weaker *)
-    | [], _ -> false
-    | (n, _) :: neqns, (o, _) :: _  ->
-      assert (n > o);
-      false
-
-  exception Terminate
-  let try_add_equations env (uid, eqns) stack =
-    let eqns' =
-      try Ident.find_same uid stack
-      with Not_found -> []
-    in
-    if not (stronger_equations env false eqns eqns') then
-      (prerr_endline "Termination-checker pruned branch"; raise Terminate);
-    Ident.add uid eqns stack
-
-end
-
 let report_error exn =
   try
     Location.report_exception Format.err_formatter exn
   with exn ->
     Printf.eprintf "%s\n%!" (Printexc.to_string exn)
 
-let constraint_targets env targets constraints =
-  (* [env] is needed only to expand module type names *)
-  let register_constraint table (path, ty) =
-    let id, path = Path.flatten path in
-    let path = List.map fst path in
-    let cstrs =
-      try Ident.find_same id table
-      with Not_found -> []
-    in
-    Ident.add id ((path, ty) :: cstrs) table
-  in
-  let constraint_table =
-    List.fold_left register_constraint Ident.empty constraints in
-  let constraint_target (targets,env) target =
-    let target =
-      try
-        let cstrs = Ident.find_same target.target_id constraint_table in
-        let mty = Constraints.apply_abstract env target.target_type cstrs in
-        {target with target_type = mty}
-      with Not_found ->
-        target
-    in
-    let env = Env.add_module target.target_id target.target_type env in
-    (target :: targets, env)
-  in
-  let rtargets, _env = List.fold_left constraint_target ([],env) targets in
-  List.rev rtargets
-
-let rec find_target_ env variables eq_table stack target =
+let rec find_target env variables eq_table stack target =
+  let term_state = stack in
   let build_path (path, md) =
     Printf.eprintf "trying candidate %s\n%!" (string_of_path path);
 
@@ -438,13 +534,16 @@ let rec find_target_ env variables eq_table stack target =
           (fun () -> Includemod.modtypes env candidate target.target_type)
       in
 
-      let sub_targets = constraint_targets env sub_targets !new_equations in
-      let equations = Termination.normalize_equations sub_targets !new_equations in
-      let sub_targets = List.combine equations sub_targets in
+      let eqns = !new_equations in
 
-      let find_parameter (path, env) (equations, target) =
-        let stack = Termination.try_add_equations env equations stack in
-        let arg_path = find_target env variables eq_table stack target in
+      (* Constraints target types *)
+      let sub_targets = Constraints.targets env sub_targets eqns in
+      (* Add termination criteria *)
+      let sub_targets = Termination.normalize_equations sub_targets eqns in
+
+      let find_parameter (path, env) (target, term_criterion) =
+        let term_state = Termination.check env term_criterion term_state in
+        let arg_path = find_target env variables eq_table term_state target in
         let md = Env.find_module path env in
         (* The original module declaration might be implicit, we want to avoid
            rebinding implicit *)
@@ -465,22 +564,10 @@ let rec find_target_ env variables eq_table stack target =
   in
   list_findmap build_path (Env.implicit_instances env)
 
-and find_target env variables eq_table stack target =
-  Printf.eprintf "enter find_target\n%!";
-  Misc.try_finally
-    (fun () -> find_target_ env variables eq_table stack target)
-    (fun () -> Printf.eprintf "exit find_target\n%!")
-
 let find_pending_instance inst =
   let env = inst.implicit_env in
-
-  Printf.eprintf "entering search\ncandidates:\n%!";
-  List.iter print_inst (Env.implicit_instances env);
   let variables, target = target_of_pending inst in
-
   let level = get_current_level () in
-
-  Printf.eprintf "%d variables\n%!" (List.length variables);
 
   let env = List.fold_left (fun env variable ->
       Env.add_type ~check:false variable
@@ -494,7 +581,9 @@ let find_pending_instance inst =
       Ident.empty variables
   in
   try
-    let path = find_target env variables_equation eq_table Ident.empty target in
+    let path =
+      find_target env variables_equation eq_table Termination.initial target
+    in
     Link.to_path inst path;
     true
   with _ ->
