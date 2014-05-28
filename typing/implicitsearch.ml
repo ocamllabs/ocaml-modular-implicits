@@ -446,6 +446,9 @@ let rec find_target_ env variables eq_table stack target =
         let stack = Termination.try_add_equations env equations stack in
         let arg_path = find_target env variables eq_table stack target in
         let md = Env.find_module path env in
+        (* The original module declaration might be implicit, we want to avoid
+           rebinding implicit *)
+        let md = {md with md_implicit = Asttypes.Nonimplicit} in
         let env = Env.add_module_declaration target.target_id md env in
         papply path arg_path, env
       in
