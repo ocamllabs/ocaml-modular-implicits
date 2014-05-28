@@ -442,18 +442,15 @@ let rec find_target_ env variables eq_table stack target =
       let equations = Termination.normalize_equations sub_targets !new_equations in
       let sub_targets = List.combine equations sub_targets in
 
-      let find_parameter (path, env, stack) (equations, target) =
+      let find_parameter (path, env) (equations, target) =
         let stack = Termination.try_add_equations env equations stack in
         let arg_path = find_target env variables eq_table stack target in
         let md = Env.find_module path env in
         let env = Env.add_module_declaration target.target_id md env in
-        papply path arg_path, env, stack
+        papply path arg_path, env
       in
 
-      let path, _env, _stack = List.fold_left
-          find_parameter
-          (path, env, stack) sub_targets
-      in
+      let path, _env = List.fold_left find_parameter (path, env) sub_targets in
 
       Some path
 
