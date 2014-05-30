@@ -533,7 +533,7 @@ module Search : sig
     | Functor of partial * t
 
   val all_candidates : t -> candidates
-  val step: t -> candidates -> (result * candidates) option
+  val step: t -> candidates -> (result * candidates)
 
   val apply : partial -> Path.t -> t -> result
 
@@ -627,15 +627,15 @@ end = struct
       (* No parameters: we keep new equations potentially added to top
          variables *)
       Module (path, state)
-    | (sub_target, crit) :: sub_targets ->
+    | (target, crit) :: sub_targets ->
       let partial = {parent = state; path; sub_targets} in
-      let state = {state with termination = Termination.check state.env crit state.termination} in
+      let state = {state with target; termination = Termination.check state.env crit state.termination} in
       Functor (partial, state)
 
   let rec step state = function
-    | [] -> None
+    | [] -> raise Not_found
     | candidate :: candidates ->
-      try Some (step0 state candidate, candidates)
+      try (step0 state candidate, candidates)
       with _exn ->
         step state candidates
 
@@ -665,17 +665,25 @@ let report_error exn =
   with exn ->
     Printf.eprintf "%s\n%!" (Printexc.to_string exn)
 
+let rec search_one state =
+  let candidates = Search.all_candidates state in
+  search_arguments (fst (Search.step state candidates))
+
+and search_arguments = function
+  | Search.Module (path,state') -> path, state'
+  | Search.Functor (partial,state') ->
+    let path, state' = search_one state' in
+    search_arguments (Search.apply partial path state')
+
 let find_pending_instance inst =
   let variables, target = target_of_pending inst in
   let env = inst.implicit_env in
-  let _state = Search.start env variables target in
-  (*try
-    let path =
-      find_target env variables_equation eq_table Termination.initial target
-    in
+  let state = Search.start env variables target in
+  try
+    let path, _ = search_one state in
     Link.to_path inst path;
     true
-  with _ ->*)
+  with _ ->
     false
 
 (* Pack module at given path to match a given implicit instance and
