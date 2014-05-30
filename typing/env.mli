@@ -65,6 +65,8 @@ val find_type_expansion_opt:
 val find_modtype_expansion: Path.t -> t -> module_type
 val is_functor_arg: Path.t -> t -> bool
 val is_implicit_arg: Path.t -> t -> bool
+val mark_implicit_arg: Ident.t -> t -> t
+
 val normalize_path: Location.t option -> t -> Path.t -> Path.t
 (* Normalize the path to a concrete value or module.
    If the option is None, allow returning dangling paths.

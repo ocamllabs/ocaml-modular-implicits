@@ -799,6 +799,12 @@ let rec update_level env level ty =
     | Tfield(lab, _, ty1, _)
       when lab = dummy_method && (repr ty1).level > level ->
         raise (Unify [(ty1, newvar2 level)])
+
+    | Tarrow (Tarr_implicit id, _, _, _) ->
+        set_level ty level;
+        (* XXX what about abbreviations in Tconstr ? *)
+        iter_type_expr (update_level (Env.mark_implicit_arg id env) level) ty
+
     | _ ->
         set_level ty level;
         (* XXX what about abbreviations in Tconstr ? *)
@@ -2075,7 +2081,7 @@ let rec mcomp type_pairs env t1 t2 =
             mcomp type_pairs env t1 t2;
             let mty = modtype_of_tpackage env t1 in
             let env = Env.add_module id1 mty env in
-            let env = Env.add_module id2 mty env in
+            let env = Env.add_module id2 (Mty_alias (Path.Pident id1)) env in
             mcomp type_pairs env u1 u2;
         | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
           when arrows_are_compatible l1 l2 ->
@@ -2474,7 +2480,7 @@ and unify3 env t1 t1' t2 t2' =
           let env' = !env in
           let mty = modtype_of_tpackage env' t1 in
           let env' = Env.add_module id1 mty env' in
-          let env' = Env.add_module id2 mty env' in
+          let env' = Env.add_module id2 (Mty_alias (Path.Pident id1)) env' in
           env := env';
           unify env u1 u2;
           begin match commu_repr c1, commu_repr c2 with
@@ -2874,18 +2880,21 @@ let expand_head_trace env t =
 
 let filter_arrow env t l =
   let t = expand_head_trace env t in
-  match t.desc with
-    Tvar _ ->
+  match t.desc, l  with
+    Tvar _, _ ->
       let lv = t.level in
       let t1 = newvar2 lv and t2 = newvar2 lv in
       let t' = newty2 lv (Tarrow (l, t1, t2, Cok)) in
       link_type t t';
       (t1, t2)
-  | Tarrow(l', t1, t2, _)
+  | Tarrow(l', t1, t2, _), _
     when l = l' || !Clflags.classic
                    && l = Tarr_simple
                    && arrows_are_compatible l l' ->
       (t1, t2)
+  | Tarrow(Tarr_implicit id1, t1, t2, _), Tarr_implicit id2 ->
+      let subst = Subst.add_module id1 (Path.Pident id2) Subst.identity in
+      (t1, Subst.type_expr subst t2)
   | _ ->
       raise (Unify [])
 
@@ -3299,7 +3308,7 @@ let rec eqtype rename type_pairs subst env t1 t2 =
               eqtype rename type_pairs subst env t1 t2;
               let mty = modtype_of_tpackage env t1 in
               let env = Env.add_module id1 mty env in
-              let env = Env.add_module id2 mty env in
+              let env = Env.add_module id2 (Mty_alias (Path.Pident id1)) env in
               eqtype rename type_pairs subst env u1 u2;
           | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
             when classic_arrows_are_compatible l1 l2 ->
@@ -4024,7 +4033,7 @@ let rec subtype_rec env trace t1 t2 cstrs =
         let cstrs = subtype_rec env ((t2, t1)::trace) t2 t1 cstrs in
         let mty = modtype_of_tpackage env t1 in
         let env = Env.add_module id1 mty env in
-        let env = Env.add_module id2 mty env in
+        let env = Env.add_module id2 (Mty_alias (Path.Pident id1)) env in
         subtype_rec env ((u1, u2)::trace) u1 u2 cstrs
     | (Tarrow(l1, t1, u1, _), Tarrow(l2, t2, u2, _))
       when classic_arrows_are_compatible l1 l2 ->

@@ -1518,6 +1518,9 @@ let _ =
 
 (* Insertion of bindings by identifier *)
 
+let mark_implicit_arg id env =
+  {env with implicit_args = Ident.add id () env.implicit_args}
+
 let add_functor_arg ?(arg = false) ~implicit_ id env =
   match arg, implicit_ with
   | false, _ -> env
