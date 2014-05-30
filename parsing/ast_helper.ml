@@ -353,10 +353,10 @@ end
 
 module Opn = struct
   let mk ?(loc = !default_loc) ?(attrs = []) ?(docs = empty_docs)
-        ?(override = Fresh) lid =
+        ?(override = Fresh) ?(flag = Open_all Fresh) lid =
     {
      popen_lid = lid;
-     popen_override = override;
+     popen_flag = flag;
      popen_loc = loc;
      popen_attributes = add_docs_attrs docs attrs;
     }

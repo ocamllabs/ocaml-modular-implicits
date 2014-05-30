@@ -84,6 +84,13 @@ let fmt_override_flag f x =
   | Fresh -> fprintf f "Fresh";
 ;;
 
+let fmt_open_flag f x =
+  match x with
+  | Open_all x -> fprintf f "Open_all %a" fmt_override_flag x;
+  | Open_implicit -> fprintf f "Open_implicit";
+;;
+
+
 let fmt_closed_flag f x =
   match x with
   | Closed -> fprintf f "Closed"
@@ -274,7 +281,7 @@ and expression_extra i ppf x attrs =
       option i core_type ppf cto1;
       core_type i ppf cto2;
   | Texp_open (ovf, m, _, _) ->
-      line i ppf "Pexp_open %a \"%a\"\n" fmt_override_flag ovf fmt_path m;
+      line i ppf "Pexp_open %a \"%a\"\n" fmt_open_flag ovf fmt_path m;
       attributes i ppf attrs;
   | Texp_poly cto ->
       line i ppf "Pexp_poly\n";
@@ -652,7 +659,7 @@ and signature_item i ppf x =
       modtype_declaration i ppf x.mtd_type
   | Tsig_open od ->
       line i ppf "Psig_open %a %a\n"
-           fmt_override_flag od.open_override
+           fmt_open_flag od.open_flag
            fmt_path od.open_path;
       attributes i ppf od.open_attributes
   | Tsig_include incl ->
@@ -759,7 +766,7 @@ and structure_item i ppf x =
       modtype_declaration i ppf x.mtd_type
   | Tstr_open od ->
       line i ppf "Pstr_open %a %a\n"
-           fmt_override_flag od.open_override
+           fmt_open_flag od.open_flag
            fmt_path od.open_path;
       attributes i ppf od.open_attributes
   | Tstr_class (l) ->

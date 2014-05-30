@@ -128,6 +128,8 @@ val open_signature:
       signature -> t -> t
 val open_pers_signature: string -> t -> t
 
+val open_implicit: Path.t -> signature -> t -> t
+
 (* Insertion by name *)
 
 val enter_value:

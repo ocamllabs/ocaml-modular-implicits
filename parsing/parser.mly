@@ -902,24 +902,11 @@ signature_item:
   | module_alias
       { mksig(Psig_module $1) }
   | IMPLICIT implicit_declaration
-<<<<<<< HEAD
-      { mksig(Psig_implicit $2) }
+      { mksig(Psig_module $2) }
   | rec_module_declarations
       { mksig(Psig_recmodule (List.rev $1)) }
   | module_type_declaration
       { mksig(Psig_modtype $1) }
-=======
-      { mksig(Psig_module $2) }
-  | MODULE REC module_rec_declarations
-      { mksig(Psig_recmodule (List.rev $3)) }
-  | MODULE TYPE ident post_item_attributes
-      { mksig(Psig_modtype (Mtd.mk (mkrhs $3 3)
-                              ~attrs:$4 ~loc:(symbol_rloc()))) }
-  | MODULE TYPE ident EQUAL module_type post_item_attributes
-      { mksig(Psig_modtype (Mtd.mk (mkrhs $3 3) ~typ:$5
-                              ~loc:(symbol_rloc())
-                              ~attrs:$6)) }
->>>>>>> Simplify representation of implicits
   | open_statement
       { mksig(Psig_open $1) }
   | sig_include_statement
@@ -935,9 +922,9 @@ signature_item:
         mksig(Psig_attribute $1) }
 ;
 open_statement:
-  | OPEN override_flag mod_longident post_item_attributes
+  | OPEN open_flag mod_longident post_item_attributes
       { Opn.mk (mkrhs $3 3) ~override:$2 ~attrs:$4
-          ~loc:(symbol_rloc()) ~docs:(symbol_docs ()) }
+          ~loc:(symbol_rloc())  ~docs:(symbol_docs ()) }
 ;
 sig_include_statement:
     INCLUDE module_type post_item_attributes %prec below_WITH
@@ -1307,7 +1294,7 @@ expr:
       { mkexp_attrs (Pexp_letmodule($4, $6)) $3 }
   | LET IMPLICIT ext_attributes implicit_binding IN seq_expr
       { mkexp_attrs (Pexp_letmodule($4, $6)) $3 }
-  | LET OPEN override_flag ext_attributes mod_longident IN seq_expr
+  | LET OPEN open_flag ext_attributes mod_longident IN seq_expr
       { mkexp_attrs (Pexp_open($3, mkrhs $5 5, $7)) $4 }
   | FUNCTION ext_attributes opt_bar match_cases
       { mkexp_attrs (Pexp_function(List.rev $4)) $2 }
@@ -1433,7 +1420,7 @@ simple_expr:
   | simple_expr DOT label_longident
       { mkexp(Pexp_field($1, mkrhs $3 3)) }
   | mod_longident DOT LPAREN seq_expr RPAREN
-      { mkexp(Pexp_open(Fresh, mkrhs $1 1, $4)) }
+      { mkexp(Pexp_open(Open_all Fresh, mkrhs $1 1, $4)) }
   | mod_longident DOT LPAREN seq_expr error
       { unclosed "(" 3 ")" 5 }
   | simple_expr DOT LPAREN seq_expr RPAREN
@@ -1457,7 +1444,7 @@ simple_expr:
   | mod_longident DOT LBRACE record_expr RBRACE
       { let (exten, fields) = $4 in
         let rec_exp = mkexp(Pexp_record(fields, exten)) in
-        mkexp(Pexp_open(Fresh, mkrhs $1 1, rec_exp)) }
+        mkexp(Pexp_open(Open_all Fresh, mkrhs $1 1, rec_exp)) }
   | mod_longident DOT LBRACE record_expr error
       { unclosed "{" 3 "}" 5 }
   | LBRACKETBAR expr_semi_list opt_semi BARRBRACKET
@@ -1467,7 +1454,7 @@ simple_expr:
   | LBRACKETBAR BARRBRACKET
       { mkexp (Pexp_array []) }
   | mod_longident DOT LBRACKETBAR expr_semi_list opt_semi BARRBRACKET
-      { mkexp(Pexp_open(Fresh, mkrhs $1 1, mkexp(Pexp_array(List.rev $4)))) }
+      { mkexp(Pexp_open(Open_all Fresh, mkrhs $1 1, mkexp(Pexp_array(List.rev $4)))) }
   | mod_longident DOT LBRACKETBAR expr_semi_list opt_semi error
       { unclosed "[|" 3 "|]" 6 }
   | LBRACKET expr_semi_list opt_semi RBRACKET
@@ -1476,7 +1463,7 @@ simple_expr:
       { unclosed "[" 1 "]" 4 }
   | mod_longident DOT LBRACKET expr_semi_list opt_semi RBRACKET
       { let list_exp = reloc_exp (mktailexp (rhs_loc 6) (List.rev $4)) in
-        mkexp(Pexp_open(Fresh, mkrhs $1 1, list_exp)) }
+        mkexp(Pexp_open(Open_all Fresh, mkrhs $1 1, list_exp)) }
   | mod_longident DOT LBRACKET expr_semi_list opt_semi error
       { unclosed "[" 3 "]" 6 }
   | PREFIXOP simple_expr
@@ -1492,7 +1479,7 @@ simple_expr:
   | LBRACELESS GREATERRBRACE
       { mkexp (Pexp_override [])}
   | mod_longident DOT LBRACELESS field_expr_list opt_semi GREATERRBRACE
-      { mkexp(Pexp_open(Fresh, mkrhs $1 1, mkexp (Pexp_override(List.rev $4))))}
+      { mkexp(Pexp_open(Open_all Fresh, mkrhs $1 1, mkexp (Pexp_override(List.rev $4))))}
   | mod_longident DOT LBRACELESS field_expr_list opt_semi error
       { unclosed "{<" 3 ">}" 6 }
   | simple_expr SHARP label
@@ -1507,7 +1494,7 @@ simple_expr:
   | LPAREN MODULE module_expr COLON error
       { unclosed "(" 1 ")" 5 }
   | mod_longident DOT LPAREN MODULE module_expr COLON package_type RPAREN
-      { mkexp(Pexp_open(Fresh, mkrhs $1 1,
+      { mkexp(Pexp_open(Open_all Fresh, mkrhs $1 1,
         mkexp (Pexp_constraint (ghexp (Pexp_pack $5),
                                 ghtyp (Ptyp_package $7))))) }
   | mod_longident DOT LPAREN MODULE module_expr COLON error
@@ -2363,6 +2350,10 @@ private_virtual_flags:
   | VIRTUAL { Public, Virtual }
   | PRIVATE VIRTUAL { Private, Virtual }
   | VIRTUAL PRIVATE { Private, Virtual }
+;
+open_flag:
+  | IMPLICIT                                    { Open_implicit }
+  | override_flag                               { Open_all $1 }
 ;
 override_flag:
     /* empty */                                 { Fresh }
