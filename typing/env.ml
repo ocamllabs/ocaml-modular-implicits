@@ -288,6 +288,13 @@ let strengthen =
 let md ?(implicit_ = Asttypes.Nonimplicit) md_type =
   {md_type; md_attributes=[]; md_loc=Location.none; md_implicit = implicit_}
 
+let register_if_implicit path md env =
+  match md.md_implicit with
+  | Asttypes.Nonimplicit -> env
+  | Asttypes.Implicit _ ->
+      let md = {md with md_type = !strengthen env md.md_type path} in
+      {env with implicit_instances = (path, md) :: env.implicit_instances}
+
 (* The name of the compilation unit currently compiled.
    "" if outside a compilation unit. *)
 
@@ -1094,44 +1101,45 @@ let labels_of_type ty_path decl =
         labels rep decl.type_private
   | Type_variant _ | Type_abstract | Type_open -> []
 
+(* [signature_item_size item] computes the number of fields required by a
+   signature_item at runtime. *)
+
+let signature_item_size = function
+  | Sig_value (_, {val_kind = Val_prim _}) -> 0
+  | Sig_value (_, _) -> 1
+  | Sig_typext _     -> 1
+  | Sig_module _     -> 1
+  | Sig_class _      -> 1
+  | Sig_type _       -> 0
+  | Sig_modtype _    -> 0
+  | Sig_class_type _ -> 0
+
+let signature_item_subst item p sub = match item with
+  | Sig_type (id, _, _) -> Subst.add_type id p sub
+  | Sig_module (id, _, _) -> Subst.add_module id p sub
+  | Sig_modtype (id, _) -> Subst.add_modtype id (Mty_ident p) sub
+  | Sig_value _ | Sig_typext _ | Sig_class _ | Sig_class_type _ -> sub
+
+let signature_item_ident = function
+  | Sig_value (id, _)     | Sig_exception (id, _)     | Sig_type (id, _, _)
+  | Sig_module (id, _, _) | Sig_modtype (id, _)
+  | Sig_class (id, _, _)  | Sig_class_type (id, _, _) ->
+      id
+
 (* Given a signature and a root path, prefix all idents in the signature
    by the root path and build the corresponding substitution. *)
 
 let rec prefix_idents root pos sub = function
     [] -> ([], sub)
-  | Sig_value(id, decl) :: rem ->
-      let p = Pdot(root, Ident.name id, pos) in
-      let nextpos = match decl.val_kind with Val_prim _ -> pos | _ -> pos+1 in
-      let (pl, final_sub) = prefix_idents root nextpos sub rem in
-      (p::pl, final_sub)
-  | Sig_type(id, decl, _) :: rem ->
-      let p = Pdot(root, Ident.name id, nopos) in
-      let (pl, final_sub) =
-        prefix_idents root pos (Subst.add_type id p sub) rem in
-      (p::pl, final_sub)
-  | Sig_typext(id, ext, _) :: rem ->
-      let p = Pdot(root, Ident.name id, pos) in
-      let (pl, final_sub) = prefix_idents root (pos+1) sub rem in
-      (p::pl, final_sub)
-  | Sig_module(id, mty, _) :: rem ->
-      let p = Pdot(root, Ident.name id, pos) in
-      let (pl, final_sub) =
-        prefix_idents root (pos+1) (Subst.add_module id p sub) rem in
-      (p::pl, final_sub)
-  | Sig_modtype(id, decl) :: rem ->
-      let p = Pdot(root, Ident.name id, nopos) in
-      let (pl, final_sub) =
-        prefix_idents root pos
-                      (Subst.add_modtype id (Mty_ident p) sub) rem in
-      (p::pl, final_sub)
-  | Sig_class(id, decl, _) :: rem ->
-      let p = Pdot(root, Ident.name id, pos) in
-      let (pl, final_sub) = prefix_idents root (pos + 1) sub rem in
-      (p::pl, final_sub)
-  | Sig_class_type(id, decl, _) :: rem ->
-      let p = Pdot(root, Ident.name id, nopos) in
-      let (pl, final_sub) = prefix_idents root pos sub rem in
-      (p::pl, final_sub)
+  | item :: rem ->
+      let id   = signature_item_ident item in
+      let size = signature_item_size item in
+      let next = pos + size in
+      let pos  = if size > 0 then pos else nopos in
+      let path = Pdot(root, Ident.name id, pos) in
+      let sub  = signature_item_subst item path sub in
+      let (pl, final_sub) = prefix_idents root next sub rem in
+      (path :: pl, final_sub)
 
 let subst_signature sub sg =
   List.map
@@ -1400,11 +1408,7 @@ and store_module slot id path md env renv =
       summary = Env_module(env.summary, id, md);
     }
   in
-  match md.md_implicit with
-  | Asttypes.Nonimplicit -> env
-  | Asttypes.Implicit _ ->
-      let md = {md with md_type = !strengthen env md.md_type path} in
-      {env with implicit_instances = (path, md) :: env.implicit_instances}
+  register_if_implicit path md env
 
 and store_modtype slot id path info env renv =
   { env with
@@ -1603,6 +1607,20 @@ let open_signature ?(loc = Location.none) ?(toplevel = false) ovf root sg env =
     open_signature (Some slot) root sg env
   end
   else open_signature None root sg env
+
+let open_implicit root sg env =
+  let env, _pos = List.fold_left
+      (fun (env,pos) item ->
+         let env = match item with
+           | Sig_module(id, md, _) ->
+               register_if_implicit (Pdot (root, Ident.name id, pos)) md env
+           | _ -> env
+         in
+         let next = pos + signature_item_size item in
+         env, next)
+      (env,0) sg
+  in
+  env
 
 (* Read a signature from a file *)
 

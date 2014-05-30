@@ -322,10 +322,10 @@ module Mb = struct
 end
 
 module Opn = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) ?(override = Fresh) lid =
+  let mk ?(loc = !default_loc) ?(attrs = []) ?(flag = Open_all Fresh) lid =
     {
      popen_lid = lid;
-     popen_override = override;
+     popen_flag = flag;
      popen_loc = loc;
      popen_attributes = attrs;
     }

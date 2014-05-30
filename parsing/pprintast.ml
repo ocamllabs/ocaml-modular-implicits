@@ -86,6 +86,10 @@ let override = function
   | Override -> "!"
   | Fresh -> ""
 
+let open_flag = function
+  | Open_all x -> override x
+  | Open_implicit -> " implicit"
+
 (* variance encoding: need to sync up with the [parser.mly] *)
 let type_variance = function
   | Invariant -> ""
@@ -620,7 +624,7 @@ class printer  ()= object(self:'self)
     | Pexp_poly (e, Some ct) ->
         pp f "@[<hov2>(!poly!@ %a@ : %a)@]" self#simple_expr e self#core_type ct
     | Pexp_open (ovf, lid, e) ->
-        pp f "@[<2>let open%s %a in@;%a@]" (override ovf) self#longident_loc lid
+        pp f "@[<2>let open%s %a in@;%a@]" (open_flag ovf) self#longident_loc lid
           self#expression  e
     | Pexp_variant (l,Some eo) ->
         pp f "@[<2>`%s@;%a@]" l  self#simple_expr eo
@@ -1002,7 +1006,7 @@ class printer  ()= object(self:'self)
           self#item_attributes pmd.pmd_attributes
     | Psig_open od ->
         pp f "@[<hov2>open%s@ %a@]%a"
-           (override od.popen_override)
+           (open_flag od.popen_flag)
            self#longident_loc od.popen_lid
            self#item_attributes od.popen_attributes
     | Psig_include incl ->
@@ -1173,7 +1177,7 @@ class printer  ()= object(self:'self)
           (self#implicit_binding arity) pmb_expr
     | Pstr_open od ->
         pp f "@[<2>open%s@;%a@]%a"
-           (override od.popen_override)
+           (open_flag od.popen_flag)
            self#longident_loc od.popen_lid
            self#item_attributes od.popen_attributes
     | Pstr_modtype {pmtd_name=s; pmtd_type=md; pmtd_attributes=attrs} ->
