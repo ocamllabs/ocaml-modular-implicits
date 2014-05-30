@@ -317,8 +317,75 @@ module Constraints = struct
 
 end
 
+(* Various functions to preprocess pending implicit and implicit declarations
+   when searching *)
+
+let remove_type_variables mty =
+  let variables = ref [] in
+  let it_type_expr it ty =
+    let ty = repr ty in
+    match ty.desc with
+    | Tvar name ->
+        let name = match name with
+          | None -> "ex"
+          | Some name -> name
+        in
+        let ident = Ident.create name in
+        variables := ident :: !variables;
+        let ty' = newgenty (Tconstr (Path.Pident ident, [], ref Mnil)) in
+        link_type ty ty'
+    | _ -> type_iterators.it_type_expr it ty;
+  in
+  let it = {type_iterators with it_type_expr} in
+  it.it_module_type it mty;
+  !variables
+
+let target_of_pending inst =
+  let env = inst.implicit_env in
+  let ident = inst.implicit_id in
+  let path, nl, tl = inst.implicit_type in
+  (* Extract base module type *)
+  let mtd = Env.find_modtype path env in
+  let mty = match mtd.mtd_type with
+                | None -> assert false
+                | Some mty -> mty
+  in
+  let cstrs =
+    (* Constraints from package type *)
+    (List.map2 (fun n t -> Longident.flatten n, t) nl tl)
+    (* Constraints from implicit instance *) @
+    (Constraints.flatten ~root:ident inst.implicit_constraints)
+  in
+  let mty = Constraints.apply env mty cstrs in
+  let variables = remove_type_variables mty in
+  let id = inst.implicit_id in
+  variables, {target_type = mty; target_id = id; target_uid = id}
+
+let rec extract_implicit_parameters targets n omty nmty =
+  assert (n >= 0);
+  if n = 0 then
+    List.rev targets, nmty
+  else match omty, nmty with
+    | Mty_functor (target_uid, Some _, omty'),
+      Mty_functor (target_id, Some target_type, nmty') ->
+        extract_implicit_parameters
+          ({target_uid; target_id; target_type} :: targets) (n - 1) omty' nmty'
+    | _ -> assert false
+
+let find_implicit_parameters {Types. md_type = omty; md_implicit} =
+  match md_implicit with
+  | Asttypes.Nonimplicit -> assert false
+  | Asttypes.Implicit 0 ->
+      (* No copy, so we don't lose equality *)
+      [], omty
+
+  | Asttypes.Implicit arity ->
+      let nmty = Subst.modtype Subst.identity omty in
+      extract_implicit_parameters [] arity omty nmty
+
 (** Termination checking **)
 module Termination : sig
+
   (* A termination criterion is a set of constraints applying on a target_uid.
      It's satisfied in a given state iff its constraints are stronger than
      those found the state. *)
@@ -437,74 +504,15 @@ end = struct
       try Ident.find_same uid stack
       with Not_found -> []
     in
-    if not (stronger env eqns eqns') then
-      (prerr_endline "Termination-checker pruned branch"; raise Terminate);
+    if not (stronger env eqns eqns') then raise Terminate;
     Ident.add uid eqns stack
 
 end
 
-let remove_type_variables mty =
-  let variables = ref [] in
-  let it_type_expr it ty =
-    let ty = repr ty in
-    match ty.desc with
-    | Tvar name ->
-        let name = match name with
-          | None -> "ex"
-          | Some name -> name
-        in
-        let ident = Ident.create name in
-        variables := ident :: !variables;
-        let ty' = newgenty (Tconstr (Path.Pident ident, [], ref Mnil)) in
-        link_type ty ty'
-    | _ -> type_iterators.it_type_expr it ty;
-  in
-  let it = {type_iterators with it_type_expr} in
-  it.it_module_type it mty;
-  !variables
-
-let target_of_pending inst =
-  let env = inst.implicit_env in
-  let ident = inst.implicit_id in
-  let path, nl, tl = inst.implicit_type in
-  (* Extract base module type *)
-  let mtd = Env.find_modtype path env in
-  let mty = match mtd.mtd_type with
-                | None -> assert false
-                | Some mty -> mty
-  in
-  let cstrs =
-    (* Constraints from package type *)
-    (List.map2 (fun n t -> Longident.flatten n, t) nl tl)
-    (* Constraints from implicit instance *) @
-    (Constraints.flatten ~root:ident inst.implicit_constraints)
-  in
-  let mty = Constraints.apply env mty cstrs in
-  let variables = remove_type_variables mty in
-  let id = inst.implicit_id in
-  variables, {target_type = mty; target_id = id; target_uid = id}
-
-let rec extract_implicit_parameters targets n omty nmty =
-  assert (n >= 0);
-  if n = 0 then
-    List.rev targets, nmty
-  else match omty, nmty with
-    | Mty_functor (target_uid, Some _, omty'),
-      Mty_functor (target_id, Some target_type, nmty') ->
-        extract_implicit_parameters
-          ({target_uid; target_id; target_type} :: targets) (n - 1) omty' nmty'
-    | _ -> assert false
-
-let find_implicit_parameters {Types. md_type = omty; md_implicit} =
-  match md_implicit with
-  | Asttypes.Nonimplicit -> assert false
-  | Asttypes.Implicit 0 ->
-      (* No copy, so we don't lose equality *)
-      [], omty
-
-  | Asttypes.Implicit arity ->
-      let nmty = Subst.modtype Subst.identity omty in
-      extract_implicit_parameters [] arity omty nmty
+(* Make the search stack explicit.
+   This helps resuming search (e.g to search for ambiguity), explaining search
+   state or errors, etc. *)
+(** TODO **)
 
 let report_error exn =
   try
