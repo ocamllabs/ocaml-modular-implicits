@@ -510,9 +510,154 @@ end = struct
 end
 
 (* Make the search stack explicit.
+end
+
    This helps resuming search (e.g to search for ambiguity), explaining search
    state or errors, etc. *)
 (** TODO **)
+
+(* Search step:
+   candidates -> success * sub_targets * next_candidates
+*)
+
+module Search : sig
+
+  type t
+  type candidates = (Path.t * Types.module_declaration) list
+
+  val start : Env.t -> Ident.t list -> target -> t
+
+  type partial
+  type result =
+    | Module of Path.t * t
+    | Functor of partial * t
+
+  val all_candidates : t -> candidates
+  val step: t -> candidates -> (result * candidates) option
+
+  val apply : partial -> Path.t -> t -> result
+
+end = struct
+  type t =
+    {
+      termination: Termination.state;
+      target: target;
+      env: Env.t;
+
+      (* Equality snapshots.
+
+         When resuming a search from this state,
+         [eq_var] should be set to [eq_initial].
+
+         [eq_var] is referenced in [eq_table], so new equations valid in this
+         branch of the search will be added to [eq_var]. *)
+
+      eq_initial: (Path.t * type_expr) list;
+      eq_var: (Path.t * type_expr) list ref;
+      eq_table: (Path.t * type_expr) list ref Ident.tbl;
+    }
+  type candidates = (Path.t * Types.module_declaration) list
+
+  let start env variables target =
+    let level = get_current_level () in
+    let env = List.fold_left (fun env variable ->
+        Env.add_type ~check:false variable
+          (new_declaration (Some (level, level)) None) env)
+        env variables
+    in
+    let eq_var = ref [] in
+    let eq_table = List.fold_left
+        (fun tbl id -> Ident.add id eq_var tbl)
+        Ident.empty variables
+    in
+    {
+      termination = Termination.initial;
+      target = target;
+      env = env;
+
+      eq_initial = [];
+      eq_var = eq_var;
+      eq_table = eq_table;
+    }
+
+  let all_candidates t =
+    Env.implicit_instances t.env
+
+  (* [step state candidates]
+     Starting from search [state], find a matching candidate in
+     [candidates] list or raise [Not_found].
+
+     If successful, returns [result, candidates] *)
+
+  type partial =
+    {
+      parent: t;
+      path: Path.t;
+      sub_targets: (target * Termination.t) list;
+    }
+
+  type result =
+    | Module of Path.t * t
+    | Functor of partial * t
+
+  let step0 state (path, md) =
+    state.eq_var := state.eq_initial;
+    let target = state.target in
+    let sub_targets, candidate = find_implicit_parameters md in
+    let new_eqns = ref [] in
+    (* Generate coercion. if this succeeds this produce equations in new_eqns and eq_var *)
+    let _ : module_coercion =
+      let eq_table, env = List.fold_left
+          (fun (eq_table, env) {target_id} ->
+             Ident.add target_id new_eqns eq_table,
+             Env.add_module target.target_id target.target_type env)
+          (state.eq_table, state.env) sub_targets
+      in
+      Ctype.with_equality_equations eq_table
+        (fun () -> Includemod.modtypes env candidate target.target_type)
+    in
+    let eqns = !new_eqns in
+    (* Constraints target types *)
+    let sub_targets = Constraints.targets state.env sub_targets eqns in
+    (* Add termination criteria *)
+    let sub_targets = Termination.normalize_equations sub_targets eqns in
+    let state = {state with eq_initial = !(state.eq_var)} in
+    match sub_targets with
+    | [] ->
+      (* No parameters: we keep new equations potentially added to top
+         variables *)
+      Module (path, state)
+    | (sub_target, crit) :: sub_targets ->
+      let partial = {parent = state; path; sub_targets} in
+      let state = {state with termination = Termination.check state.env crit state.termination} in
+      Functor (partial, state)
+
+  let rec step state = function
+    | [] -> None
+    | candidate :: candidates ->
+      try Some (step0 state candidate, candidates)
+      with _exn ->
+        step state candidates
+
+  let apply partial path state =
+    let path = papply partial.path path in
+    match partial.sub_targets with
+    | [] ->
+      Module (path, {partial.parent with eq_initial = state.eq_initial})
+    | (target, crit) :: sub_targets ->
+      let partial = {partial with path; sub_targets} in
+      let md = Env.find_module path state.env in
+      (* The original module declaration might be implicit, we want to avoid
+         rebinding implicit *)
+      let md = {md with md_implicit = Asttypes.Nonimplicit} in
+      let state = {
+        state with
+        target;
+        termination = Termination.check state.env crit partial.parent.termination;
+        env = Env.add_module_declaration target.target_id md state.env
+      } in
+      Functor (partial, state)
+end
 
 let report_error exn =
   try
@@ -520,81 +665,17 @@ let report_error exn =
   with exn ->
     Printf.eprintf "%s\n%!" (Printexc.to_string exn)
 
-let rec find_target env variables eq_table stack target =
-  let term_state = stack in
-  let build_path (path, md) =
-    Printf.eprintf "trying candidate %s\n%!" (string_of_path path);
-
-    let sub_targets, candidate = find_implicit_parameters md in
-    let variables' = !variables in
-
-    try
-      let new_equations = ref [] in
-
-      let _ : module_coercion =
-        let eq_table, env = List.fold_left
-            (fun (eq_table, env) {target_id} ->
-               Ident.add target_id new_equations eq_table,
-               Env.add_module target.target_id target.target_type env)
-            (eq_table, env) sub_targets
-        in
-        Ctype.with_equality_equations eq_table
-          (fun () -> Includemod.modtypes env candidate target.target_type)
-      in
-
-      let eqns = !new_equations in
-
-      (* Constraints target types *)
-      let sub_targets = Constraints.targets env sub_targets eqns in
-      (* Add termination criteria *)
-      let sub_targets = Termination.normalize_equations sub_targets eqns in
-
-      let find_parameter (path, env) (target, term_criterion) =
-        let term_state = Termination.check env term_criterion term_state in
-        let arg_path = find_target env variables eq_table term_state target in
-        let md = Env.find_module path env in
-        (* The original module declaration might be implicit, we want to avoid
-           rebinding implicit *)
-        let md = {md with md_implicit = Asttypes.Nonimplicit} in
-        let env = Env.add_module_declaration target.target_id md env in
-        papply path arg_path, env
-      in
-
-      let path, _env = List.fold_left find_parameter (path, env) sub_targets in
-
-      Some path
-
-    with exn ->
-      variables := variables';
-      report_error exn;
-      None
-
-  in
-  list_findmap build_path (Env.implicit_instances env)
-
 let find_pending_instance inst =
-  let env = inst.implicit_env in
   let variables, target = target_of_pending inst in
-  let level = get_current_level () in
-
-  let env = List.fold_left (fun env variable ->
-      Env.add_type ~check:false variable
-        (new_declaration (Some (level, level)) None) env)
-      env variables
-  in
-
-  let variables_equation = ref [] in
-  let eq_table = List.fold_left
-      (fun tbl id -> Ident.add id variables_equation tbl)
-      Ident.empty variables
-  in
-  try
+  let env = inst.implicit_env in
+  let _state = Search.start env variables target in
+  (*try
     let path =
       find_target env variables_equation eq_table Termination.initial target
     in
     Link.to_path inst path;
     true
-  with _ ->
+  with _ ->*)
     false
 
 (* Pack module at given path to match a given implicit instance and
