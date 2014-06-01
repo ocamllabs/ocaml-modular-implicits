@@ -665,7 +665,7 @@ let report_error exn =
   with exn ->
     Printf.eprintf "%s\n%!" (Printexc.to_string exn)
 
-let rec search_one state =
+(*let rec search_one state =
   let candidates = Search.all_candidates state in
   search_arguments (fst (Search.step state candidates))
 
@@ -681,6 +681,39 @@ let find_pending_instance inst =
   let state = Search.start env variables target in
   try
     let path, _ = search_one state in
+    Link.to_path inst path;
+    true
+  with _ ->
+    false*)
+
+type 'a k = K of ('a * (unit -> 'a k))
+
+let rec search_one state candidates =
+  let result, candidates = Search.step state candidates in
+  search_arguments result
+    ~k:(fun () -> search_one state candidates)
+
+and search_arguments ~k = function
+  | Search.Module (path,state') -> K ((path, state'), k)
+  | Search.Functor (partial,state') ->
+    let rec pack (K ((path, state'), k')) =
+      search_arguments (Search.apply partial path state')
+        ~k:(fun () -> try pack (k' ()) with _ -> k ())
+    in
+    pack (search_one state' (Search.all_candidates state'))
+
+let find_pending_instance inst =
+  let variables, target = target_of_pending inst in
+  let env = inst.implicit_env in
+  let state = Search.start env variables target in
+  try
+    let K ((path, _), k) = search_one state (Search.all_candidates state) in
+    begin
+      assert (
+        try let K ((_, _), _) = k () in
+        false
+        with _ -> true)
+    end;
     Link.to_path inst path;
     true
   with _ ->
