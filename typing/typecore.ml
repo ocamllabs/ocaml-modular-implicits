@@ -1958,12 +1958,18 @@ and type_expect_ ?in_function env sexp ty_expected =
       in
       end_def ();
       unify_var env (newvar()) funct.exp_type;
-      rue {
-        exp_desc = Texp_apply(funct, args);
-        exp_loc = loc; exp_extra = [];
-        exp_type = ty_res;
-        exp_attributes = sexp.pexp_attributes;
-        exp_env = env }
+      (* args can be empty if all arguments specified were of the form
+         (implicit M) *)
+      begin match args with
+      | [] -> funct
+      | args ->
+          rue {
+            exp_desc = Texp_apply(funct, args);
+            exp_loc = loc; exp_extra = [];
+            exp_type = ty_res;
+            exp_attributes = sexp.pexp_attributes;
+            exp_env = env }
+      end
   | Pexp_match(sarg, caselist) ->
       begin_def ();
       let arg = type_exp env sarg in
