@@ -56,6 +56,7 @@ module Unlink
     register path var
 
   let it_type_expr it ty =
+    let ty = repr ty in
     (* First recurse in sub expressions *)
     type_iterators.it_type_expr it ty;
     (* Then replace current type if it is a constructor referring to an
@@ -120,23 +121,21 @@ let instantiate_implicits_ty loc env ty =
       match ty.desc with
       | Tarrow (Tarr_implicit id, lhs, rhs, comm) ->
           (*prerr_endline "found one";*)
-          let id' = Ident.rename id in
-          let inst = fresh_implicit id' lhs in
-          let arguments, instances, subst, rhs' = extract_implicits rhs in
+          let inst = fresh_implicit id lhs in
+          let arguments, instances, rhs' = extract_implicits rhs in
           inst.implicit_argument :: arguments,
-          Ident.add id' inst instances,
-          Subst.add_module id (Path.Pident id') subst,
+          Ident.add id inst instances,
           rhs'
           (*{ty with desc = Tarrow (Tarr_implicit id', lhs, rhs', comm)}*)
       | Tarrow (arr, lhs, rhs, comm) ->
-          let arguments, instances, subst, rhs' = extract_implicits rhs in
+          let arguments, instances, rhs' = extract_implicits rhs in
           {arg_flag = (tapp_of_tarr arr); arg_expression = None} :: arguments,
-          instances, subst,
+          instances,
           {ty with desc = Tarrow (arr, lhs, rhs', comm)}
-      | _ -> [], Ident.empty, Subst.identity, ty
+      | _ -> [], Ident.empty, ty
     in
-    let arguments, instances, subst, ty = extract_implicits ty in
-    let ty = Subst.type_expr subst ty in
+    let ty = Subst.type_expr Subst.identity ty in
+    let arguments, instances, ty = extract_implicits ty in
     (* Set of constraints : maintain a table mapping implicit binding
        identifier to a list of type variable pairs.
        An implicit instance is correct only iff, in an environment where the
