@@ -154,7 +154,13 @@ let instantiate_implicits_ty loc env ty =
             None
       end)
     in
+    (* Unlink main types *)
     Unlink.type_expr ty;
+    (* Unlink with types appearing in with constraints *)
+    Ident.iter (fun _id inst ->
+        let _p,_nl,tl = inst.implicit_type in
+        List.iter Unlink.type_expr tl
+      ) instances;
     arguments, instances, ty
 
 let instantiate_implicits_expr env expr =
