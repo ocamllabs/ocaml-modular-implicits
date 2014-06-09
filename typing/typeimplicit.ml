@@ -92,12 +92,12 @@ let pending_implicits
   : pending_implicit list ref
   = ref []
 
+let rec has_implicit ty = match ty.desc with
+  | Tarrow (Tarr_implicit id,_,_,_) -> true
+  | Tarrow (_,_,rhs,_) -> has_implicit rhs
+  | _ -> false
+
 let instantiate_implicits_ty loc env ty =
-  let rec has_implicit ty = match ty.desc with
-    | Tarrow (Tarr_implicit id,_,_,_) -> true
-    | Tarrow (_,_,rhs,_) -> has_implicit rhs
-    | _ -> false
-  in
   if not (has_implicit ty) then [], Ident.empty, ty
   else
     let fresh_implicit id ty =

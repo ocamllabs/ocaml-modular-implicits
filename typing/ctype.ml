@@ -3341,34 +3341,47 @@ let rec eqtype rename type_pairs subst env t1 t2 =
           | (Tunivar _, Tunivar _) ->
               unify_univar t1' t2' !univar_pairs
 
-          | Tconstr (p, [], _), ty
-          | ty, Tconstr (p, [], _)
-              (* FIXME: handle the case Tconstr (p1, _), Tconstr (p2, _) *)
+          | (Tconstr (p1, [], _) as te1), (Tconstr (p2, [], _) as te2)
+            when Ident.mem (Path.head p1) !equality_equations
+              && Ident.mem (Path.head p2) !equality_equations ->
+              if p1 < p2 then
+                eqtype_modulo_equation rename type_pairs subst env p1 te2 t1' t2'
+              else
+                eqtype_modulo_equation rename type_pairs subst env p2 te1 t1' t2'
+
+          | Tconstr (p, [], _), te
             when Ident.mem (Path.head p) !equality_equations ->
-              let equations = Ident.find_same (Path.head p) !equality_equations in
-              begin try
-                let ty' = List.assoc p !equations in
-                (* An equation already apply to this path *)
-                if t1'.desc == ty then
-                  eqtype rename type_pairs subst env t1' ty'
-                else
-                  eqtype rename type_pairs subst env ty' t2'
-              with Not_found ->
-                (* Not yet any equation on this path *)
-                let ty' =
-                  if t1'.desc == ty then
-                    t1'
-                  else
-                    t2'
-                in
-                equations := (p, ty') :: !equations
-              end
+              eqtype_modulo_equation rename type_pairs subst env p te t1' t2'
+
+          | te, Tconstr (p, [], _)
+            when Ident.mem (Path.head p) !equality_equations ->
+              eqtype_modulo_equation rename type_pairs subst env p te t1' t2'
 
           | (_, _) ->
               raise (Unify [])
         end
   with Unify trace ->
     raise (Unify ((t1, t2)::trace))
+
+and eqtype_modulo_equation rename type_pairs subst env path te t1 t2 =
+  let equations = Ident.find_same (Path.head path) !equality_equations in
+  begin try
+    let ty = List.assoc path !equations in
+    (* An equation already apply to this path *)
+    if t1.desc == te then
+      eqtype rename type_pairs subst env t1 ty
+    else
+      eqtype rename type_pairs subst env ty t2
+  with Not_found ->
+    (* Not yet any equation on this path *)
+    let ty =
+      if t1.desc == te then
+        t1
+      else
+        t2
+    in
+    equations := (path, ty) :: !equations
+  end
 
 and eqtype_list rename type_pairs subst env tl1 tl2 =
   if List.length tl1 <> List.length tl2 then
