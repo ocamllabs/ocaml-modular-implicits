@@ -3914,9 +3914,11 @@ let type_expression env sexp =
   Typeimplicit.generalize_implicits ();
   if is_nonexpansive exp then generalize exp.exp_type
   else generalize_expansive env exp.exp_type;
-  match sexp.pexp_desc with
-    Pexp_ident lid ->
-      (* Special case for keeping type variables when looking-up a variable *)
+  match sexp.pexp_desc, exp.exp_desc with
+    Pexp_ident lid, Texp_ident _ ->
+      (* Special case for keeping type variables when looking-up a variable.
+         Also check the typed expression: if [lid] has implicit arguments,
+         those will have been instanciated resulting in a different type. *)
       let (path, desc) = Env.lookup_value lid.txt env in
       {exp with exp_type = desc.val_type}
   | _ -> exp
