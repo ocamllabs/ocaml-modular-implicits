@@ -548,7 +548,7 @@ module Search : sig
 
   type outcome = [
     | `Done of result
-    | `Functor of partial * t
+    | `Step of partial * t
   ]
 
   val step : t -> candidate list -> outcome * candidate list
@@ -596,7 +596,7 @@ end = struct
 
   type outcome = [
     | `Done of result
-    | `Functor of partial * t
+    | `Step of partial * t
   ]
 
   let start env variables target =
@@ -656,7 +656,7 @@ end = struct
       let partial = {state with payload = (path, sub_targets)} in
       let termination = Termination.check state.env crit state.termination in
       let state = {state with target; termination} in
-      `Functor (partial, state)
+      `Step (partial, state)
 
   let rec step state = function
     | [] -> raise Not_found
@@ -688,47 +688,58 @@ end = struct
       let termination = Termination.check arg.env crit partial.termination in
       let env = Env.add_module_declaration target.target_id md arg.env in
       let arg = {arg with payload = (); target; termination; env} in
-      `Functor (partial, arg)
+      `Step (partial, arg)
 end
 
 (*module Stack = struct
+
   type 'a cell = {
     (* The query *)
-    initial: Search.t * Search.candidate list;
+    query: Search.t * Search.candidate list;
     (* If we want to resume search, start from these candidates *)
     next: Search.candidate list;
 
     (* Intermediate steps, if any, with their result *)
-    steps : (Search.partial * Search.result cell) list;
+    steps: (Search.partial * Search.result cell) list;
 
-    (* Result *)
-    result: 'a;
+    value: 'a;
   }
 
-  type t = Search.partial cell list
+  (* The stack is made of all partial applications waiting for an argument *)
+  type t = Search.partial cell list * Search.t * Search.candidate cell
+
+  let rec cell_search stack search =
+    let candidates = Search.all_candidates search in
+    match Search.step search candidates with
+    | `Done result, next ->
+      let cell = {
+        query = (search, candidates);
+        next; steps = []; value = result
+      } in
+      begin match stack with
+      | [] -> `Done cell
+      | head :: stack -> cell_apply stack head cell
+      end
+    | `Step (partial, search), next ->
+       begin match start_search search with
+       | `Step (stack, cell) ->
+       | `Done cell ->
+       end
+
+  and cell_apply stack head arg =
+    let head = {head with steps = (head.value, arg) :: head.steps} in
+    match Search.apply head.value arg.value with
+    | `Step (partial, search) ->
+      cell_search ({head with value = partial} :: stack) search
+    | `Done result ->
+      begin match stack with
+      | [] -> `Done {head with value = result}
+      | head' :: stack -> `Done {
+      end
+
+  let start env variables target =
 
 end*)
-
-(*let rec search_one state =
-  let candidates = Search.all_candidates state in
-  search_arguments (fst (Search.step state candidates))
-
-and search_arguments = function
-  | Search.Module (path,state') -> path, state'
-  | Search.Functor (partial,state') ->
-    let path, state' = search_one state' in
-    search_arguments (Search.apply partial path state')
-
-let find_pending_instance inst =
-  let variables, target = target_of_pending inst in
-  let env = inst.implicit_env in
-  let state = Search.start env variables target in
-  try
-    let path, _ = search_one state in
-    Link.to_path inst path;
-    true
-  with _ ->
-    false*)
 
 type 'a k = K of ('a * (unit -> 'a k))
 
@@ -739,7 +750,7 @@ let rec search_one state candidates =
 
 and search_arguments ~k = function
   | `Done result -> K (result, k)
-  | `Functor (partial,t) ->
+  | `Step (partial,t) ->
     let rec pack (K (result, k')) =
       search_arguments (Search.apply partial result)
         ~k:(fun () -> try pack (k' ()) with _ -> k ())
