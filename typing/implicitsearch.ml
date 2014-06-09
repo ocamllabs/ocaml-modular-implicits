@@ -331,7 +331,7 @@ let remove_type_variables mty =
           | Some name -> name
         in
         let ident = Ident.create name in
-        variables := ident :: !variables;
+        variables := (ty, ident) :: !variables;
         let ty' = newgenty (Tconstr (Path.Pident ident, [], ref Mnil)) in
         link_type ty ty'
     | _ -> type_iterators.it_type_expr it ty;
@@ -339,6 +339,15 @@ let remove_type_variables mty =
   let it = {type_iterators with it_type_expr} in
   it.it_module_type it mty;
   !variables
+
+let unify_equations env variables equations =
+  List.iter (fun (ty, id) ->
+      List.iter (function
+          | Path.Pident id', ty' when Ident.same id id' ->
+              unify env ty ty'
+          | _ -> ())
+        equations
+  ) variables
 
 let target_of_pending inst =
   let env = inst.implicit_env in
@@ -509,6 +518,12 @@ end = struct
 
 end
 
+let report_error exn =
+  try
+    Location.report_exception Format.err_formatter exn
+  with exn ->
+    Printf.eprintf "%s\n%!" (Printexc.to_string exn)
+
 (* Make the search stack explicit.
 end
 
@@ -516,30 +531,36 @@ end
    state or errors, etc. *)
 (** TODO **)
 
-(* Search step:
-   candidates -> success * sub_targets * next_candidates
-*)
-
 module Search : sig
 
+  type candidate = Path.t * Types.module_declaration
+
   type t
-  type candidates = (Path.t * Types.module_declaration) list
+  type partial
+  type result
+
+  val get : result -> Path.t
+  val equations : result -> (Path.t * type_expr) list
+
+  val all_candidates : t -> candidate list
 
   val start : Env.t -> Ident.t list -> target -> t
 
-  type partial
-  type result =
-    | Module of Path.t * t
-    | Functor of partial * t
+  type outcome = [
+    | `Done of result
+    | `Functor of partial * t
+  ]
 
-  val all_candidates : t -> candidates
-  val step: t -> candidates -> (result * candidates)
-
-  val apply : partial -> Path.t -> t -> result
+  val step : t -> candidate list -> outcome * candidate list
+  val apply : partial -> result -> outcome
 
 end = struct
-  type t =
+
+  type candidate = Path.t * Types.module_declaration
+
+  type 'a state =
     {
+      payload: 'a;
       termination: Termination.state;
       target: target;
       env: Env.t;
@@ -551,12 +572,32 @@ end = struct
 
          [eq_var] is referenced in [eq_table], so new equations valid in this
          branch of the search will be added to [eq_var]. *)
-
       eq_initial: (Path.t * type_expr) list;
       eq_var: (Path.t * type_expr) list ref;
       eq_table: (Path.t * type_expr) list ref Ident.tbl;
     }
-  type candidates = (Path.t * Types.module_declaration) list
+
+  type t =
+    (* Start point for a search, a state without other information attached *)
+    unit state
+
+  type partial =
+    (* Intermediate result: a path has been found, but some arguments are
+       missing and need to be applied *)
+    (Path.t * (target * Termination.t) list) state
+
+  type result =
+    (* Final result: the path points to a module with the desired type *)
+    Path.t state
+
+  let get t = t.payload
+
+  let equations t = t.eq_initial
+
+  type outcome = [
+    | `Done of result
+    | `Functor of partial * t
+  ]
 
   let start env variables target =
     let level = get_current_level () in
@@ -571,6 +612,7 @@ end = struct
         Ident.empty variables
     in
     {
+      payload = ();
       termination = Termination.initial;
       target = target;
       env = env;
@@ -582,23 +624,6 @@ end = struct
 
   let all_candidates t =
     Env.implicit_instances t.env
-
-  (* [step state candidates]
-     Starting from search [state], find a matching candidate in
-     [candidates] list or raise [Not_found].
-
-     If successful, returns [result, candidates] *)
-
-  type partial =
-    {
-      parent: t;
-      path: Path.t;
-      sub_targets: (target * Termination.t) list;
-    }
-
-  type result =
-    | Module of Path.t * t
-    | Functor of partial * t
 
   let step0 state (path, md) =
     state.eq_var := state.eq_initial;
@@ -626,44 +651,63 @@ end = struct
     | [] ->
       (* No parameters: we keep new equations potentially added to top
          variables *)
-      Module (path, state)
+      `Done {state with payload = path}
     | (target, crit) :: sub_targets ->
-      let partial = {parent = state; path; sub_targets} in
-      let state = {state with target; termination = Termination.check state.env crit state.termination} in
-      Functor (partial, state)
+      let partial = {state with payload = (path, sub_targets)} in
+      let termination = Termination.check state.env crit state.termination in
+      let state = {state with target; termination} in
+      `Functor (partial, state)
 
   let rec step state = function
     | [] -> raise Not_found
     | candidate :: candidates ->
-      try (step0 state candidate, candidates)
-      with _exn ->
+      try
+        step0 state candidate, candidates
+      with exn ->
+        report_error exn;
         step state candidates
 
-  let apply partial path state =
-    let path = papply partial.path path in
-    match partial.sub_targets with
+  let apply partial arg =
+    let partial_path, sub_targets = partial.payload in
+    let arg_path = arg.payload in
+    let path = papply partial_path arg_path in
+    match sub_targets with
     | [] ->
-      Module (path, {partial.parent with eq_initial = state.eq_initial})
+      let state = {partial with
+                   payload = path;
+                   (* We get the equations from the argument but keep
+                      termination state from the parent *)
+                   eq_initial = arg.eq_initial} in
+      `Done state
     | (target, crit) :: sub_targets ->
-      let partial = {partial with path; sub_targets} in
-      let md = Env.find_module path state.env in
+      let partial = {partial with payload = (path, sub_targets)} in
+      let md = Env.find_module path arg.env in
       (* The original module declaration might be implicit, we want to avoid
          rebinding implicit *)
       let md = {md with md_implicit = Asttypes.Nonimplicit} in
-      let state = {
-        state with
-        target;
-        termination = Termination.check state.env crit partial.parent.termination;
-        env = Env.add_module_declaration target.target_id md state.env
-      } in
-      Functor (partial, state)
+      let termination = Termination.check arg.env crit partial.termination in
+      let env = Env.add_module_declaration target.target_id md arg.env in
+      let arg = {arg with payload = (); target; termination; env} in
+      `Functor (partial, arg)
 end
 
-let report_error exn =
-  try
-    Location.report_exception Format.err_formatter exn
-  with exn ->
-    Printf.eprintf "%s\n%!" (Printexc.to_string exn)
+(*module Stack = struct
+  type 'a cell = {
+    (* The query *)
+    initial: Search.t * Search.candidate list;
+    (* If we want to resume search, start from these candidates *)
+    next: Search.candidate list;
+
+    (* Intermediate steps, if any, with their result *)
+    steps : (Search.partial * Search.result cell) list;
+
+    (* Result *)
+    result: 'a;
+  }
+
+  type t = Search.partial cell list
+
+end*)
 
 (*let rec search_one state =
   let candidates = Search.all_candidates state in
@@ -694,29 +738,35 @@ let rec search_one state candidates =
     ~k:(fun () -> search_one state candidates)
 
 and search_arguments ~k = function
-  | Search.Module (path,state') -> K ((path, state'), k)
-  | Search.Functor (partial,state') ->
-    let rec pack (K ((path, state'), k')) =
-      search_arguments (Search.apply partial path state')
+  | `Done result -> K (result, k)
+  | `Functor (partial,t) ->
+    let rec pack (K (result, k')) =
+      search_arguments (Search.apply partial result)
         ~k:(fun () -> try pack (k' ()) with _ -> k ())
     in
-    pack (search_one state' (Search.all_candidates state'))
+    pack (search_one t (Search.all_candidates t))
 
 let find_pending_instance inst =
+  let snapshot = Btype.snapshot () in
   let variables, target = target_of_pending inst in
   let env = inst.implicit_env in
-  let state = Search.start env variables target in
+  let t = Search.start env (List.map snd variables) target in
   try
-    let K ((path, _), k) = search_one state (Search.all_candidates state) in
+    let K (result, k) = search_one t (Search.all_candidates t) in
+    Btype.backtrack snapshot;
     begin
       assert (
-        try let K ((_, _), _) = k () in
+        try let K (_, _) = k () in
         false
         with _ -> true)
     end;
-    Link.to_path inst path;
+    Btype.backtrack snapshot;
+    unify_equations env variables (Search.equations result);
+    Link.to_path inst (Search.get result);
     true
-  with _ ->
+  with exn ->
+    Btype.backtrack snapshot;
+    report_error exn;
     false
 
 (* Pack module at given path to match a given implicit instance and
