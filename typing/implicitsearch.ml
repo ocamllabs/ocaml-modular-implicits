@@ -535,23 +535,23 @@ module Search : sig
 
   type candidate = Path.t * Types.module_declaration
 
-  type t
+  type query
   type partial
   type result
 
   val get : result -> Path.t
   val equations : result -> (Path.t * type_expr) list
 
-  val all_candidates : t -> candidate list
+  val all_candidates : query -> candidate list
 
-  val start : Env.t -> Ident.t list -> target -> t
+  val start : Env.t -> Ident.t list -> target -> query
 
   type outcome = [
     | `Done of result
-    | `Step of partial * t
+    | `Step of partial * query
   ]
 
-  val step : t -> candidate list -> outcome * candidate list
+  val step : query -> candidate list -> outcome * candidate list
   val apply : partial -> result -> outcome
 
 end = struct
@@ -577,7 +577,7 @@ end = struct
       eq_table: (Path.t * type_expr) list ref Ident.tbl;
     }
 
-  type t =
+  type query =
     (* Start point for a search, a state without other information attached *)
     unit state
 
@@ -596,7 +596,7 @@ end = struct
 
   type outcome = [
     | `Done of result
-    | `Step of partial * t
+    | `Step of partial * query
   ]
 
   let start env variables target =
@@ -691,86 +691,67 @@ end = struct
       `Step (partial, arg)
 end
 
-(*module Stack = struct
+module Solution = struct
 
-  type 'a cell = {
-    (* The query *)
-    query: Search.t * Search.candidate list;
+  type t = {
+    (* The original query *)
+    query: Search.query;
+
     (* If we want to resume search, start from these candidates *)
     next: Search.candidate list;
 
-    (* Intermediate steps, if any, with their result *)
-    steps: (Search.partial * Search.result cell) list;
+    (* Intermediate steps with solutions to subquerys *)
+    steps: (Search.partial * t) list;
 
-    value: 'a;
+    result: Search.result;
   }
 
-  (* The stack is made of all partial applications waiting for an argument *)
-  type t = Search.partial cell list * Search.t * Search.candidate cell
+  let rec search query =
+    search_candidates query (Search.all_candidates query)
 
-  let rec cell_search stack search =
-    let candidates = Search.all_candidates search in
-    match Search.step search candidates with
-    | `Done result, next ->
-      let cell = {
-        query = (search, candidates);
-        next; steps = []; value = result
-      } in
-      begin match stack with
-      | [] -> `Done cell
-      | head :: stack -> cell_apply stack head cell
-      end
-    | `Step (partial, search), next ->
-       begin match start_search search with
-       | `Step (stack, cell) ->
-       | `Done cell ->
-       end
+  and search_candidates query candidates =
+    let step, next = Search.step query candidates in
+    search_arguments query next [] step
 
-  and cell_apply stack head arg =
-    let head = {head with steps = (head.value, arg) :: head.steps} in
-    match Search.apply head.value arg.value with
-    | `Step (partial, search) ->
-      cell_search ({head with value = partial} :: stack) search
+  and search_arguments query next steps = function
     | `Done result ->
-      begin match stack with
-      | [] -> `Done {head with value = result}
-      | head' :: stack -> `Done {
+      {query; next; steps; result}
+    | `Step (partial,subquery) ->
+      apply_argument query next steps partial (search subquery)
+
+  and apply_argument query next steps partial solution =
+    search_arguments query next
+      ((partial, solution) :: steps)
+      (Search.apply partial solution.result)
+
+  let rec search_next_steps solution = function
+    | ((partial, step) :: steps) ->
+      begin try
+        let {query; next; _} = solution in
+        apply_argument query next steps partial (search_next step)
+      with Not_found ->
+        search_next_steps solution steps
       end
+    | [] ->
+      search_candidates solution.query solution.next
 
-  let start env variables target =
-
-end*)
-
-type 'a k = K of ('a * (unit -> 'a k))
-
-let rec search_one state candidates =
-  let result, candidates = Search.step state candidates in
-  search_arguments result
-    ~k:(fun () -> search_one state candidates)
-
-and search_arguments ~k = function
-  | `Done result -> K (result, k)
-  | `Step (partial,t) ->
-    let rec pack (K (result, k')) =
-      search_arguments (Search.apply partial result)
-        ~k:(fun () -> try pack (k' ()) with _ -> k ())
-    in
-    pack (search_one t (Search.all_candidates t))
+  and search_next solution = search_next_steps solution solution.steps
+end
 
 let find_pending_instance inst =
   let snapshot = Btype.snapshot () in
   let variables, target = target_of_pending inst in
   let env = inst.implicit_env in
-  let t = Search.start env (List.map snd variables) target in
+  let query = Search.start env (List.map snd variables) target in
   try
-    let K (result, k) = search_one t (Search.all_candidates t) in
+    let solution = Solution.search query in
     Btype.backtrack snapshot;
     begin
       assert (
-        try let K (_, _) = k () in
-        false
+        try ignore (Solution.search_next solution : Solution.t); false
         with _ -> true)
     end;
+    let result = solution.Solution.result in
     Btype.backtrack snapshot;
     unify_equations env variables (Search.equations result);
     Link.to_path inst (Search.get result);
