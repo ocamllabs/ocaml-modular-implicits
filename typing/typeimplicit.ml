@@ -31,7 +31,7 @@ type pending_implicit = {
   implicit_env: Env.t;
   implicit_loc: Location.t;
   implicit_type: Path.t * Longident.t list * type_expr list;
-  mutable implicit_constraints: (type_expr list * Path.t * type_expr) list;
+  mutable implicit_constraints: (type_expr * type_expr) list;
   (* When linking with an implicit module M, a constraint (path, ty) is
      satisfied iff path unify with ty when implicit_id is bound to M in
      implicit_env *)
@@ -40,25 +40,25 @@ type pending_implicit = {
 
 (*val env : Env.t
   val unlink_on
-  : Ident.t -> (type_expr list -> Path.t -> type_expr -> unit) option*)
+  : Ident.t -> (type_expr -> type_expr -> unit) option*)
 let unlink env unlink_on =
   let path_table = Hashtbl.create 7 in
 
-  let add_constraint register args path var =
+  let add_constraint register path ty tyvar =
     let instance_list =
       try Hashtbl.find path_table path
       with Not_found -> []
     in
     begin try
-      let eq_args (args',_var) =
-        (args = args') || Ctype.equal env false args args'
+      let eq_args (ty',_tyvar') =
+        TypeOps.equal ty ty' || Ctype.equal env false [ty] [ty']
       in
-      let _args, var' = List.find eq_args instance_list in
-      link_type var var'
+      let _ty', tyvar' = List.find eq_args instance_list in
+      link_type tyvar tyvar'
     with Not_found ->
-      Hashtbl.replace path_table path ((args, var) :: instance_list)
+      Hashtbl.replace path_table path ((ty, tyvar) :: instance_list)
     end;
-    register args path var
+    register ty tyvar
   in
 
   let it_type_expr it ty =
@@ -72,12 +72,15 @@ let unlink env unlink_on =
       begin match unlink_on (Path.head path) with
       | None -> ()
       | Some register ->
-        (* Replace `ty' by a fresh variable *)
-        let {desc = desc'; level = lv'; id = id'} = newvar() in
+        let ty' = newvar () in
+        (* Swap `ty' with a fresh variable *)
+        let {desc = desc; level = lv} = ty in
+        let {desc = desc'; level = lv'} = ty' in
         ty.desc  <- desc';
         ty.level <- lv';
-        ty.id    <- id';
-        add_constraint register args path ty
+        ty'.desc  <- desc;
+        ty'.level <- lv;
+        add_constraint register path ty' ty
       end
     | _ -> ()
   in
@@ -140,9 +143,9 @@ let instantiate_implicits_ty loc env ty =
     let unlink_ident ident =
       try
         let inst = Ident.find_same ident instances in
-        let add_constraint args path var=
+        let add_constraint ty tyvar =
           inst.implicit_constraints <-
-            (args,path,var) :: inst.implicit_constraints
+            (ty, tyvar) :: inst.implicit_constraints
         in
         Some add_constraint
       with Not_found ->
@@ -194,11 +197,10 @@ module Link = struct
   let to_path inst path =
     (* Check that all constraints are satisfied *)
     let subst = Subst.add_module inst.implicit_id path Subst.identity in
-    List.iter (fun (targs,tpath,ty') ->
-        let tpath = Subst.type_path subst tpath in
-        let ty = newconstr tpath targs in
-        let ty' = Subst.type_expr subst ty' in
-        unify inst.implicit_env ty ty'
+    List.iter (fun (ty,tyvar) ->
+        let ty = Subst.type_expr subst ty in
+        let tyvar = Subst.type_expr subst tyvar in
+        unify inst.implicit_env ty tyvar
       )
       inst.implicit_constraints;
     (* Pack the module to appropriate signature *)

@@ -52,7 +52,7 @@ type target = {
      second arguments to Pair.  *)
   target_uid  : Ident.t;
 
-  target_hkt  : (type_expr list * Path.t * type_expr) list;
+  target_hkt  : (type_expr * type_expr) list;
 }
 
 (** Constraints are a list of equations of the form [path] = [type_expr].
@@ -364,19 +364,30 @@ let target_of_pending inst =
                 | None -> assert false
                 | Some mty -> mty
   in
-  let without_args (args,_,_) = args = [] in
-  let fkt, hkt = List.partition without_args inst.implicit_constraints in
-  let fkt = List.map (fun (_,path,ty) -> (path,ty)) fkt in
+  let basekinded (ty,_tyvar) = match (repr ty).desc with
+    | Tconstr (_, [], _) -> true
+    | Tconstr (_, (_ :: _), _) -> false
+    | _ -> assert false
+  in
+  let basepath (ty,tyvar) = match (repr ty).desc  with
+    | Tconstr (path, [], _) -> path, tyvar
+    | _ -> assert false
+  in
+  let bkt, hkt = List.partition basekinded inst.implicit_constraints in
+  let bkt = List.map basepath bkt in
   let cstrs =
     (* Constraints from package type *)
     (List.map2 (fun n t -> Longident.flatten n, t) nl tl)
     (* Constraints from implicit instance *) @
-    (Constraints.flatten ~root:ident fkt)
+    (Constraints.flatten ~root:ident bkt)
   in
   let mty = Constraints.apply env mty cstrs in
   let variables, it = remove_type_variables () in
   it.it_module_type it mty;
-  List.iter (fun (args,_,_) -> List.iter (it.it_type_expr it) args) hkt;
+  List.iter (fun (ty,tyvar) ->
+      it.it_type_expr it ty;
+      it.it_type_expr it tyvar)
+    hkt;
   let id = inst.implicit_id in
   !variables,
   {target_type = mty; target_id = id; target_uid = id; target_hkt = hkt}
@@ -652,37 +663,35 @@ end = struct
         (fun ident _ acc -> Ident.name ident :: acc)
         eq_table []
     in
-    Format.fprintf Format.std_formatter "Starting from equations on %s:\n%!"
+    Format.fprintf Format.err_formatter "Starting from equations on %s:\n%!"
       (String.concat ", " accepting_eq);
     List.iter (fun (path,ty) ->
-        Format.fprintf Format.std_formatter "\t%a = %a\n%!"
+        Format.fprintf Format.err_formatter "\t%a = %a\n%!"
           Printtyp.path path
           Printtyp.type_expr ty)
       !(state.eq_var);
     Ctype.with_equality_equations eq_table
       (fun () ->
         let subst = Subst.add_module target.target_id path Subst.identity in
-        let fresh_inst (args,path,ty) =
-          (newconstr (Subst.type_path subst path) args, ty)
-        in
-        let tls = List.map fresh_inst target.target_hkt in
-        let tl1, tl2 = List.split tls in
-        begin try Ctype.equal' env false tl1 tl2
+        let tyl, tvl = List.split target.target_hkt in
+        let tyl = List.map (Subst.type_expr subst) tyl in
+        let tvl = List.map (Subst.type_expr subst) tvl in
+        begin try Ctype.equal' env false tyl tvl
         with Ctype.Unify tls ->
-          Format.fprintf Format.std_formatter "Failed to instantiate:\n";
+          Format.fprintf Format.err_formatter "Failed to instantiate:\n";
           List.iter2 (fun t1 t2 ->
-              Format.fprintf Format.std_formatter "\t%a = %a\n%!"
+              Format.fprintf Format.err_formatter "\t%a = %a\n%!"
                 Printtyp.type_expr t1
                 Printtyp.type_expr t2)
-            tl1 tl2;
-          Format.fprintf Format.std_formatter "With equations on %s:\n%!"
+            tyl tvl;
+          Format.fprintf Format.err_formatter "With equations on %s:\n%!"
             (String.concat ", " accepting_eq);
           List.iter (fun (path,ty) ->
-              Format.fprintf Format.std_formatter "\t%a = %a\n%!"
+              Format.fprintf Format.err_formatter "\t%a = %a\n%!"
                 Printtyp.path path
                 Printtyp.type_expr ty)
             !(state.eq_var);
-          Format.fprintf Format.std_formatter "Because:\n%!";
+          Format.fprintf Format.err_formatter "Because:\n%!";
           List.iter (fun (ty1,ty2) ->
               let rec find_aliases acc ty = match (repr ty).desc with
                 | Tconstr (path,args,_)  ->
@@ -697,11 +706,11 @@ end = struct
               let aliases = find_aliases [] ty1 in
               let aliases = find_aliases aliases ty2 in
               List.iter (fun (ty1,ty2) ->
-                  Format.fprintf Format.std_formatter " %a ~ %a;"
+                  Format.fprintf Format.err_formatter " %a ~ %a;"
                     Printtyp.type_expr ty1
                     Printtyp.type_expr ty2)
                 aliases;
-              Format.fprintf Format.std_formatter "\n\t%a != %a \n%!"
+              Format.fprintf Format.err_formatter "\n\t%a != %a \n%!"
                 Printtyp.type_expr ty1
                 Printtyp.type_expr ty2)
             tls;
@@ -908,11 +917,9 @@ let generalize_implicits () =
   let pending = List.filter not_linked !pending_implicits in
   let need_generalization inst =
     List.exists
-      (fun (vars,ty,var) ->
-        List.exists (fun var ->
-          assert (var.level <> generic_level);
-          var.level >= current_level)
-          (var :: vars))
+      (fun (ty,var) ->
+         assert (var.level <> generic_level);
+         max ty.level var.level >= current_level)
       inst.implicit_constraints
     || inst.implicit_constraints = []
   in
