@@ -33,25 +33,26 @@ type target = {
   (* The module type we try to find an instance for *)
   target_type : Types.module_type;
   (* The identifier to which bound the result of the search to.
-     E.g we are trying to fill the hole in
-     module %target_id : %target_type = _
-  *)
+     E.g we are trying to fill the hole in:
+       module %target_id : %target_type = _ *)
   target_id   : Ident.t;
 
-  (* A unique identifier that will be used for termination checking.
-     When the target is the argument to a functor instantiation, if this functor is instantiated multiple times
-     we enforce that the constraints on the argument are stronger.
+  (* A unique identifier that will be used for termination checking.  When the
+     target is the argument to a functor instantiation, if this functor is
+     instantiated multiple times we enforce that the constraints on the
+     argument are stronger.
 
      Pair (Arg_1) (Pair (Arg_1') (Arg_2))
 
      Arg_1 and Arg_1' targets will have a different target_id but the same
-     target_uid. We check that constraints on Arg_1' are stronger than those on
-     Arg_1'.
+     target_uid.  We check that constraints on Arg_1' are stronger than those
+     on Arg_1'.
 
-     Note: This is also true of (Pair (Arg_1') (Arg_2)) and Arg_2, used as second
-     arguments to Pair.
-  *)
+     Note: This is also true of (Pair (Arg_1') (Arg_2)) and Arg_2, used as
+     second arguments to Pair.  *)
   target_uid  : Ident.t;
+
+  target_hkt  : (type_expr list * Path.t * type_expr) list;
 }
 
 (** Constraints are a list of equations of the form [path] = [type_expr].
@@ -320,12 +321,12 @@ end
 (* Various functions to preprocess pending implicit and implicit declarations
    when searching *)
 
-let remove_type_variables mty =
+let remove_type_variables () =
   let variables = ref [] in
   let it_type_expr it ty =
     let ty = repr ty in
     match ty.desc with
-    | Tvar name ->
+    | Tvar name when ty.level < generic_level ->
         let name = match name with
           | None -> "ex"
           | Some name -> name
@@ -337,17 +338,21 @@ let remove_type_variables mty =
     | _ -> type_iterators.it_type_expr it ty;
   in
   let it = {type_iterators with it_type_expr} in
-  it.it_module_type it mty;
-  !variables
+  variables, it
 
-let unify_equations env variables equations =
+(*let unify_equations env variables equations =
   List.iter (fun (ty, id) ->
-      List.iter (function
-          | Path.Pident id', ty' when Ident.same id id' ->
+           List.iter
+             (function
+          | Path.Pident id' as path, ty' when Ident.same id id' ->
+              Format.fprintf Format.err_formatter "unifying %a with %a (= %a)\n%!"
+                Printtyp.type_expr ty
+                Printtyp.type_expr ty'
+                Printtyp.path path;
               unify env ty ty'
           | _ -> ())
         equations
-  ) variables
+  ) variables*)
 
 let target_of_pending inst =
   let env = inst.implicit_env in
@@ -359,16 +364,22 @@ let target_of_pending inst =
                 | None -> assert false
                 | Some mty -> mty
   in
+  let without_args (args,_,_) = args = [] in
+  let fkt, hkt = List.partition without_args inst.implicit_constraints in
+  let fkt = List.map (fun (_,path,ty) -> (path,ty)) fkt in
   let cstrs =
     (* Constraints from package type *)
     (List.map2 (fun n t -> Longident.flatten n, t) nl tl)
     (* Constraints from implicit instance *) @
-    (Constraints.flatten ~root:ident inst.implicit_constraints)
+    (Constraints.flatten ~root:ident fkt)
   in
   let mty = Constraints.apply env mty cstrs in
-  let variables = remove_type_variables mty in
+  let variables, it = remove_type_variables () in
+  it.it_module_type it mty;
+  List.iter (fun (args,_,_) -> List.iter (it.it_type_expr it) args) hkt;
   let id = inst.implicit_id in
-  variables, {target_type = mty; target_id = id; target_uid = id}
+  !variables,
+  {target_type = mty; target_id = id; target_uid = id; target_hkt = hkt}
 
 let rec extract_implicit_parameters targets n omty nmty =
   assert (n >= 0);
@@ -378,7 +389,7 @@ let rec extract_implicit_parameters targets n omty nmty =
     | Mty_functor (target_uid, Some _, omty'),
       Mty_functor (target_id, Some target_type, nmty') ->
         extract_implicit_parameters
-          ({target_uid; target_id; target_type} :: targets) (n - 1) omty' nmty'
+        ({target_uid; target_id; target_type; target_hkt = []} :: targets) (n - 1) omty' nmty'
     | _ -> assert false
 
 let find_implicit_parameters {Types. md_type = omty; md_implicit} =
@@ -599,17 +610,17 @@ end = struct
     | `Step of partial * query
   ]
 
-  let start env variables target =
+  let start env vars target =
     let level = get_current_level () in
     let env = List.fold_left (fun env variable ->
         Env.add_type ~check:false variable
           (new_declaration (Some (level, level)) None) env)
-        env variables
+        env vars
     in
     let eq_var = ref [] in
     let eq_table = List.fold_left
         (fun tbl id -> Ident.add id eq_var tbl)
-        Ident.empty variables
+        Ident.empty vars
     in
     {
       payload = ();
@@ -631,26 +642,85 @@ end = struct
     let sub_targets, candidate = find_implicit_parameters md in
     let new_eqns = ref [] in
     (* Generate coercion. if this succeeds this produce equations in new_eqns and eq_var *)
-    let _ : module_coercion =
-      let eq_table, env = List.fold_left
-          (fun (eq_table, env) {target_id} ->
-             Ident.add target_id new_eqns eq_table,
-             Env.add_module target.target_id target.target_type env)
-          (state.eq_table, state.env) sub_targets
-      in
-      Ctype.with_equality_equations eq_table
-        (fun () -> Includemod.modtypes env candidate target.target_type)
+    let eq_table, env = List.fold_left
+        (fun (eq_table, env) {target_id} ->
+          Ident.add target_id new_eqns eq_table,
+          Env.add_module target.target_id target.target_type env)
+        (state.eq_table, state.env) sub_targets
     in
+    let accepting_eq = Ident.fold_all
+        (fun ident _ acc -> Ident.name ident :: acc)
+        eq_table []
+    in
+    Format.fprintf Format.std_formatter "Starting from equations on %s:\n%!"
+      (String.concat ", " accepting_eq);
+    List.iter (fun (path,ty) ->
+        Format.fprintf Format.std_formatter "\t%a = %a\n%!"
+          Printtyp.path path
+          Printtyp.type_expr ty)
+      !(state.eq_var);
+    Ctype.with_equality_equations eq_table
+      (fun () ->
+        let subst = Subst.add_module target.target_id path Subst.identity in
+        let fresh_inst (args,path,ty) =
+          (newconstr (Subst.type_path subst path) args, ty)
+        in
+        let tls = List.map fresh_inst target.target_hkt in
+        let tl1, tl2 = List.split tls in
+        begin try Ctype.equal' env false tl1 tl2
+        with Ctype.Unify tls ->
+          Format.fprintf Format.std_formatter "Failed to instantiate:\n";
+          List.iter2 (fun t1 t2 ->
+              Format.fprintf Format.std_formatter "\t%a = %a\n%!"
+                Printtyp.type_expr t1
+                Printtyp.type_expr t2)
+            tl1 tl2;
+          Format.fprintf Format.std_formatter "With equations on %s:\n%!"
+            (String.concat ", " accepting_eq);
+          List.iter (fun (path,ty) ->
+              Format.fprintf Format.std_formatter "\t%a = %a\n%!"
+                Printtyp.path path
+                Printtyp.type_expr ty)
+            !(state.eq_var);
+          Format.fprintf Format.std_formatter "Because:\n%!";
+          List.iter (fun (ty1,ty2) ->
+              let rec find_aliases acc ty = match (repr ty).desc with
+                | Tconstr (path,args,_)  ->
+                    let acc = try
+                        let _args,ty',_ = Env.find_type_expansion path env in
+                        (ty,ty') :: acc
+                      with Not_found -> (ty,ty) :: acc
+                    in
+                    List.fold_left find_aliases acc args
+                | _ -> acc
+              in
+              let aliases = find_aliases [] ty1 in
+              let aliases = find_aliases aliases ty2 in
+              List.iter (fun (ty1,ty2) ->
+                  Format.fprintf Format.std_formatter " %a ~ %a;"
+                    Printtyp.type_expr ty1
+                    Printtyp.type_expr ty2)
+                aliases;
+              Format.fprintf Format.std_formatter "\n\t%a != %a \n%!"
+                Printtyp.type_expr ty1
+                Printtyp.type_expr ty2)
+            tls;
+          raise Not_found
+        end;
+        let _ : module_coercion =
+          Includemod.modtypes env candidate target.target_type
+        in
+        ());
     let eqns = !new_eqns in
     (* Constraints target types *)
     let sub_targets = Constraints.targets state.env sub_targets eqns in
     (* Add termination criteria *)
     let sub_targets = Termination.normalize_equations sub_targets eqns in
+
+    (* Keep new equations potentially added to top variables *)
     let state = {state with eq_initial = !(state.eq_var)} in
     match sub_targets with
     | [] ->
-      (* No parameters: we keep new equations potentially added to top
-         variables *)
       `Done {state with payload = path}
     | (target, crit) :: sub_targets ->
       let partial = {state with payload = (path, sub_targets)} in
@@ -663,7 +733,9 @@ end = struct
     | candidate :: candidates ->
       try
         step0 state candidate, candidates
-      with exn ->
+      with
+      | Termination.Terminate as exn -> raise exn
+      | exn ->
         report_error exn;
         step state candidates
 
@@ -740,20 +812,38 @@ end
 
 let find_pending_instance inst =
   let snapshot = Btype.snapshot () in
-  let variables, target = target_of_pending inst in
+  let vars, target = target_of_pending inst in
   let env = inst.implicit_env in
-  let query = Search.start env (List.map snd variables) target in
+  let env = List.fold_left (fun env (_ty,ident) ->
+      (* Create a fake abstract type declaration for name. *)
+      let level = get_current_level () in
+      let decl = {
+        type_params = [];
+        type_arity = 0;
+        type_kind = Type_abstract;
+        type_private = Asttypes.Public;
+        type_manifest = None;
+        type_variance = [];
+        type_newtype_level = Some (level, level);
+        type_loc = Location.none;
+        type_attributes = [];
+      }
+      in
+      Env.add_type ~check:false ident decl env)
+      env vars
+  in
+  let query = Search.start env (List.map snd vars) target in
   try
     let solution = Solution.search query in
-    Btype.backtrack snapshot;
-    begin
+    (*begin
       assert (
         try ignore (Solution.search_next solution : Solution.t); false
         with _ -> true)
-    end;
+    end;*)
     let result = solution.Solution.result in
     Btype.backtrack snapshot;
-    unify_equations env variables (Search.equations result);
+    (* Not needed, since Link.to_path should do the proper checks:
+       unify_equations env fvars (Search.equations result);*)
     Link.to_path inst (Search.get result);
     true
   with exn ->
@@ -818,9 +908,11 @@ let generalize_implicits () =
   let pending = List.filter not_linked !pending_implicits in
   let need_generalization inst =
     List.exists
-      (fun (ty,var) ->
-         assert (var.level <> generic_level);
-         var.level >= current_level)
+      (fun (vars,ty,var) ->
+        List.exists (fun var ->
+          assert (var.level <> generic_level);
+          var.level >= current_level)
+          (var :: vars))
       inst.implicit_constraints
     || inst.implicit_constraints = []
   in
@@ -828,6 +920,9 @@ let generalize_implicits () =
     List.partition need_generalization pending
   in
   pending_implicits := rest;
+  (* The reversal is important to ensure we search from the outer most
+     to the inner most implicits *)
+  let to_generalize = List.rev to_generalize in
   try
     let not_instantiable inst = not (find_pending_instance inst) in
     let inst = List.find not_instantiable to_generalize in

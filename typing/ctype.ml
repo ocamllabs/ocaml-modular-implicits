@@ -724,6 +724,9 @@ let rec generalize_spine ty =
 let forward_try_expand_once = (* Forward declaration *)
   ref (fun env ty -> raise Cannot_expand)
 
+let printtyp_expr
+  : (Format.formatter -> type_expr -> unit) ref
+  = ref (fun _ -> assert false)
 (*
    Lower the levels of a type (assume [level] is not
    [generic_level]).
@@ -764,8 +767,7 @@ let rec update_level env level ty =
     end;
     match ty.desc with
       Tconstr(p, tl, abbrev)
-      when level < get_level env p &&
-           not (Env.is_implicit_arg p env && tl = []) ->
+      when level < get_level env p ->
         (* Try first to replace an abbreviation by its expansion. *)
         begin try
           (* if is_newtype env p then raise Cannot_expand; *)
@@ -774,7 +776,8 @@ let rec update_level env level ty =
         with Cannot_expand ->
           (* +++ Levels should be restored... *)
           (* Format.printf "update_level: %i < %i@." level (get_level env p); *)
-          if level < get_level env p then raise (Unify [(ty, newvar2 level)]);
+          if (level < get_level env p) && not (Env.is_implicit_arg p env) then
+            raise (Unify [(ty, newvar2 level)]);
           iter_type_expr (update_level env level) ty
         end
     | Tpackage (p, nl, tl) when level < get_level env p ->
@@ -3453,6 +3456,10 @@ let equal env rename tyl1 tyl2 =
     eqtype_list rename (TypePairs.create 11) (ref []) env tyl1 tyl2; true
   with
     Unify _ -> false
+
+let equal' env rename tyl1 tyl2 =
+  univar_pairs := [];
+  eqtype_list rename (TypePairs.create 11) (ref []) env tyl1 tyl2
 
 (* Must empty univar_pairs first *)
 let eqtype rename type_pairs subst env t1 t2 =
