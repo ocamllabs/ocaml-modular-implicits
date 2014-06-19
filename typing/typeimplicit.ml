@@ -97,7 +97,7 @@ let rec has_implicit ty = match (repr ty).desc with
   | _ -> false
 
 let instantiate_implicits_ty loc env ty =
-  if not (has_implicit ty) then [], Ident.empty, ty
+  if not (has_implicit ty) then [], [], ty
   else
     let fresh_implicit id ty =
       let ty = repr ty in
@@ -123,7 +123,7 @@ let instantiate_implicits_ty loc env ty =
           let inst = fresh_implicit id lhs in
           let arguments, instances, rhs' = extract_implicits rhs in
           inst.implicit_argument :: arguments,
-          Ident.add id inst instances,
+          inst :: instances,
           rhs'
           (*{ty with desc = Tarrow (Tarr_implicit id', lhs, rhs', comm)}*)
       | Tarrow (arr, lhs, rhs, comm) ->
@@ -131,7 +131,7 @@ let instantiate_implicits_ty loc env ty =
           {arg_flag = (tapp_of_tarr arr); arg_expression = None} :: arguments,
           instances,
           {ty with desc = Tarrow (arr, lhs, rhs', comm)}
-      | _ -> [], Ident.empty, ty
+      | _ -> [], [], ty
     in
     let ty = Subst.type_expr Subst.identity ty in
     let arguments, instances, ty = extract_implicits ty in
@@ -142,7 +142,7 @@ let instantiate_implicits_ty loc env ty =
     *)
     let unlink_ident ident =
       try
-        let inst = Ident.find_same ident instances in
+        let inst = List.find (fun inst -> inst.implicit_id = ident) instances in
         let add_constraint ty tyvar =
           inst.implicit_constraints <-
             (ty, tyvar) :: inst.implicit_constraints
@@ -156,17 +156,17 @@ let instantiate_implicits_ty loc env ty =
     let unlink_it = unlink_it.it_type_expr unlink_it in
     unlink_it ty;
     (* Unlink with types appearing in with constraints *)
-    Ident.iter (fun _id inst ->
-        let _p,_nl,tl = inst.implicit_type in
-        List.iter unlink_it tl
-      ) instances;
+    List.iter (fun inst ->
+      let _p,_nl,tl = inst.implicit_type in
+      List.iter unlink_it tl
+    ) instances;
     arguments, instances, ty
 
 let instantiate_implicits_expr env expr =
   let implicits, expr =
     match instantiate_implicits_ty expr.exp_loc env expr.exp_type with
     | [], implicits, _ ->
-        implicits,expr
+        implicits, expr
     | arguments, implicits, ty ->
         implicits,
         { exp_desc = Texp_apply (expr, arguments);
@@ -177,9 +177,7 @@ let instantiate_implicits_expr env expr =
           exp_attributes = []
         }
   in
-  let cons _ inst acc = inst :: acc in
-  let implicits = Ident.fold_all cons implicits [] in
-  pending_implicits := implicits @ !pending_implicits;
+  pending_implicits := List.rev_append implicits !pending_implicits;
   expr
 
 
