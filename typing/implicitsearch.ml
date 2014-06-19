@@ -817,6 +817,8 @@ module Solution = struct
       search_candidates solution.query solution.next
 
   and search_next solution = search_next_steps solution solution.steps
+
+  let get {result} = Search.get result
 end
 
 let find_pending_instance inst =
@@ -838,27 +840,31 @@ let find_pending_instance inst =
         type_attributes = [];
       }
       in
-      Env.add_type ~check:false ident decl env)
-      env vars
+      Env.add_type ~check:false ident decl env
+    ) env vars
   in
+  let loc = inst.implicit_loc in
   let query = Search.start env (List.map snd vars) target in
   try
     let solution = Solution.search query in
-    (*begin
-      assert (
-        try ignore (Solution.search_next solution : Solution.t); false
-        with _ -> true)
-    end;*)
-    let result = solution.Solution.result in
-    Btype.backtrack snapshot;
-    (* Not needed, since Link.to_path should do the proper checks:
-       unify_equations env fvars (Search.equations result);*)
-    Link.to_path inst (Search.get result);
-    true
-  with exn ->
-    Btype.backtrack snapshot;
-    report_error exn;
-    false
+    let alternative =
+      try Some (Solution.search_next solution)
+      with _ -> None
+    in
+    match alternative with
+    | None ->
+      Btype.backtrack snapshot;
+      (* Not needed, since Link.to_path should do the proper checks:
+         unify_equations env fvars (Search.equations result);*)
+      Link.to_path inst (Solution.get solution);
+      true
+    | Some alternative ->
+      let p1 = Solution.get solution in
+      let p2 = Solution.get alternative in
+      raise Typecore.(Error (loc, env, Ambiguous_implicit (inst,p1,p2)))
+  with
+  | Termination.Terminate ->
+    raise Typecore.(Error (loc, env, Termination_fail inst))
 
 (* Pack module at given path to match a given implicit instance and
    update the instance to point to this module.
@@ -935,7 +941,7 @@ let generalize_implicits () =
     let inst = List.find not_instantiable to_generalize in
     let loc = inst.implicit_loc in
     let env = inst.implicit_env in
-    raise Typecore.(Error (loc, env, Pending_implicit inst))
+    raise Typecore.(Error (loc, env, No_instance_found inst))
   with Not_found -> ()
 
 let () =
