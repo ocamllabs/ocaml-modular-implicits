@@ -23,9 +23,6 @@ let rec list_findmap f = function
 let string_of_path path =
   Path.to_longident path |> Longident.flatten |> String.concat "."
 
-let print_inst (path,_) =
-  Printf.eprintf "%s\n%!" (string_of_path path)
-
 let papply path arg = Path.Papply (path, arg)
 
 (** [target] is the point from which a search starts *)
@@ -540,11 +537,11 @@ end = struct
 
 end
 
-let report_error exn =
-  try
+let report_error _exn = ()
+  (*try
     Location.report_exception Format.err_formatter exn
   with exn ->
-    Printf.eprintf "%s\n%!" (Printexc.to_string exn)
+    Printf.eprintf "%s\n%!" (Printexc.to_string exn)*)
 
 (* Make the search stack explicit.
 end
@@ -659,7 +656,7 @@ end = struct
           Env.add_module target.target_id target.target_type env)
         (state.eq_table, state.env) sub_targets
     in
-    let accepting_eq = Ident.fold_all
+    (*let accepting_eq = Ident.fold_all
         (fun ident _ acc -> Ident.name ident :: acc)
         eq_table []
     in
@@ -669,7 +666,7 @@ end = struct
         Format.fprintf Format.err_formatter "\t%a = %a\n%!"
           Printtyp.path path
           Printtyp.type_expr ty)
-      !(state.eq_var);
+      !(state.eq_var);*)
     Ctype.with_equality_equations eq_table
       (fun () ->
         let subst = Subst.add_module target.target_id path Subst.identity in
@@ -678,7 +675,7 @@ end = struct
         let tvl = List.map (Subst.type_expr subst) tvl in
         begin try Ctype.equal' env false tyl tvl
         with Ctype.Unify tls ->
-          Format.fprintf Format.err_formatter "Failed to instantiate:\n";
+          (*Format.fprintf Format.err_formatter "Failed to instantiate:\n";
           List.iter2 (fun t1 t2 ->
               Format.fprintf Format.err_formatter "\t%a = %a\n%!"
                 Printtyp.type_expr t1
@@ -713,7 +710,7 @@ end = struct
               Format.fprintf Format.err_formatter "\n\t%a != %a \n%!"
                 Printtyp.type_expr ty1
                 Printtyp.type_expr ty2)
-            tls;
+            tls;*)
           raise Not_found
         end;
         let _ : module_coercion =
