@@ -49,16 +49,15 @@ let unlink env unlink_on =
       try Hashtbl.find path_table path
       with Not_found -> []
     in
-    begin try
+    try
       let eq_args (ty',_tyvar') =
         TypeOps.equal ty ty' || Ctype.equal env false [ty] [ty']
       in
       let _ty', tyvar' = List.find eq_args instance_list in
       link_type tyvar tyvar'
     with Not_found ->
-      Hashtbl.replace path_table path ((ty, tyvar) :: instance_list)
-    end;
-    register ty tyvar
+      Hashtbl.replace path_table path ((ty, tyvar) :: instance_list);
+      register ty tyvar
   in
 
   let it_type_expr it ty =

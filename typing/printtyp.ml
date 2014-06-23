@@ -33,6 +33,11 @@ let rec longident ppf = function
 
 let unique_names = ref Ident.empty
 
+module Ident = struct
+  include Ident
+  let name id = name id ^ "/" ^ string_of_int id.stamp
+end
+
 let ident_name id =
   try Ident.find_same id !unique_names with Not_found -> Ident.name id
 
