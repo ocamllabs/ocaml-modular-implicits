@@ -319,13 +319,14 @@ end
    when searching *)
 
 let remove_type_variables () =
+  let k = ref 0 in
   let variables = ref [] in
   let it_type_expr it ty =
     let ty = repr ty in
     match ty.desc with
     | Tvar name when ty.level < generic_level ->
         let name = match name with
-          | None -> "ex"
+          | None -> "ex" ^ string_of_int (incr k; !k)
           | Some name -> name
         in
         let ident = Ident.create name in
@@ -537,18 +538,17 @@ end = struct
 
 end
 
-let report_error _exn = ()
-  (*try
+let report_error exn =
+  try
     Location.report_exception Format.err_formatter exn
   with exn ->
-    Printf.eprintf "%s\n%!" (Printexc.to_string exn)*)
+    Format.fprintf Format.err_formatter
+      "%s\n%!" (Printexc.to_string exn)
 
 (* Make the search stack explicit.
-end
 
    This helps resuming search (e.g to search for ambiguity), explaining search
    state or errors, etc. *)
-(** TODO **)
 
 module Search : sig
 
@@ -647,41 +647,42 @@ end = struct
   let step0 state (path, md) =
     state.eq_var := state.eq_initial;
     let target = state.target in
-    let sub_targets, candidate = find_implicit_parameters md in
+    let sub_targets, candidate_mty = find_implicit_parameters md in
     let new_eqns = ref [] in
     (* Generate coercion. if this succeeds this produce equations in new_eqns and eq_var *)
     let eq_table, env = List.fold_left
-        (fun (eq_table, env) {target_id} ->
-          Ident.add target_id new_eqns eq_table,
-          Env.add_module target.target_id target.target_type env)
+        (fun (eq_table, env) sub_target ->
+          Format.fprintf Format.err_formatter
+            "Binding %a with type %a\n%!"
+            Printtyp.ident sub_target.target_id
+            Printtyp.modtype sub_target.target_type;
+          Ident.add sub_target.target_id new_eqns eq_table,
+          Env.add_module sub_target.target_id sub_target.target_type env)
         (state.eq_table, state.env) sub_targets
     in
-    (*let accepting_eq = Ident.fold_all
-        (fun ident _ acc -> Ident.name ident :: acc)
-        eq_table []
-    in
-    Format.fprintf Format.err_formatter "Starting from equations on %s:\n%!"
-      (String.concat ", " accepting_eq);
-    List.iter (fun (path,ty) ->
-        Format.fprintf Format.err_formatter "\t%a = %a\n%!"
-          Printtyp.path path
-          Printtyp.type_expr ty)
-      !(state.eq_var);*)
     Ctype.with_equality_equations eq_table
       (fun () ->
-        let subst = Subst.add_module target.target_id path Subst.identity in
+        (*let app_target path target = papply path (Path.Pident target.target_id) in
+        let app_path = List.fold_left app_target path sub_targets in*)
+        let env' = Env.add_module target.target_id candidate_mty env in
+        (*let env = Subst.add_module target.target_id app_path Subst.identity in*)
         let tyl, tvl = List.split target.target_hkt in
-        let tyl = List.map (Subst.type_expr subst) tyl in
-        let tvl = List.map (Subst.type_expr subst) tvl in
-        begin try Ctype.equal' env false tyl tvl
+        (*let tyl = List.map (Subst.type_expr subst) tyl in
+        let tvl = List.map (Subst.type_expr subst) tvl in*)
+        begin try Ctype.equal' env' true tyl tvl
         with Ctype.Unify tls ->
-          (*Format.fprintf Format.err_formatter "Failed to instantiate:\n";
+          Format.fprintf Format.err_formatter "Failed to instantiate %s with constraints:\n"
+            (string_of_path path);
           List.iter2 (fun t1 t2 ->
               Format.fprintf Format.err_formatter "\t%a = %a\n%!"
                 Printtyp.type_expr t1
                 Printtyp.type_expr t2)
             tyl tvl;
-          Format.fprintf Format.err_formatter "With equations on %s:\n%!"
+          let accepting_eq = Ident.fold_all
+              (fun ident _ acc -> Ident.name ident :: acc)
+              eq_table []
+          in
+          Format.fprintf Format.err_formatter "Assuming the following equalities on %s:\n"
             (String.concat ", " accepting_eq);
           List.iter (fun (path,ty) ->
               Format.fprintf Format.err_formatter "\t%a = %a\n%!"
@@ -690,31 +691,42 @@ end = struct
             !(state.eq_var);
           Format.fprintf Format.err_formatter "Because:\n%!";
           List.iter (fun (ty1,ty2) ->
+              Format.fprintf Format.err_formatter "\t%a != %a\n%!"
+                Printtyp.type_expr ty1
+                Printtyp.type_expr ty2;
               let rec find_aliases acc ty = match (repr ty).desc with
                 | Tconstr (path,args,_)  ->
                     let acc = try
-                        let _args,ty',_ = Env.find_type_expansion path env in
+                        let _args,ty',_ = Env.find_type_expansion path env' in
                         (ty,ty') :: acc
-                      with Not_found -> (ty,ty) :: acc
+                      with Not_found ->
+                      try
+                        let _ = Env.find_type path env' in
+                        (ty,ty) :: acc
+                      with Not_found ->
+                        Format.fprintf Format.err_formatter
+                          "Fatal error: %a not found.\n%!"
+                          Printtyp.path path;
+                        acc
                     in
                     List.fold_left find_aliases acc args
                 | _ -> acc
               in
               let aliases = find_aliases [] ty1 in
               let aliases = find_aliases aliases ty2 in
+              ignore aliases;
+              (*Format.fprintf Format.err_formatter "Alias found: ";
               List.iter (fun (ty1,ty2) ->
                   Format.fprintf Format.err_formatter " %a ~ %a;"
                     Printtyp.type_expr ty1
                     Printtyp.type_expr ty2)
-                aliases;
-              Format.fprintf Format.err_formatter "\n\t%a != %a \n%!"
-                Printtyp.type_expr ty1
-                Printtyp.type_expr ty2)
-            tls;*)
+                aliases;*)
+              Format.fprintf Format.err_formatter "\n%!"
+            ) tls;
           raise Not_found
         end;
         let _ : module_coercion =
-          Includemod.modtypes env candidate target.target_type
+          Includemod.modtypes env candidate_mty target.target_type
         in
         ());
     let eqns = !new_eqns in
@@ -851,8 +863,6 @@ let find_pending_instance inst =
     match alternative with
     | None ->
       Btype.backtrack snapshot;
-      (* Not needed, since Link.to_path should do the proper checks:
-         unify_equations env fvars (Search.equations result);*)
       Link.to_path inst (Solution.get solution);
       true
     | Some alternative ->
@@ -861,7 +871,9 @@ let find_pending_instance inst =
       raise Typecore.(Error (loc, env, Ambiguous_implicit (inst,p1,p2)))
   with
   | Termination.Terminate ->
-    raise Typecore.(Error (loc, env, Termination_fail inst))
+      raise Typecore.(Error (loc, env, Termination_fail inst))
+  | Not_found ->
+      false
 
 (* Pack module at given path to match a given implicit instance and
    update the instance to point to this module.

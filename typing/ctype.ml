@@ -3280,6 +3280,10 @@ let rec eqtype rename type_pairs subst env t1 t2 =
     | _ ->
         let t1' = expand_head_rigid env t1 in
         let t2' = expand_head_rigid env t2 in
+        (*Format.fprintf Format.err_formatter
+          "Equality test, expanding:\n\t%a -> %a\n\t%a -> %a\n"
+          !printtyp_expr t1 !printtyp_expr t1'
+          !printtyp_expr t2 !printtyp_expr t2';*)
         (* Expansion may have changed the representative of the types... *)
         let t1' = repr t1' and t2' = repr t2' in
         if t1' == t2' then () else
