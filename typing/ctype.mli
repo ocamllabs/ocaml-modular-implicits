@@ -204,7 +204,14 @@ val match_class_types:
     ?trace:bool -> Env.t -> class_type -> class_type -> class_match_failure list
         (* Check if the first class type is more general than the second. *)
 
-val with_equality_equations: (Path.t * type_expr) list ref Ident.tbl -> (unit -> 'a) -> 'a
+type equality_equation = {
+  eq_lhs : type_expr;
+  eq_lhs_params : type_expr list;
+  eq_lhs_path : Path.t;
+  eq_rhs : type_expr;
+}
+
+val with_equality_equations: equality_equation list ref Ident.tbl -> (unit -> 'a) -> 'a
 
 val equal: Env.t -> bool -> type_expr list -> type_expr list -> bool
         (* [equal env [x1...xn] tau [y1...yn] sigma]
