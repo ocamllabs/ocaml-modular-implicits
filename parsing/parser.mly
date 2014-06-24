@@ -1519,7 +1519,7 @@ label_expr:
       { (Papp_labelled $1, $2) }
   | TILDE label_ident
       { (Papp_labelled (fst $2), snd $2) }
-  | LPAREN IMPLICIT mod_longident RPAREN
+  | LPAREN IMPLICIT mod_ext_longident RPAREN
       { let md = mkmod(Pmod_ident (mkrhs $3 3)) in
         (Papp_implicit, mkexp (Pexp_pack md)) }
   | QUESTION label_ident
