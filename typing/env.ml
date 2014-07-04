@@ -178,7 +178,7 @@ type t = {
   classes: (Path.t * class_declaration) EnvTbl.t;
   cltypes: (Path.t * class_type_declaration) EnvTbl.t;
   functor_args: unit Ident.tbl;
-  implicit_args: unit Ident.tbl;
+  implicit_levels: int Ident.tbl;
   implicit_instances: (Path.t * module_declaration) list;
   summary: summary;
   local_constraints: bool;
@@ -228,7 +228,7 @@ let empty = {
   summary = Env_empty; local_constraints = false; gadt_instances = [];
   flags = 0;
   functor_args = Ident.empty;
-  implicit_args = Ident.empty;
+  implicit_levels = Ident.empty;
   implicit_instances = [];
  }
 
@@ -616,14 +616,14 @@ let rec is_functor_arg path env =
   | Pdot (p, s, _) -> is_functor_arg p env
   | Papply _ -> true
 
-let rec is_implicit_arg path env =
+let rec implicit_level path env =
   match path with
     Pident id ->
-      begin try Ident.find_same id env.implicit_args; true
-      with Not_found -> false
+      begin try Ident.find_same id env.implicit_levels
+      with Not_found -> generic_level
       end
-  | Pdot (p, s, _) -> is_implicit_arg p env
-  | Papply _ -> true
+  | Pdot (p, s, _) -> implicit_level p env
+  | Papply _ -> generic_level
 
 let implicit_instances env = env.implicit_instances
 
@@ -1450,21 +1450,16 @@ let _ =
 
 (* Insertion of bindings by identifier *)
 
-let mark_implicit_arg id env =
-  {env with implicit_args = Ident.add id () env.implicit_args}
+let set_implicit_level id level env =
+  {env with implicit_levels = Ident.add id level env.implicit_levels}
 
-let add_functor_arg ?(arg = false) ~implicit_ id env =
-  match arg, implicit_ with
-  | false, _ -> env
-  | true, Nonimplicit ->
+let add_functor_arg ?(arg = false) id env =
+  match arg with
+  | false -> env
+  | true ->
       (* Nonimplicit are normal functor argument *)
       {env with
        functor_args = Ident.add id () env.functor_args;
-       summary = Env_functor_arg (env.summary, id)}
-  | true, Implicit _ ->
-      (* Implicit args are bound in a function, and are not functors! *)
-      {env with
-       implicit_args = Ident.add id () env.implicit_args;
        summary = Env_functor_arg (env.summary, id)}
 
 let add_value ?check id desc env =
@@ -1483,7 +1478,7 @@ and add_module_declaration ?arg id md env =
     | _ ->*) Pident id
   in
   let env = store_module None id path md env env in
-  add_functor_arg ?arg ~implicit_:md.md_implicit id env
+  add_functor_arg ?arg id env
 
 and add_modtype id info env =
   store_modtype None id (Pident id) info env env

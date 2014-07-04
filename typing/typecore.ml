@@ -2763,7 +2763,7 @@ and type_function ?in_function loc attrs env arr ty_expected caselist =
           raise(Error(loc_fun, env,
                       Too_many_arguments (in_function <> None, ty_fun)))
   in
-  let ty_arg, is_optional =
+  let ty_arg, is_optional, is_implicit =
     match arr with
     | Tarr_optional _ ->
         let tv = newvar() in
@@ -2771,17 +2771,21 @@ and type_function ?in_function loc attrs env arr ty_expected caselist =
           try unify env ty_arg (type_option tv)
           with Unify _ -> assert false
         end;
-        type_option tv, true
-    | _ -> ty_arg, false
+        type_option tv, true, false
+    | Tarr_implicit _ -> ty_arg, false, true
+    | _ -> ty_arg, false, false
   in
   if separate then begin
     end_def ();
     generalize_structure ty_arg;
     generalize_structure ty_res
   end;
+  let level = get_current_level () in
+  if is_implicit then begin_def ();
   let cases, partial =
-    type_cases ~in_function:(loc_fun,ty_fun) ~arr env ty_arg ty_res
+    type_cases ~in_function:(loc_fun,ty_fun) ~arr:(arr,level) env ty_arg ty_res
       true loc caselist in
+  if is_implicit then end_def ();
   let not_function ty =
     let ls, tvar = list_labels env ty in
     ls = [] && not tvar
@@ -3618,8 +3622,8 @@ and type_cases ?in_function ?arr env ty_arg ty_res partial_flag loc caselist =
                                   Predef.type_bool)
         in
         let exp = match arr with
-          | Some (Tarr_implicit id) ->
-              type_implicit_arg id ?in_function ext_env sexp ty_res'
+          | Some (Tarr_implicit id, level) ->
+              type_implicit_arg id level ?in_function ext_env sexp ty_res'
           | _ -> type_expect ?in_function ext_env sexp ty_res'
         in
         {
@@ -3652,7 +3656,7 @@ and type_cases ?in_function ?arr env ty_arg ty_res partial_flag loc caselist =
   end;
   cases, partial
 
-and type_implicit_arg id ?in_function env sbody ty_res =
+and type_implicit_arg id level ?in_function env sbody ty_res =
   let ty = newvar() in
   (* remember original level *)
   begin_def ();
@@ -3665,6 +3669,7 @@ and type_implicit_arg id ?in_function env sbody ty_res =
   in
   let modl = !type_module env smodl in
   let new_env = Env.add_module ~arg:true ~implicit_:(Implicit 0) id modl.mod_type env in
+  let new_env = Env.set_implicit_level id level new_env in
   Ctype.init_def(Ident.current_time());
   Typetexp.widen context;
   let body = type_expect ?in_function new_env sbody ty_res in

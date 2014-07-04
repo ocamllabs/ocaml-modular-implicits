@@ -21,8 +21,8 @@ implicit functor StringifyPair (A : STRINGIFY) (B : STRINGIFY) = struct
   let to_string (a,b) = "(" ^ A.to_string a ^ "," ^ B.to_string b ^ ")"
 end;;
 
-to_string "a";;
-to_string ["a";"b";"c"];;
-to_string [1;2;3];;
-to_string (1,"lol");;
-to_string [1, "a";2, "b";3, "c"];;
+print_endline (to_string "a");;
+print_endline (to_string ["a";"b";"c"]);;
+print_endline (to_string [1;2;3]);;
+print_endline (to_string (1,"lol"));;
+print_endline (to_string [1, "a";2, "b";3, "c"]);;
