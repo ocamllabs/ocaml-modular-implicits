@@ -740,14 +740,19 @@ let printtyp_expr
     (without this constraint, the type system would actually be unsound.)
 *)
 let get_level env p =
-  try
-    match (Env.find_type p env).type_newtype_level with
-      | None -> Path.binding_time p
-      | Some (x, _) -> x
-  with
-    | Not_found ->
-      (* no newtypes in predef *)
-      Path.binding_time p
+  let level = Env.implicit_level p env in
+  assert (level <> -1);
+  if level <> generic_level then
+    level
+  else
+    try
+      match (Env.find_type p env).type_newtype_level with
+        | None -> Path.binding_time p
+        | Some (x, _) -> x
+    with
+      | Not_found ->
+        (* no newtypes in predef *)
+        Path.binding_time p
 
 let rec normalize_package_path env p =
   let t =
@@ -776,8 +781,7 @@ let rec update_level env level ty =
         with Cannot_expand ->
           (* +++ Levels should be restored... *)
           (* Format.printf "update_level: %i < %i@." level (get_level env p); *)
-          if (level < get_level env p) && not (Env.is_implicit_arg p env) then
-            raise (Unify [(ty, newvar2 level)]);
+          if (level < get_level env p) then raise (Unify [(ty, newvar2 level)]);
           iter_type_expr (update_level env level) ty
         end
     | Tpackage (p, nl, tl) when level < get_level env p ->
@@ -806,7 +810,7 @@ let rec update_level env level ty =
     | Tarrow (Tarr_implicit id, _, _, _) ->
         set_level ty level;
         (* XXX what about abbreviations in Tconstr ? *)
-        iter_type_expr (update_level (Env.mark_implicit_arg id env) level) ty
+        iter_type_expr (update_level (Env.set_implicit_level id level env) level) ty
 
     | _ ->
         set_level ty level;
@@ -1812,6 +1816,33 @@ let occur_univar env ty =
   with exn ->
     unmark_type ty; raise exn
 
+let occur_implicit env ty =
+  let visited = ref TypeMap.empty in
+  let rec occur_rec bound ty =
+    let ty = repr ty in
+    if ty.level >= lowest_level &&
+      if TypeSet.is_empty bound then
+        (ty.level <- pivot_level - ty.level; true)
+      else try
+        let bound' = TypeMap.find ty !visited in
+        if TypeSet.exists (fun x -> not (TypeSet.mem x bound)) bound' then
+          (visited := TypeMap.add ty (TypeSet.inter bound bound') !visited;
+           true)
+        else false
+      with Not_found ->
+        visited := TypeMap.add ty bound !visited;
+        true
+    then
+      match ty.desc with
+      | Tconstr (p, _, _) when Env.implicit_level p env = -1 ->
+        raise (Unify [ty, newgenvar ()])
+      | _ -> iter_type_expr (occur_rec bound) ty
+  in
+  try
+    occur_rec TypeSet.empty ty; unmark_type ty
+  with exn ->
+    unmark_type ty; raise exn
+
 (* Grouping univars by families according to their binders *)
 let add_univars =
   List.fold_left (fun s (t,_) -> TypeSet.add (repr t) s)
@@ -2460,10 +2491,12 @@ and unify3 env t1 t1' t2 t2' =
   | (Tvar _, _) ->
       occur !env t1' t2;
       occur_univar !env t2;
+      occur_implicit !env t2;
       link_type t1' t2;
   | (_, Tvar _) ->
       occur !env t2' t1;
       occur_univar !env t1;
+      occur_implicit !env t2;
       link_type t2' t1;
   | (Tfield _, Tfield _) -> (* special case for GADTs *)
       unify_fields env t1' t2'
@@ -2480,12 +2513,15 @@ and unify3 env t1 t1' t2 t2' =
         (Tarrow (Tarr_implicit id1, t1, u1, c1),
          Tarrow (Tarr_implicit id2, t2, u2, c2)) ->
           unify env t1 t2;
-          let env' = !env in
-          let mty = modtype_of_tpackage env' t1 in
-          let env' = Env.add_module id1 mty env' in
-          let env' = Env.add_module id2 (Mty_alias (Path.Pident id1)) env' in
-          env := env';
+          let mty = modtype_of_tpackage !env t1 in
+          env :=
+            Env.set_implicit_level id1 (-1)
+              (Env.set_implicit_level id2 (-1)
+                 (Env.add_module id1 mty !env));
+          let subst = Subst.add_module id2 (Path.Pident id1) Subst.identity in
+          let u2 = Subst.type_expr subst u2 in
           unify env u1 u2;
+          t2'.desc <- Tarrow (Tarr_implicit id1, t2, u2, c2);
           begin match commu_repr c1, commu_repr c2 with
             Clink r, c2 -> set_commu r c2
           | c1, Clink r -> set_commu r c1
@@ -3322,7 +3358,8 @@ let rec eqtype rename type_pairs subst env t1 t2 =
               eqtype rename type_pairs subst env t1 t2;
               let mty = modtype_of_tpackage env t1 in
               let env = Env.add_module id1 mty env in
-              let env = Env.add_module id2 (Mty_alias (Path.Pident id1)) env in
+              let s = Subst.add_module id2 (Path.Pident id1) Subst.identity in
+              let u2 = Subst.type_expr s u2 in
               eqtype rename type_pairs subst env u1 u2;
           | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
             when classic_arrows_are_compatible l1 l2 ->
@@ -4085,7 +4122,8 @@ let rec subtype_rec env trace t1 t2 cstrs =
         let cstrs = subtype_rec env ((t2, t1)::trace) t2 t1 cstrs in
         let mty = modtype_of_tpackage env t1 in
         let env = Env.add_module id1 mty env in
-        let env = Env.add_module id2 (Mty_alias (Path.Pident id1)) env in
+        let subst = Subst.add_module id2 (Path.Pident id1) Subst.identity in
+        let u2 = Subst.type_expr subst u2 in
         subtype_rec env ((u1, u2)::trace) u1 u2 cstrs
     | (Tarrow(l1, t1, u1, _), Tarrow(l2, t2, u2, _))
       when classic_arrows_are_compatible l1 l2 ->

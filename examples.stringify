@@ -17,10 +17,10 @@ let f (implicit M : STRINGIFY) (x : M.t) = to_string x;;
 (* Global instance *)
 implicit module S = struct type t = string let to_string x = x end;;
 
-to_string "4";;
+print_endline (to_string "4");;
 
-f "4";;
+print_endline (f "4");;
 
-g 4;;
+print_endline (g 4);;
 
 let x = assert (to_string "4" = f "4" && to_string "4" = g 4) in x;;
