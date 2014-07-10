@@ -740,19 +740,15 @@ let printtyp_expr
     (without this constraint, the type system would actually be unsound.)
 *)
 let get_level env p =
-  let level = Env.implicit_level p env in
-  assert (level <> -1);
-  if level <> generic_level then
-    level
-  else
-    try
-      match (Env.find_type p env).type_newtype_level with
-        | None -> Path.binding_time p
-        | Some (x, _) -> x
-    with
-      | Not_found ->
-        (* no newtypes in predef *)
-        Path.binding_time p
+  try Env.implicit_level p env
+  with Not_found ->
+  try
+    match (Env.find_type p env).type_newtype_level with
+    | None -> Path.binding_time p
+    | Some (x, _) -> x
+  with Not_found ->
+    (* no newtypes in predef *)
+    Path.binding_time p
 
 let rec normalize_package_path env p =
   let t =
@@ -781,7 +777,8 @@ let rec update_level env level ty =
         with Cannot_expand ->
           (* +++ Levels should be restored... *)
           (* Format.printf "update_level: %i < %i@." level (get_level env p); *)
-          if (level < get_level env p) then raise (Unify [(ty, newvar2 level)]);
+          if level < get_level env p then
+            raise (Unify [(ty, newvar2 level)]);
           iter_type_expr (update_level env level) ty
         end
     | Tpackage (p, nl, tl) when level < get_level env p ->
@@ -1768,7 +1765,7 @@ let rec unify_univar t1 t2 = function
 
 (* Test the occurence of free univars in a type *)
 (* that's way too expansive. Must do some kind of cacheing *)
-let occur_univar env ty =
+let occur_univar_and_implicit env ty =
   let visited = ref TypeMap.empty in
   let rec occur_rec bound ty =
     let ty = repr ty in
@@ -1791,6 +1788,8 @@ let occur_univar env ty =
       | Tpoly (ty, tyl) ->
           let bound = List.fold_right TypeSet.add (List.map repr tyl) bound in
           occur_rec bound  ty
+      | Tconstr (p, _, _) when Env.implicit_cannot_occur p env ->
+          raise (Unify [])
       | Tconstr (_, [], _) -> ()
       | Tconstr (p, tl, _) ->
           begin try
@@ -1803,33 +1802,6 @@ let occur_univar env ty =
           with Not_found ->
             List.iter (occur_rec bound) tl
           end
-      | _ -> iter_type_expr (occur_rec bound) ty
-  in
-  try
-    occur_rec TypeSet.empty ty; unmark_type ty
-  with exn ->
-    unmark_type ty; raise exn
-
-let occur_implicit env ty =
-  let visited = ref TypeMap.empty in
-  let rec occur_rec bound ty =
-    let ty = repr ty in
-    if ty.level >= lowest_level &&
-      if TypeSet.is_empty bound then
-        (ty.level <- pivot_level - ty.level; true)
-      else try
-        let bound' = TypeMap.find ty !visited in
-        if TypeSet.exists (fun x -> not (TypeSet.mem x bound)) bound' then
-          (visited := TypeMap.add ty (TypeSet.inter bound bound') !visited;
-           true)
-        else false
-      with Not_found ->
-        visited := TypeMap.add ty bound !visited;
-        true
-    then
-      match ty.desc with
-      | Tconstr (p, _, _) when Env.implicit_level p env = -1 ->
-        raise (Unify [ty, newgenvar ()])
       | _ -> iter_type_expr (occur_rec bound) ty
   in
   try
@@ -2109,8 +2081,8 @@ let rec mcomp type_pairs env t1 t2 =
             mcomp type_pairs env t1 t2;
             let mty = modtype_of_tpackage env t1 in
             let env = Env.add_module id1 mty env in
-            let env = Env.add_module id2 (Mty_alias (Path.Pident id1)) env in
-            mcomp type_pairs env u1 u2;
+            let subst = Subst.add_module id2 (Path.Pident id1) Subst.identity in
+            mcomp type_pairs env u1 (Subst.type_expr subst u2);
         | (Tarrow (l1, t1, u1, _), Tarrow (l2, t2, u2, _))
           when arrows_are_compatible l1 l2 ->
             mcomp type_pairs env t1 t2;
@@ -2373,6 +2345,9 @@ let unify_eq env t1 t2 =
       with Not_found -> false
 
 let rec unify (env:Env.t ref) t1 t2 =
+  Format.fprintf Format.err_formatter
+    "unify %a and %a\n\n%!"
+    !printtyp_expr t1 !printtyp_expr t2;
   (* First step: special cases (optimizations) *)
   if t1 == t2 then () else
   let t1 = repr t1 in
@@ -2389,12 +2364,12 @@ let rec unify (env:Env.t ref) t1 t2 =
         unify2 env t1 t2
     | (Tvar _, _) ->
         occur !env t1 t2;
-        occur_univar !env t2;
+        occur_univar_and_implicit !env t2;
         link_type t1 t2;
         update_level !env t1.level t2
     | (_, Tvar _) ->
         occur !env t2 t1;
-        occur_univar !env t1;
+        occur_univar_and_implicit !env t1;
         link_type t2 t1;
         update_level !env t2.level t1
     | (Tunivar _, Tunivar _) ->
@@ -2481,13 +2456,11 @@ and unify3 env t1 t1' t2 t2' =
       link_type t1' t2'
   | (Tvar _, _) ->
       occur !env t1' t2;
-      occur_univar !env t2;
-      occur_implicit !env t2;
+      occur_univar_and_implicit !env t2;
       link_type t1' t2;
   | (_, Tvar _) ->
       occur !env t2' t1;
-      occur_univar !env t1;
-      occur_implicit !env t2;
+      occur_univar_and_implicit !env t1;
       link_type t2' t1;
   | (Tfield _, Tfield _) -> (* special case for GADTs *)
       unify_fields env t1' t2'
@@ -2505,10 +2478,10 @@ and unify3 env t1 t1' t2 t2' =
          Tarrow (Tarr_implicit id2, t2, u2, c2)) ->
           unify env t1 t2;
           let mty = modtype_of_tpackage !env t1 in
-          env :=
-            Env.set_implicit_level id1 (-1)
-              (Env.set_implicit_level id2 (-1)
-                 (Env.add_module id1 mty !env));
+          let env' = Env.add_module id1 mty !env in
+          let env' = Env.forbid_implicit_occur id1 env' in
+          let env' = Env.forbid_implicit_occur id2 env' in
+          env := env';
           let subst = Subst.add_module id2 (Path.Pident id1) Subst.identity in
           let u2 = Subst.type_expr subst u2 in
           unify env u1 u2;
@@ -2922,9 +2895,23 @@ let filter_arrow env t l =
                    && l = Tarr_simple
                    && arrows_are_compatible l l' ->
       (t1, t2)
-  | Tarrow(Tarr_implicit id1, t1, t2, _), Tarr_implicit id2 ->
-      let subst = Subst.add_module id1 (Path.Pident id2) Subst.identity in
-      (t1, Subst.type_expr subst t2)
+  | _ ->
+      raise (Unify [])
+
+let filter_arrow env t l =
+  let t = expand_head_trace env t in
+  match t.desc, l  with
+    Tvar _, _ ->
+      let lv = t.level in
+      let t1 = newvar2 lv and t2 = newvar2 lv in
+      let t' = newty2 lv (Tarrow (l, t1, t2, Cok)) in
+      link_type t t';
+      (t1, t2)
+  | Tarrow(l', t1, t2, _), _
+    when l = l' || !Clflags.classic
+                   && l = Tarr_simple
+                   && arrows_are_compatible l l' ->
+      (t1, t2)
   | _ ->
       raise (Unify [])
 
@@ -3010,7 +2997,7 @@ let moregen_occur env level ty =
     unmark_type ty; raise (Unify [])
   end;
   (* also check for free univars *)
-  occur_univar env ty;
+  occur_univar_and_implicit env ty;
   update_level env level ty
 
 let may_instantiate inst_nongen t1 =
@@ -3018,6 +3005,9 @@ let may_instantiate inst_nongen t1 =
                  else t1.level =  generic_level
 
 let rec moregen inst_nongen type_pairs subst env t1 t2 =
+  Format.fprintf Format.err_formatter
+    "moregen %a and %a\n\n%!"
+    !printtyp_expr t1 !printtyp_expr t2;
   if t1 == t2 then () else
   let t1 = repr t1 in
   let t2 = repr t2 in
@@ -3303,6 +3293,9 @@ let normalize_subst subst =
   then subst := List.map (fun (t1,t2) -> repr t1, repr t2) !subst
 
 let rec eqtype rename type_pairs subst env t1 t2 =
+  Format.fprintf Format.err_formatter
+    "eqtype %a and %a\n\n%!"
+    !printtyp_expr t1 !printtyp_expr t2;
   if t1 == t2 then () else
   let t1 = repr t1 in
   let t2 = repr t2 in

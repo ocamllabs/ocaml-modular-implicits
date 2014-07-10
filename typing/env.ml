@@ -164,6 +164,11 @@ module EnvTbl =
 type type_descriptions =
     constructor_description list * label_description list
 
+type implicit_flag = {
+  implicit_level: int option;
+  implicit_cannot_occur: bool;
+}
+
 let in_signature_flag = 0x01
 let implicit_coercion_flag = 0x02
 
@@ -178,12 +183,12 @@ type t = {
   classes: (Path.t * class_declaration) EnvTbl.t;
   cltypes: (Path.t * class_type_declaration) EnvTbl.t;
   functor_args: unit Ident.tbl;
-  implicit_levels: int Ident.tbl;
   implicit_instances: (Path.t * module_declaration) list;
   summary: summary;
   local_constraints: bool;
   gadt_instances: (int * TypeSet.t ref) list;
   flags: int;
+  implicit_flags: implicit_flag Ident.tbl;
 }
 
 and module_components =
@@ -228,7 +233,7 @@ let empty = {
   summary = Env_empty; local_constraints = false; gadt_instances = [];
   flags = 0;
   functor_args = Ident.empty;
-  implicit_levels = Ident.empty;
+  implicit_flags = Ident.empty;
   implicit_instances = [];
  }
 
@@ -619,11 +624,25 @@ let rec is_functor_arg path env =
 let rec implicit_level path env =
   match path with
     Pident id ->
-      begin try Ident.find_same id env.implicit_levels
-      with Not_found -> generic_level
-      end
+    begin match Ident.find_same id env.implicit_flags with
+    | { implicit_level = Some level } ->
+      Format.eprintf "found level %d for %s\n\n%!" level (Ident.name id);
+      level
+    | _ -> raise Not_found
+    end
   | Pdot (p, s, _) -> implicit_level p env
-  | Papply _ -> generic_level
+  | Papply _ -> raise Not_found
+
+let rec implicit_cannot_occur path env =
+  match path with
+    Pident id ->
+    begin try
+      let flag = Ident.find_same id env.implicit_flags in
+      flag.implicit_cannot_occur
+    with Not_found -> false
+    end
+  | Pdot (p, s, _) -> implicit_cannot_occur p env
+  | Papply _ -> raise Not_found
 
 let implicit_instances env = env.implicit_instances
 
@@ -1451,7 +1470,20 @@ let _ =
 (* Insertion of bindings by identifier *)
 
 let set_implicit_level id level env =
-  {env with implicit_levels = Ident.add id level env.implicit_levels}
+  let implicit_level = Some level in
+  let implicit_flag =
+    try {(Ident.find_same id env.implicit_flags) with implicit_level}
+    with Not_found -> {implicit_cannot_occur = false; implicit_level}
+  in
+  {env with implicit_flags = Ident.add id implicit_flag env.implicit_flags}
+
+let forbid_implicit_occur id env =
+  let implicit_cannot_occur = true in
+  let implicit_flag =
+    try {(Ident.find_same id env.implicit_flags) with implicit_cannot_occur}
+    with Not_found -> {implicit_level = None; implicit_cannot_occur}
+  in
+  {env with implicit_flags = Ident.add id implicit_flag env.implicit_flags}
 
 let add_functor_arg ?(arg = false) id env =
   match arg with
