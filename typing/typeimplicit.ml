@@ -95,6 +95,37 @@ let rec has_implicit ty = match (repr ty).desc with
   | Tarrow (_,_,rhs,_) -> has_implicit rhs
   | _ -> false
 
+let instantiate_one_implicit loc env id ty_arg ty_res =
+  let inst = match (repr ty_arg).desc with
+    | Tpackage (p,nl,tl) -> {
+        implicit_id = id;
+        implicit_env = env;
+        implicit_loc = loc;
+        implicit_type = (p,nl,tl);
+        implicit_constraints = [];
+        implicit_argument = {
+          arg_flag = Tapp_implicit;
+          arg_expression = None
+        };
+      }
+    | _ -> assert false
+  in
+  let add_constraint ty tyvar =
+    inst.implicit_constraints <-
+      (ty, tyvar) :: inst.implicit_constraints
+  in
+  let unlink_ident ident =
+    if Ident.same inst.implicit_id ident then
+      Some add_constraint
+    else
+      None
+  in
+  (* Unlink main types *)
+  let unlink_it = unlink env unlink_ident in
+  unlink_it.it_type_expr unlink_it ty_res;
+  pending_implicits := inst :: !pending_implicits;
+  inst
+
 let instantiate_implicits_ty loc env ty =
   if not (has_implicit ty) then [], [], ty
   else
@@ -219,22 +250,6 @@ module Link = struct
     in
     to_path inst path
 end
-
-(* Extraction of pending implicit arguments *)
-let extract_pending_implicits expr =
-  let rec traverse acc = function
-    | {exp_desc = Texp_apply (exp,args); _} ->
-        let is_pending = function
-          | {arg_flag = Tapp_implicit; arg_expression = None} -> true
-          | _ -> false
-        in
-        traverse (List.filter is_pending args @ acc) exp
-    | _ -> acc
-  in
-  List.map (fun argument ->
-      List.find (fun inst -> inst.implicit_argument == argument)
-        !pending_implicits)
-    (traverse [] expr)
 
 (* Forward reference to be initialized by Implicitsearch *)
 let generalize_implicits_ref

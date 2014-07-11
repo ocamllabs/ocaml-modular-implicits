@@ -2907,23 +2907,6 @@ let filter_arrow env t l =
   | _ ->
       raise (Unify [])
 
-let filter_arrow env t l =
-  let t = expand_head_trace env t in
-  match t.desc, l  with
-    Tvar _, _ ->
-      let lv = t.level in
-      let t1 = newvar2 lv and t2 = newvar2 lv in
-      let t' = newty2 lv (Tarrow (l, t1, t2, Cok)) in
-      link_type t t';
-      (t1, t2)
-  | Tarrow(l', t1, t2, _), _
-    when l = l' || !Clflags.classic
-                   && l = Tarr_simple
-                   && arrows_are_compatible l l' ->
-      (t1, t2)
-  | _ ->
-      raise (Unify [])
-
 (* Used by [filter_method]. *)
 let rec filter_method_field env name priv ty =
   let ty = expand_head_trace env ty in
