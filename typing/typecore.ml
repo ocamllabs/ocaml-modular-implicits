@@ -1515,15 +1515,15 @@ let rec type_approx env sexp =
      created here has a level lower than the one in which the implicit will be
      bound, and might cause type escape errors.
      FIXME *)
-  | Pexp_fun (Parr_implicit s, _, _, e) -> newvar ()
-      (*let id, env =
+  | Pexp_fun (Parr_implicit s, _, _, e) 
+      let id, env =
         Env.enter_module ~arg:true ~implicit_:(Implicit 0)
           s (Mty_signature []) env
       in
-      newty (Tarrow(Tarr_implicit id, newvar (),
-                    type_approx env e, Cok))*)
+      newty (Tarrow(Tarr_implicit id, ,
+                    type_approx env e, Cok))
   | Pexp_fun (p, _, _, e) ->
-       newty (Tarrow(tarr_of_parr p, newvar (), type_approx env e, Cok))
+       newty (Tarrow(tarr_of_parr p, _, type_approx env e, Cok))
   | Pexp_function ({pc_rhs=e}::_) ->
        newty (Tarrow(Tarr_simple, newvar (), type_approx env e, Cok))
   | Pexp_match (_, {pc_rhs=e}::_) -> type_approx env e
@@ -1923,9 +1923,37 @@ and type_expect_ ?in_function env sexp ty_expected =
              [Vb.mk spat smatch] sexp)
       in
       type_expect ?in_function env sfun ty_expected
-  | Pexp_fun (Parr_implicit id, None, spat, sexp) ->
-      failwith "TODO"
-        (* TODO: keep attributes, call type_function directly *)
+  | Pexp_fun (Parr_implicit name, None, spat, sbody) ->
+    let ty = newvar () in
+    (* remember original level *)
+    begin_def ();
+    Ident.set_current_time ty.level;
+    let lev = get_current_level () in
+    let id = Ident.create name in
+    let ty_arg = newvar () in
+    (* type argument *)
+    begin_def ();
+    let (c_lhs, new_env, pattern_force, unpacks) =
+      let scope = Some (Annot.Idef sbody.pexp_loc) in
+      type_pattern ~lev env spat scope ty_arg in
+    end_def();
+    assert (unpacks = []);
+    (* `Contaminating' unifications start here *)
+    List.iter (fun f -> f()) pattern_force;
+    begin_def ();
+    let body = type_implicit_arg id lev new_env sbody in
+    let case = {c_lhs; c_guard = None; c_rhs = body} in
+    let arr = Tarr_implicit id in
+    end_def (); (* exit rhs *)
+    end_def (); (* exit implicit binding *)
+    rue {
+      exp_desc = Texp_function (arr, [case], Total);
+      exp_loc = loc; exp_extra = [];
+      exp_type = instance env (newgenty (Tarrow (arr, ty_arg, body.exp_type, Cok)));
+      exp_attributes = [];
+      exp_env = env;
+    }
+  (* TODO: keep attributes, call type_function directly *)
   | Pexp_fun (arr, None, spat, sexp) ->
       type_function ?in_function loc sexp.pexp_attributes env
         ty_expected arr [{pc_lhs=spat; pc_guard=None; pc_rhs=sexp}]
@@ -2903,9 +2931,6 @@ and type_function ?in_function loc attrs env ty_expected arr caselist =
     exp_attributes = attrs;
     exp_env = env }
 
-and type_implicit_function ?in_function env ty_expected id pattern body =
-
-
 and type_label_access env loc srecord lid =
   if !Clflags.principal then begin_def ();
   let record = type_exp env srecord in
@@ -3758,7 +3783,7 @@ and type_cases ?in_function env ty_arg ty_res partial_flag loc caselist =
   end;
   cases, partial
 
-and type_implicit_arg id level ?in_function env sbody ty_res =
+and type_implicit_arg id level env sbody =
   let ty = newvar() in
   (* remember original level *)
   begin_def ();
@@ -3774,7 +3799,7 @@ and type_implicit_arg id level ?in_function env sbody ty_res =
   let new_env = Env.set_implicit_level id level new_env in
   Ctype.init_def(Ident.current_time());
   Typetexp.widen context;
-  let body = type_expect ?in_function new_env sbody ty_res in
+  let body = type_exp new_env sbody in
   (* go back to original level *)
   end_def ();
   (* Unification of body.exp_type with the fresh variable ty
@@ -3782,11 +3807,6 @@ and type_implicit_arg id level ?in_function env sbody ty_res =
      i.e. if generative types rooted at id show up in the
      type body.exp_type.  Thus, this unification enforces the
      scoping condition on "let module". *)
-  begin try
-    Ctype.unify_var new_env ty body.exp_type
-  with Unify _ ->
-    raise(Error(sbody.pexp_loc, env, Scoping_let_module(name, body.exp_type)))
-  end;
   let mb = { mb_id = id; mb_name = mknoloc name; mb_expr = modl;
              mb_implicit = Implicit 0;
              mb_attributes = []; mb_loc = sbody.pexp_loc }
@@ -3794,7 +3814,7 @@ and type_implicit_arg id level ?in_function env sbody ty_res =
   re {
     exp_desc = Texp_letmodule(mb, body);
     exp_loc = sbody.pexp_loc; exp_extra = [];
-    exp_type = ty;
+    exp_type = body.exp_type;
     exp_attributes = sbody.pexp_attributes;
     exp_env = env }
 
