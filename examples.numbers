@@ -16,8 +16,8 @@ module NUM = struct
   let ( * ) (implicit M : NUM) = M.( * )
   let ( / ) (implicit M : NUM) = M.( / )
   let (~- ) (implicit M : NUM) = M.(~- )
-  let zero  (implicit M : NUM) = M.zero
-  let one   (implicit M : NUM) = M.one
+  let zero  (implicit M : NUM) () = M.zero
+  let one   (implicit M : NUM) () = M.one
   let (~~)  (implicit M : NUM) = M.of_int
 end;;
 
@@ -88,5 +88,5 @@ open NUM;;
 open ORD;;
 assert ( ~~2 / ~~3 = 0
       && ~~2 / ~~3 = 0.666666666666666666666666666666666666);;
-let x = 1 + one + one;;
+let x = 1 + one() + one();;
 let () = print_int x;;
