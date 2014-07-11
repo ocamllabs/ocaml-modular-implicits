@@ -1499,35 +1499,55 @@ let rec approx_type env sty =
       newty (Ttuple (List.map (approx_type env) args))
   | Ptyp_constr (lid, ctl) ->
       begin try
+        Format.eprintf "looking_up @[%a@]\n%!" Printtyp.longident lid.txt;
         let (path, decl) = Env.lookup_type lid.txt env in
         if List.length ctl <> decl.type_arity then raise Not_found;
         let tyl = List.map (approx_type env) ctl in
         newconstr path tyl
-      with Not_found -> newvar ()
+      with Not_found ->
+        Format.eprintf "@[%a@] not found\n%!" Printtyp.longident lid.txt;
+        newvar ()
       end
   | Ptyp_poly (_, sty) ->
       approx_type env sty
   | _ -> newvar ()
 
+let pat_approx env spat =
+  match spat.ppat_desc with
+  | Ppat_constraint (_, sty) ->
+      let ty = approx_type env sty in
+      Format.eprintf "approx_constraint @[%a@]\n%!"
+        Printtyp.type_expr ty;
+      ty
+  | _ -> newvar ()
+
 let rec type_approx env sexp =
   match sexp.pexp_desc with
     Pexp_let (_, _, e) -> type_approx env e
-  | Pexp_fun (Parr_optional s, _, _, e) ->
-      newty (Tarrow(Tarr_optional s, type_option (newvar ()),
+  | Pexp_fun (Parr_optional s, _, lhs, e) ->
+      newty (Tarrow(Tarr_optional s, type_option (pat_approx env lhs),
                     type_approx env e, Cok))
   (* Traversing implicit in type_approx might be a bad idea: the type variable
      created here has a level lower than the one in which the implicit will be
      bound, and might cause type escape errors.
      FIXME *)
-  | Pexp_fun (Parr_implicit s, _, _, e) 
-      let id, env =
-        Env.enter_module ~arg:true ~implicit_:(Implicit 0)
-          s (Mty_signature []) env
+  | Pexp_fun (Parr_implicit s, _, lhs, e) ->
+      let loc, (ppath, pcstrs) = match lhs.ppat_desc with
+        | Ppat_constraint (_, {ptyp_desc = Ptyp_package pkg; ptyp_loc}) ->
+            ptyp_loc, pkg
+        | _ -> assert false
       in
-      newty (Tarrow(Tarr_implicit id, ,
+      let pcstrs = List.map (fun (lid,cty) -> lid.txt, cty) pcstrs in
+      let p, cstrs, pkg_ty = create_package_type loc env (ppath.txt, pcstrs) in
+      let nl, tl = List.split cstrs in
+      let tl = List.map (fun cty -> cty.ctyp_type) tl in
+      let mty = !Ctype.modtype_of_package env loc p nl tl in
+      let id, env =
+        Env.enter_module ~arg:true ~implicit_:(Implicit 0) s mty env in
+      newty (Tarrow(Tarr_implicit id, pkg_ty,
                     type_approx env e, Cok))
-  | Pexp_fun (p, _, _, e) ->
-       newty (Tarrow(tarr_of_parr p, _, type_approx env e, Cok))
+  | Pexp_fun (p, _, lhs, e) ->
+       newty (Tarrow(tarr_of_parr p, (pat_approx env lhs), type_approx env e, Cok))
   | Pexp_function ({pc_rhs=e}::_) ->
        newty (Tarrow(Tarr_simple, newvar (), type_approx env e, Cok))
   | Pexp_match (_, {pc_rhs=e}::_) -> type_approx env e
@@ -1636,30 +1656,6 @@ let generalizable level ty =
 
 (* Hack to allow coercion of self. Will clean-up later. *)
 let self_coercion = ref ([] : (Path.t * Location.t list ref) list)
-
-(* Helpers for packaged modules. *)
-let create_package_type loc env (p, l) =
-  let s = !Typetexp.transl_modtype_longident loc env p in
-  let fields = List.map (fun (name, ct) ->
-                           name, Typetexp.transl_simple_type env false ct) l in
-  let ty = newty (Tpackage (s,
-                    List.map fst l,
-                   List.map (fun (_, cty) -> cty.ctyp_type) fields))
-  in
-   (s, fields, ty)
-
- let wrap_unpacks sexp unpacks =
-   let open Ast_helper in
-   List.fold_left
-     (fun sexp (name, loc) ->
-       Exp.letmodule ~loc:sexp.pexp_loc
-         (Mb.mk ~loc name
-            (Mod.unpack ~loc
-               (Exp.ident ~loc:name.loc
-                  (mkloc (Longident.Lident name.txt) name.loc))))
-         sexp
-     )
-    sexp unpacks
 
 (* Helpers for type_cases *)
 
