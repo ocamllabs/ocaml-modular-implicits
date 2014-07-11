@@ -10,6 +10,9 @@ let f (x : 'a) (implicit M : T) = (x : M.t); ();;
 (* OK *)
 let f (implicit M : T) (x : M.t) y = (y : M.t); ();;
 
+(* OK if type approx is improved *)
+let rec f (implicit M : T) (x : M.t) = ();;
+
 (* BAD *)
 let rec f (implicit M : T) (x : M.t) y = (y : M.t); ();;
 
