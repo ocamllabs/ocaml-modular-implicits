@@ -1959,6 +1959,11 @@ and type_expect_ ?in_function env sexp ty_expected =
     begin_def (); (* one more level for non-returning functions *)
     if !Clflags.principal then begin_def ();
     let funct = type_exp env sfunct in
+    let funct =
+      if Typeimplicit.has_implicit funct.exp_type then
+        {funct with exp_type = Subst.type_expr Subst.identity funct.exp_type}
+      else
+        funct in
     if !Clflags.principal then begin
       end_def ();
       generalize_structure funct.exp_type
@@ -3501,7 +3506,7 @@ and type_application env funct
         let arg = match arr with
           | Tarr_implicit id ->
             let inst =
-              Typeimplicit.instantiate_one_implicit loc env id ty ty_fun in
+              Typeimplicit.instantiate_one_implicit loc env id ty [ty_fun;ty_fun0] in
             let argument = inst.Typeimplicit.implicit_argument in
             begin match arg with
             | None -> Some (fun () -> argument)
