@@ -35,7 +35,11 @@ let unique_names = ref Ident.empty
 
 module Ident = struct
   include Ident
-  let name id = name id ^ "/" ^ string_of_int id.stamp
+  let name =
+    if (try Sys.getenv "DEBUG" = "1" with Not_found -> false) then
+      (fun id -> name id ^ "/" ^ string_of_int id.stamp)
+    else
+      name
 end
 
 let ident_name id =
