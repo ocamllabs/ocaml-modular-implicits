@@ -1508,25 +1508,15 @@ let rec approx_type env sty =
       approx_type env sty
   | _ -> newvar ()
 
-let pat_approx env spat =
-  match spat.ppat_desc with
-  | Ppat_constraint (_, sty) ->
-      let ty = approx_type env sty in
-      Format.eprintf "approx_constraint @[%a@]\n%!"
-        Printtyp.type_expr ty;
-      ty
-  | _ -> newvar ()
-
 let rec type_approx env sexp =
   match sexp.pexp_desc with
     Pexp_let (_, _, e) -> type_approx env e
   | Pexp_fun (Parr_optional s, _, lhs, e) ->
-      newty (Tarrow(Tarr_optional s, type_option (pat_approx env lhs),
+      newty (Tarrow(Tarr_optional s, type_option (newvar ()),
                     type_approx env e, Cok))
   (* Traversing implicit in type_approx might be a bad idea: the type variable
      created here has a level lower than the one in which the implicit will be
      bound, and might cause type escape errors.
-     FIXME *)
   | Pexp_fun (Parr_implicit s, _, lhs, e) ->
       let loc, (ppath, pcstrs) = match lhs.ppat_desc with
         | Ppat_constraint (_, {ptyp_desc = Ptyp_package pkg; ptyp_loc}) ->
@@ -1542,10 +1532,13 @@ let rec type_approx env sexp =
         Env.enter_module ~arg:true ~implicit_:(Implicit 0) s mty env in
       newty (Tarrow(Tarr_implicit id, pkg_ty,
                     type_approx env e, Cok))
+     FIXME *)
+  | Pexp_fun (Parr_implicit _, _, _, _) ->
+      newvar ()
   | Pexp_fun (p, _, lhs, e) ->
-       newty (Tarrow(tarr_of_parr p, (pat_approx env lhs), type_approx env e, Cok))
+      newty (Tarrow(tarr_of_parr p, newvar (), type_approx env e, Cok))
   | Pexp_function ({pc_rhs=e}::_) ->
-       newty (Tarrow(Tarr_simple, newvar (), type_approx env e, Cok))
+      newty (Tarrow(Tarr_simple, newvar (), type_approx env e, Cok))
   | Pexp_match (_, {pc_rhs=e}::_) -> type_approx env e
   | Pexp_try (e, _) -> type_approx env e
   | Pexp_tuple l -> newty (Ttuple(List.map (type_approx env) l))
