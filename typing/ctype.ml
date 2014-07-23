@@ -2354,9 +2354,9 @@ let unify_eq env t1 t2 =
       with Not_found -> false
 
 let rec unify (env:Env.t ref) t1 t2 =
-  Format.fprintf Format.err_formatter
+  (*Format.fprintf Format.err_formatter
     "unify %a and %a\n\n%!"
-    !printtyp_expr t1 !printtyp_expr t2;
+    !printtyp_expr t1 !printtyp_expr t2;*)
   (* First step: special cases (optimizations) *)
   if t1 == t2 then () else
   let t1 = repr t1 in
@@ -2997,9 +2997,9 @@ let may_instantiate inst_nongen t1 =
                  else t1.level =  generic_level
 
 let rec moregen inst_nongen type_pairs subst env t1 t2 =
-  Format.fprintf Format.err_formatter
+  (*Format.fprintf Format.err_formatter
     "moregen %a and %a\n\n%!"
-    !printtyp_expr t1 !printtyp_expr t2;
+    !printtyp_expr t1 !printtyp_expr t2;*)
   if t1 == t2 then () else
   let t1 = repr t1 in
   let t2 = repr t2 in
@@ -3285,9 +3285,9 @@ let normalize_subst subst =
   then subst := List.map (fun (t1,t2) -> repr t1, repr t2) !subst
 
 let rec eqtype rename type_pairs subst env t1 t2 =
-  Format.fprintf Format.err_formatter
+  (*Format.fprintf Format.err_formatter
     "eqtype %a and %a\n\n%!"
-    !printtyp_expr t1 !printtyp_expr t2;
+    !printtyp_expr t1 !printtyp_expr t2;*)
   if t1 == t2 then () else
   let t1 = repr t1 in
   let t2 = repr t2 in

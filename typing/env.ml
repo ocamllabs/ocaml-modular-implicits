@@ -656,7 +656,7 @@ let rec implicit_level path env =
     Pident id ->
     begin match Ident.find_same id env.implicit_flags with
     | { implicit_level = Some level } ->
-      Format.eprintf "found level %d for %s\n\n%!" level (Ident.name id);
+      (*Format.eprintf "found level %d for %s\n\n%!" level (Ident.name id);*)
       level
     | _ -> raise Not_found
     end
