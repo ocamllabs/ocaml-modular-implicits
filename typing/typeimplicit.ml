@@ -60,16 +60,22 @@ let unlink env unlink_on =
       register ty tyvar
   in
 
-  let it_type_expr it ty =
+  (* When crossing an implicit binder, prevent unlinking it in the rhs by
+     registering it in shadow_tbl *)
+  let rec it_type_expr shadow_tbl it ty =
     let ty = repr ty in
-    (* First recurse in sub expressions *)
-    type_iterators.it_type_expr it ty;
     (* Then replace current type if it is a constructor referring to an
        implicit *)
     match ty.desc with
     | Tconstr (path,args,_) ->
-      begin match unlink_on (Path.head path) with
+      (* First recurse in sub expressions *)
+      type_iterators.it_type_expr it ty;
+      let ident = Path.head path in
+      begin match unlink_on ident with
       | None -> ()
+        (* Identifier is shadowed, skip unlinking *)
+      | Some register when Ident.mem ident shadow_tbl ->
+        (*assert false*) ()
       | Some register ->
         let ty' = newvar () in
         (* Swap `ty' with a fresh variable *)
@@ -81,10 +87,15 @@ let unlink env unlink_on =
         ty'.level <- lv;
         add_constraint register path ty' ty
       end
-    | _ -> ()
+    | Tarrow (Tarr_implicit id, lhs, rhs, _) ->
+      it_type_expr shadow_tbl it lhs;
+      let shadow_tbl = Ident.add id () shadow_tbl in
+      let it = {it with it_type_expr = it_type_expr shadow_tbl} in
+      it_type_expr shadow_tbl it rhs
+    | _ -> type_iterators.it_type_expr it ty
   in
 
-  {type_iterators with it_type_expr = it_type_expr}
+  {type_iterators with it_type_expr = it_type_expr Ident.empty}
 
 let pending_implicits
   : pending_implicit list ref
@@ -115,14 +126,14 @@ let instantiate_one_implicit loc env id ty_arg ty_res =
       (ty, tyvar) :: inst.implicit_constraints
   in
   let unlink_ident ident =
-    if Ident.same inst.implicit_id ident then
+    if Ident.same id ident then
       Some add_constraint
     else
       None
   in
   (* Unlink main types *)
   let unlink_it = unlink env unlink_ident in
-  unlink_it.it_type_expr unlink_it ty_res;
+  List.iter (unlink_it.it_type_expr unlink_it) ty_res;
   pending_implicits := inst :: !pending_implicits;
   inst
 
