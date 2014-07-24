@@ -72,6 +72,7 @@ type error =
   | Orpat_vars of Ident.t
   | Expr_type_clash of (type_expr * type_expr) list
   | Apply_non_function of type_expr
+  | Apply_unexpected_implicit of type_expr
   | Apply_wrong_label of apply_flag * type_expr
   | Label_multiply_defined of string
   | Label_missing of Ident.t list
