@@ -30,6 +30,7 @@ type error =
   | Orpat_vars of Ident.t
   | Expr_type_clash of (type_expr * type_expr) list
   | Apply_non_function of type_expr
+  | Apply_unexpected_implicit of type_expr
   | Apply_wrong_label of apply_flag * type_expr
   | Label_multiply_defined of string
   | Label_missing of Ident.t list
@@ -1484,17 +1485,26 @@ and is_nonexpansive_opt = function
 
 let rec approx_type env sty =
   match sty.ptyp_desc with
-  | Ptyp_arrow (Parr_optional s, _, sty) ->
-      let ty1 = type_option (newvar ()) in
+  | Ptyp_arrow (Parr_optional s, lhs, sty) ->
+      let ty1 = type_option (approx_type env lhs) in
       newty (Tarrow (Tarr_optional s, ty1, approx_type env sty, Cok))
-  | Ptyp_arrow (Parr_implicit s, _, sty) ->
-      let id, env =
-        Env.enter_module ~arg:true ~implicit_:(Implicit 0)
-          s (Mty_signature []) env
+  | Ptyp_arrow (Parr_implicit s, lhs, sty) ->
+      let loc, (ppath, pcstrs) = match lhs with
+        | {ptyp_desc = Ptyp_package pkg; ptyp_loc} ->
+            ptyp_loc, pkg
+        | _ -> assert false
       in
-      newty (Tarrow (Tarr_implicit id, newvar (), approx_type env sty, Cok))
-  | Ptyp_arrow (p, _, sty) ->
-      newty (Tarrow (tarr_of_parr p, newvar (), approx_type env sty, Cok))
+      let pcstrs = List.map (fun (lid,cty) -> lid.txt, cty) pcstrs in
+      let p, cstrs, pkg_ty = create_package_type loc env (ppath.txt, pcstrs) in
+      let nl, tl = List.split cstrs in
+      let tl = List.map (fun cty -> cty.ctyp_type) tl in
+      let mty = !Ctype.modtype_of_package env loc p nl tl in
+      let id, env =
+        Env.enter_module ~arg:true ~implicit_:(Implicit 0) s mty env in
+      newty (Tarrow(Tarr_implicit id, pkg_ty,
+                    approx_type env sty, Cok))
+  | Ptyp_arrow (p, lhs, sty) ->
+      newty (Tarrow (tarr_of_parr p, approx_type env lhs, approx_type env sty, Cok))
   | Ptyp_tuple args ->
       newty (Ttuple (List.map (approx_type env) args))
   | Ptyp_constr (lid, ctl) ->
@@ -3370,6 +3380,10 @@ and type_application env funct
                     false
                 | _ -> true
               in
+              if app1 = Tapp_implicit then
+                raise (Error (sarg1.pexp_loc, env,
+                    Apply_unexpected_implicit
+                      (expand_head env funct.exp_type)));
               let arr1 = tarr_of_tapp app1 in
               if ty_fun.level >= t1.level && not_identity funct.exp_desc then
                 Location.prerr_warning sarg1.pexp_loc Warnings.Unused_argument;
@@ -3380,6 +3394,9 @@ and type_application env funct
               let ty_fun =
                 match td with Tarrow _ -> newty td | _ -> ty_fun in
               let ty_res = application_result_type (omitted @ !ignored) ty_fun in
+              if app1 = Tapp_implicit then
+                raise (Error(sarg1.pexp_loc, env,
+                    Apply_wrong_label (Tapp_implicit, ty_res)));
               let arr1 = tarr_of_tapp app1 in
               match ty_res.desc with
                 Tarrow _ ->
@@ -4099,11 +4116,23 @@ let report_error env ppf = function
             type_expr typ
             "This is not a function; it cannot be applied."
       end
+  | Apply_unexpected_implicit typ ->
+      reset_and_mark_loops typ;
+      begin match (repr typ).desc with
+        Tarrow _ ->
+          fprintf ppf "@[<v>@[<2>This function has type@ %a@]"
+            type_expr typ;
+          fprintf ppf "@ It can't be applied to an implicit argument.@]"
+      | _ ->
+          fprintf ppf "@[<v>@[<2>This expression has type@ %a@]@ %s@]"
+            type_expr typ
+            "This is not a function; it cannot be applied an implicit argument."
+      end
   | Apply_wrong_label (Tapp_implicit, ty) ->
       reset_and_mark_loops ty;
       fprintf ppf
         "@[<v>@[<2>The function applied to this argument has type@ %a@]@.\
-          This implicit argument cannot be applied]"
+          This implicit argument cannot be applied@]"
         type_expr ty
   | Apply_wrong_label (l, ty) ->
       let print_label ppf = function
