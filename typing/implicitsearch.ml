@@ -25,6 +25,11 @@ let string_of_path path =
 
 let papply path arg = Path.Papply (path, arg)
 
+let printf_output =
+  (*Format.std_formatter*)
+  Format.make_formatter (fun _ _ _ -> ()) (fun () -> ())
+let printf x = Format.fprintf printf_output x
+
 (** [target] is the point from which a search starts *)
 type target = {
   (* The module type we try to find an instance for *)
@@ -350,7 +355,7 @@ let remove_type_variables () =
            List.iter
              (function
           | Path.Pident id' as path, ty' when Ident.same id id' ->
-              Format.fprintf Format.err_formatter "unifying %a with %a (= %a)\n%!"
+              printf "unifying %a with %a (= %a)\n%!"
                 Printtyp.type_expr ty
                 Printtyp.type_expr ty'
                 Printtyp.path path;
@@ -551,10 +556,9 @@ end
 
 let report_error exn =
   try
-    Location.report_exception Format.err_formatter exn
+    Location.report_exception printf_output exn
   with exn ->
-    Format.fprintf Format.err_formatter
-      "%s\n%!" (Printexc.to_string exn)
+    printf "%s\n%!" (Printexc.to_string exn)
 
 (* Make the search stack explicit.
 
@@ -663,11 +667,9 @@ end = struct
     state.eq_var := state.eq_initial;
     begin match state.debug_path with
     | Some path' ->
-        Format.fprintf Format.err_formatter
-          "%a (_) <- %a\n" Printtyp.path path' Printtyp.path path
+        printf "%a (_) <- %a\n" Printtyp.path path' Printtyp.path path
     | None ->
-        Format.fprintf Format.err_formatter
-          "_ <- %a\n" Printtyp.path path
+        printf "_ <- %a\n" Printtyp.path path
     end;
     let target = state.target in
     let sub_targets, candidate_mty = find_implicit_parameters md in
@@ -675,8 +677,7 @@ end = struct
     (* Generate coercion. if this succeeds this produce equations in new_eqns and eq_var *)
     let eq_table, env = List.fold_left
         (fun (eq_table, env) sub_target ->
-          Format.fprintf Format.err_formatter
-            "Binding %a with type %a\n%!"
+          printf "Binding %a with type %a\n%!"
             Printtyp.ident sub_target.target_id
             Printtyp.modtype sub_target.target_type;
           Ident.add sub_target.target_id new_eqns eq_table,
@@ -689,10 +690,10 @@ end = struct
         let tyl, tvl = List.split target.target_hkt in
         begin try Ctype.equal' env true tyl tvl
         with Ctype.Unify tls ->
-          Format.fprintf Format.err_formatter "Failed to instantiate %s with constraints:\n"
+          printf "Failed to instantiate %s with constraints:\n"
             (string_of_path path);
           List.iter2 (fun t1 t2 ->
-              Format.fprintf Format.err_formatter "\t%a = %a\n%!"
+              printf "\t%a = %a\n%!"
                 Printtyp.type_expr t1
                 Printtyp.type_expr t2)
             tyl tvl;
@@ -700,15 +701,15 @@ end = struct
               (fun ident _ acc -> Ident.name ident :: acc)
               eq_table []
           in
-          Format.fprintf Format.err_formatter "Assuming the following equalities on %s:\n"
+          printf "Assuming the following equalities on %s:\n"
             (String.concat ", " accepting_eq);
           List.iter (fun {eq_lhs; eq_rhs} ->
-              Format.fprintf Format.err_formatter "\t%a = %a\n%!"
+              printf "\t%a = %a\n%!"
                 Printtyp.type_expr eq_lhs Printtyp.type_expr eq_rhs)
             !(state.eq_var);
-          Format.fprintf Format.err_formatter "Because:\n%!";
+          printf "Because:\n%!";
           List.iter (fun (ty1,ty2) ->
-              Format.fprintf Format.err_formatter "\t%a != %a\n%!"
+              printf "\t%a != %a\n%!"
                 Printtyp.type_expr ty1
                 Printtyp.type_expr ty2;
               let rec check_expansion ty = match (repr ty).desc with
@@ -718,8 +719,7 @@ end = struct
                     with Not_found -> try
                       ignore (Env.find_type path env : _)
                     with Not_found ->
-                      Format.fprintf Format.err_formatter
-                        "Fatal error: %a not found.\n%!"
+                      printf "Fatal error: %a not found.\n%!"
                         Printtyp.path path
                     end;
                     List.iter check_expansion args
@@ -727,7 +727,7 @@ end = struct
               in
               check_expansion ty1;
               check_expansion ty2;
-              Format.fprintf Format.err_formatter "\n%!"
+              printf "\n%!"
             ) tls;
           raise Not_found
         end;
