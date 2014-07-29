@@ -1484,8 +1484,9 @@ let rec approx_type env sty =
   | Ptyp_arrow (Parr_optional s, lhs, sty) ->
       let ty1 = type_option (approx_type env lhs) in
       newty (Tarrow (Tarr_optional s, ty1, approx_type env sty, Cok))
-  | Ptyp_arrow (Parr_implicit s, lhs, sty) ->
-      let loc, (ppath, pcstrs) = match lhs with
+  | Ptyp_arrow (Parr_implicit _s, _lhs, _sty) ->
+      newvar ()
+      (*let loc, (ppath, pcstrs) = match lhs with
         | {ptyp_desc = Ptyp_package pkg; ptyp_loc} ->
             ptyp_loc, pkg
         | _ -> assert false
@@ -1498,7 +1499,7 @@ let rec approx_type env sty =
       let id, env =
         Env.enter_module ~arg:true ~implicit_:(Implicit 0) s mty env in
       newty (Tarrow(Tarr_implicit id, pkg_ty,
-                    approx_type env sty, Cok))
+                    approx_type env sty, Cok))*)
   | Ptyp_arrow (p, lhs, sty) ->
       newty (Tarrow (tarr_of_parr p, approx_type env lhs, approx_type env sty, Cok))
   | Ptyp_tuple args ->
@@ -3438,7 +3439,10 @@ and type_application env funct
           end
         in
         let sargs, more_sargs, loc, arg =
-          if ignore_labels && not (arrow_is_optional arr) then begin
+          if (match arr with
+              | Tarr_optional _ | Tarr_implicit _ -> false
+              | _ -> ignore_labels)
+          then begin
             (* In classic mode, omitted = [] *)
             match sargs, more_sargs with
             | (app, sarg0) :: _, _ ->
@@ -3533,7 +3537,7 @@ and type_application env funct
         let omitted = match arr, arg with
           (* Applied arguments don't affect omitted list *)
           | _, Some _ -> omitted
-          (* Implicit arguments have been wrapper before *)
+          (* Implicit arguments have been wrapped before *)
           | Tarr_implicit _, None -> assert false
           (* Other undefined arguments are remembered as omitted *)
           | _, None -> (arr,ty,lv) :: omitted
