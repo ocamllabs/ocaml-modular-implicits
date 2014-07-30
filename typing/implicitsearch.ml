@@ -20,15 +20,17 @@ let rec list_findmap f = function
       | None -> list_findmap f xs
       | Some x' -> x'
 
+let rec list_filtermap f = function
+  | [] -> []
+  | x :: xs ->
+      match f x with
+      | None -> list_filtermap f xs
+      | Some x' -> x' :: list_filtermap f xs
+
 let string_of_path path =
   Path.to_longident path |> Longident.flatten |> String.concat "."
 
 let papply path arg = Path.Papply (path, arg)
-
-let printf_output =
-  (*Format.std_formatter*)
-  Format.make_formatter (fun _ _ _ -> ()) (fun () -> ())
-let printf x = Format.fprintf printf_output x
 
 (** [target] is the point from which a search starts *)
 type target = {
@@ -939,25 +941,28 @@ let () =
 let generalize_implicits () =
   let current_level = get_current_level () in
   let not_linked = function
-    | {implicit_argument = {arg_expression = Some _}} -> false
-    | _ -> true
-  in
-  let pending = List.filter not_linked !pending_implicits in
+    | {implicit_argument = {arg_expression = Some _}} -> None
+    | inst -> Some inst in
+  let not_linkeds l =
+    match list_filtermap not_linked l with
+    | [] -> None
+    | xs -> Some xs in
+  let pending = list_filtermap not_linkeds !pending_implicits in
   let need_generalization inst =
     List.exists
       (fun (ty,var) ->
          assert (var.level <> generic_level);
          max ty.level var.level >= current_level)
       inst.implicit_constraints
-    || inst.implicit_constraints = []
-  in
+    || inst.implicit_constraints = [] in
+  let need_generalization insts =
+    List.exists need_generalization insts in
   let to_generalize, rest =
-    List.partition need_generalization pending
-  in
+    List.partition need_generalization pending in
   pending_implicits := rest;
   (* The reversal is important to ensure we search from the outer most
      to the inner most implicits *)
-  let to_generalize = List.rev to_generalize in
+  let to_generalize = List.flatten (List.rev to_generalize) in
   try
     let not_instantiable inst = not (find_pending_instance inst) in
     let inst = List.find not_instantiable to_generalize in

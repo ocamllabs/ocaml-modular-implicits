@@ -3,6 +3,14 @@ open Ctype
 open Types
 open Typedtree
 
+let printf_output =
+  if (try Sys.getenv "DEBUG" = "1" with Not_found -> false) then
+    Format.std_formatter
+  else
+    Format.make_formatter (fun _ _ _ -> ()) (fun () -> ())
+
+let printf x = Format.fprintf printf_output x
+
 (* Forward declaration, to be filled in by Typemod.type_package *)
 
 let type_implicit_instance
@@ -77,7 +85,7 @@ let unlink env unlink_on =
       | Some register when Ident.mem ident shadow_tbl ->
         (*assert false*) ()
       | Some register ->
-        let ty' = newvar () in
+        let ty' = newvar ~name:"imp#" () in
         (* Swap `ty' with a fresh variable *)
         let {desc = desc; level = lv} = ty in
         let {desc = desc'; level = lv'} = ty' in
@@ -98,7 +106,7 @@ let unlink env unlink_on =
   {type_iterators with it_type_expr = it_type_expr Ident.empty}
 
 let pending_implicits
-  : pending_implicit list ref
+  : pending_implicit list list ref
   = ref []
 
 let rec has_implicit ty = match (repr ty).desc with
@@ -134,93 +142,7 @@ let instantiate_one_implicit loc env id ty_arg ty_res =
   (* Unlink main types *)
   let unlink_it = unlink env unlink_ident in
   List.iter (unlink_it.it_type_expr unlink_it) ty_res;
-  pending_implicits := inst :: !pending_implicits;
   inst
-
-let instantiate_implicits_ty loc env ty =
-  if not (has_implicit ty) then [], [], ty
-  else
-    let fresh_implicit id ty =
-      let ty = repr ty in
-      match ty.desc with
-      | Tpackage (p,nl,tl) -> {
-          implicit_id = id;
-          implicit_env = env;
-          implicit_loc = loc;
-          implicit_type = (p,nl,tl);
-          implicit_constraints = [];
-          implicit_argument = {
-            arg_flag = Tapp_implicit;
-            arg_expression = None
-          };
-        }
-      | _ -> assert false
-    in
-    let rec extract_implicits ty =
-      let ty = repr ty in
-      match ty.desc with
-      | Tarrow (Tarr_implicit id, lhs, rhs, comm) ->
-          (*prerr_endline "found one";*)
-          let inst = fresh_implicit id lhs in
-          let arguments, instances, rhs' = extract_implicits rhs in
-          inst.implicit_argument :: arguments,
-          inst :: instances,
-          rhs'
-          (*{ty with desc = Tarrow (Tarr_implicit id', lhs, rhs', comm)}*)
-      | Tarrow (arr, lhs, rhs, comm) ->
-          let arguments, instances, rhs' = extract_implicits rhs in
-          {arg_flag = (tapp_of_tarr arr); arg_expression = None} :: arguments,
-          instances,
-          {ty with desc = Tarrow (arr, lhs, rhs', comm)}
-      | _ -> [], [], ty
-    in
-    let ty = Subst.type_expr Subst.identity ty in
-    let arguments, instances, ty = extract_implicits ty in
-    (* Set of constraints : maintain a table mapping implicit binding
-       identifier to a list of type variable pairs.
-       An implicit instance is correct only iff, in an environment where the
-       ident is bound to the instance, all pairs in the list unify.
-    *)
-    let unlink_ident ident =
-      try
-        let inst = List.find (fun inst -> inst.implicit_id = ident) instances in
-        let add_constraint ty tyvar =
-          inst.implicit_constraints <-
-            (ty, tyvar) :: inst.implicit_constraints
-        in
-        Some add_constraint
-      with Not_found ->
-        None
-    in
-    (* Unlink main types *)
-    let unlink_it = unlink env unlink_ident in
-    let unlink_it = unlink_it.it_type_expr unlink_it in
-    unlink_it ty;
-    (* Unlink with types appearing in with constraints *)
-    List.iter (fun inst ->
-      let _p,_nl,tl = inst.implicit_type in
-      List.iter unlink_it tl
-    ) instances;
-    arguments, instances, ty
-
-let instantiate_implicits_expr env expr =
-  let implicits, expr =
-    match instantiate_implicits_ty expr.exp_loc env expr.exp_type with
-    | [], implicits, _ ->
-        implicits, expr
-    | arguments, implicits, ty ->
-        implicits,
-        { exp_desc = Texp_apply (expr, arguments);
-          exp_type = ty;
-          exp_loc = expr.exp_loc;
-          exp_extra = [];
-          exp_env = env;
-          exp_attributes = []
-        }
-  in
-  pending_implicits := List.rev_append implicits !pending_implicits;
-  expr
-
 
 let pack_implicit_ref
   : (pending_implicit -> Path.t -> Typedtree.expression) ref
@@ -261,6 +183,25 @@ module Link = struct
     in
     to_path inst path
 end
+
+(* Reunify constraints as much as possible.
+   This is used after a failure to prevent type variables introduced during
+   unlinking to leak into error messages *)
+let reunify_constraint inst =
+  prerr_endline "reunify_constraint\n\n\n\n\n";
+  let reunify (ty,tyvar) =
+    try unify inst.implicit_env ty tyvar
+    with _ -> () in
+  List.iter reunify inst.implicit_constraints
+
+let reunify_constraints () =
+  List.iter (List.iter reunify_constraint) !pending_implicits
+
+let add_pending_implicits insts =
+  pending_implicits := insts :: !pending_implicits
+
+let reset_pending_implicits () =
+  pending_implicits := []
 
 (* Forward reference to be initialized by Implicitsearch *)
 let generalize_implicits_ref

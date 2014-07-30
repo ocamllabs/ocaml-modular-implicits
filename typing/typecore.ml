@@ -3352,6 +3352,7 @@ and type_application env funct
     tvar || List.mem l ls
   in
   let ignored = ref [] in
+  let pending_implicits = ref [] in
   (* The main job of typing arguments is done by [type_args], see below.
 
      [type_unknown_args] is called after, receiving all arguments that didn't
@@ -3365,6 +3366,10 @@ and type_application env funct
       (typed : (Types.arrow_flag * (unit -> Typedtree.argument) option) list)
     omitted ty_fun = function
       [] ->
+        (* Add pending implicits now, so that if an error is generated
+           while typechecking the arguments all constraints can be reunified
+           properly (see [Typeimplicit.reunify_constraints]) *)
+        Typeimplicit.add_pending_implicits !pending_implicits;
         (List.map
            (fun (flag,expr) -> flag, may_map ((|>) ()) expr)
            (List.rev typed),
@@ -3373,8 +3378,11 @@ and type_application env funct
         let (ty1, ty2) =
           let ty_fun = expand_head env ty_fun in
           match ty_fun.desc with
-            Tvar _ ->
-              let t1 = newvar () and t2 = newvar () in
+            Tvar name ->
+              let name = match name with
+                | Some "imp#" -> name
+                | _ -> None in
+              let t1 = newvar ?name () and t2 = newvar ?name () in
               let not_identity = function
                   Texp_ident(_,_,{val_kind=Val_prim
                                       {Primitive.prim_name="%identity"}}) ->
@@ -3386,7 +3394,9 @@ and type_application env funct
                     Apply_unexpected_implicit
                       (expand_head env funct.exp_type)));
               let arr1 = tarr_of_tapp app1 in
-              if ty_fun.level >= t1.level && not_identity funct.exp_desc then
+              if ty_fun.level >= t1.level &&
+                 not_identity funct.exp_desc &&
+                 name <> Some "imp#" then
                 Location.prerr_warning sarg1.pexp_loc Warnings.Unused_argument;
               unify env ty_fun (newty (Tarrow(arr1,t1,t2,Clink(ref Cunknown))));
               (t1, t2)
@@ -3532,16 +3542,29 @@ and type_application env funct
         in
         let arg = match arr with
           | Tarr_implicit id ->
-            let inst =
-              Typeimplicit.instantiate_one_implicit loc env id ty [ty_fun;ty_fun0] in
-            let argument = inst.Typeimplicit.implicit_argument in
-            begin match arg with
-            | None -> Some (fun () -> argument)
-            | Some f ->
-              Some (fun () ->
-                argument.arg_expression <- Some (f ());
-                argument)
-            end
+              let inst = Typeimplicit.instantiate_one_implicit
+                           loc env id ty [ty_fun;ty_fun0] in
+              (* Add instance to pending implicits, even if an argument has
+                 been given explicitly.
+                 - implicits whose argument is already set will be ignored
+                   during search
+                 - if a type error was to occur, we need to know all implicits
+                   instances in scope (for [Typeimplicit.reunify_constraints])
+              *)
+              pending_implicits := inst :: !pending_implicits;
+              begin match arg with
+              | None -> Some (fun () -> inst.Typeimplicit.implicit_argument)
+              | Some f ->
+                  let link_implicit () =
+                    let arg = f () in
+                    try
+                      Typeimplicit.Link.to_expr inst arg;
+                      inst.Typeimplicit.implicit_argument
+                    with Unify trace ->
+                      raise(Error(loc, env, Expr_type_clash(trace)))
+                  in
+                  Some link_implicit
+              end
           | _ -> match arg with
             | None -> None
             | Some f ->
@@ -3866,7 +3889,7 @@ and type_let ?(check = fun s -> Warnings.Unused_var s)
         match spat.ppat_desc, sexp.pexp_desc with
           (Ppat_any | Ppat_constraint _), _ -> spat
         | _, Pexp_coerce (_, _, sty)
-        | _, Pexp_constraint (_, sty) when !Clflags.principal ->
+        | _, Pexp_constraint (_, sty) ->
             (* propagate type annotation to pattern,
                to allow it to be generalized in -principal mode *)
             Pat.constraint_
@@ -4303,7 +4326,11 @@ let report_error env ppf = function
       fprintf ppf "No instance found for implicit %s."
         (Ident.name inst.Typeimplicit.implicit_id)
   | Ambiguous_implicit (inst, p1, p2) ->
-      fprintf ppf "Ambiguous implicit %s:@ %a@ and %a@ are both correct solutions."
+      let path =
+        if Path.to_longident p1 = Path.to_longident p2
+        then stamped_path
+        else path in
+      fprintf ppf "Ambiguous implicit %s:@ %a@ and %a@ are both solutions."
         (Ident.name inst.Typeimplicit.implicit_id)
         path p1 path p2
   | Termination_fail inst ->
@@ -4311,7 +4338,9 @@ let report_error env ppf = function
         (Ident.name inst.Typeimplicit.implicit_id)
 
 let report_error env ppf err =
-  wrap_printing_env env (fun () -> report_error env ppf err)
+  wrap_printing_env env (fun () ->
+      Typeimplicit.reunify_constraints ();
+      report_error env ppf err)
 
 let () =
   Location.register_error_of_exn
