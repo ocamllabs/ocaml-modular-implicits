@@ -66,17 +66,22 @@ let rec tree_of_path = function
   | Papply(p1, p2) ->
       Oide_apply (tree_of_path p1, tree_of_path p2)
 
-let rec path ppf = function
+let rec path ident ppf = function
   | Pident id ->
       ident ppf id
   | Pdot(Pident id, s, pos) when Ident.same id ident_pervasive ->
       pp_print_string ppf s
   | Pdot(p, s, pos) ->
-      path ppf p;
+      path ident ppf p;
       pp_print_char ppf '.';
       pp_print_string ppf s
   | Papply(p1, p2) ->
-      fprintf ppf "%a(%a)" path p1 path p2
+      fprintf ppf "%a(%a)" (path ident) p1 (path ident) p2
+
+let stamped_path ppf =
+  path (fun ppf id -> fprintf ppf "%a/%d" ident id id.Ident.stamp) ppf
+
+let path ppf = path ident ppf
 
 let rec string_of_out_ident = function
   | Oide_ident s -> s
