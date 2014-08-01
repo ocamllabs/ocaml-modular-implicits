@@ -72,8 +72,7 @@ module Bounded = struct
 end
 
 module type Enum = sig
-  type t
-  val ( < ) : t -> t -> bool
+  include Ord
   val succ : t -> t
   val pred : t -> t
 end
@@ -85,24 +84,24 @@ module Enum = struct
   let rec fold_enum_to
     : (implicit M : Enum) -> M.t -> M.t -> (M.t -> 'a -> 'a) -> 'a -> 'a
     = fun (implicit M : Enum) a b f acc ->
-    if M.(<) a b then
-      fold_enum_to (M.pred a) b f (f a acc)
+    if M.compare a b < 0 then
+      fold_enum_to (M.succ a) b f (f a acc)
     else
       acc
 
   let rec fold_enum_downto
     : (implicit M : Enum) -> M.t -> M.t -> (M.t -> 'a -> 'a) -> 'a -> 'a
     = fun (implicit M : Enum) a b f acc ->
-    if M.(<) b a then
-      fold_enum_downto (implicit M) (M.pred a) b f (f a acc)
+    if M.compare b a < 0 then
+      fold_enum_downto (M.pred a) b f (f a acc)
     else
       acc
 
-  let list_enum_to (implicit M : Enum) a b =
-    fold_enum_downto b a (fun x acc -> x :: acc) []
+  let list_enum_to (implicit M : Enum) (a : M.t) b =
+    List.rev (fold_enum_to a b (fun x acc -> x :: acc) [])
 
-  let list_enum_downto (implicit M : Enum) a b =
-    fold_enum_to b a (fun x acc -> x :: acc) []
+  let list_enum_downto (implicit M : Enum) (a : M.t) b =
+    List.rev (fold_enum_downto a b (fun x acc -> x :: acc) [])
 end
 
 module type Monoid = sig
