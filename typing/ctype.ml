@@ -3395,8 +3395,9 @@ and eqtype_modulo_equation rename type_pairs subst env lhs rhs =
     in
     begin try
       let same { eq_lhs_path ; eq_lhs_params } =
-        assert (eq_lhs_params = []);
-        eq_lhs_path = path
+        let result = eq_lhs_path = path in
+        if result then assert (eq_lhs_params = []);
+        result
       in
       let ty = List.find same !equations in
       (* An equation already apply to this path *)
