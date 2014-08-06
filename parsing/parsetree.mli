@@ -24,7 +24,7 @@ type apply_flag =
   | Papp_simple             (* f expr *)
   | Papp_labelled of string (* f ~label:expr *)
   | Papp_optional of string (* f ?label:expr *)
-  | Papp_implicit           (* f ~implicit:M *)
+  | Papp_implicit           (* f (implicit M) *)
 
 (** {2 Extension points} *)
 

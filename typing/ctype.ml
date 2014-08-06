@@ -760,6 +760,8 @@ let rec normalize_package_path env p =
   | Some (Mty_signature _ | Mty_functor _ | Mty_alias _) | None -> p
 
 let rec update_level env level ty =
+  (*Format.fprintf Format.err_formatter
+    "update_level of %a from %d to %d\n%!" !printtyp_expr ty ty.level level;*)
   let ty = repr ty in
   if ty.level > level then begin
     begin match Env.gadt_instance_level env ty with
