@@ -188,7 +188,6 @@ end
    This is used after a failure to prevent type variables introduced during
    unlinking to leak into error messages *)
 let reunify_constraint inst =
-  prerr_endline "reunify_constraint\n\n\n\n\n";
   let reunify (ty,tyvar) =
     try unify inst.implicit_env ty tyvar
     with _ -> () in
