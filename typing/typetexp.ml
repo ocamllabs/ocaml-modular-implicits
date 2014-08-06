@@ -424,13 +424,21 @@ let rec transl_type env policy styp =
       | Ttyp_package pkg -> pkg
       | _ -> assert false
     in
+    let ty0 = newvar () in
+    (* remember original level *)
+    Ctype.begin_def ();
+    Ident.set_current_time ty0.level;
     let id, env =
       Env.enter_module ~arg:true ~implicit_:(Implicit 0)
         s package.pack_type env
     in
+    Ctype.begin_def ();
     let cty2 = transl_type env policy st2 in
+    Ctype.end_def ();
     let arr = Tarr_implicit id in
     let ty = newty (Tarrow(arr, cty1.ctyp_type, cty2.ctyp_type, Cok)) in
+    unify env ty ty0;
+    Ctype.end_def ();
     ctyp (Ttyp_arrow (arr, cty1, cty2)) ty
   | Ptyp_arrow(arr, st1, st2) ->
     let cty1 = transl_type env policy st1 in
