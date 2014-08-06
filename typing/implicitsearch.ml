@@ -444,18 +444,38 @@ module Termination : sig
   (* [check env t state] ensures that termination criterion for [t] is
      satisfied in [state] and returns the stronger state.
      Otherwise, [Terminate] is raised *)
-  exception Terminate
-  val check : Env.t -> t -> state -> state
+  type eqns = (string list * (type_expr list * type_expr) list) list
+  exception Terminate of (eqns * eqns)
+  val explain : bool -> Format.formatter -> eqns * eqns -> unit
 
+  val check : Env.t -> t -> state -> state
 end = struct
 
   (* Set of equations used for computing termination criterion.
      The list of equations is sorted by path, and each path is unique. *)
-  type eqns = (string list * type_expr) list
+  type eqns = (string list * (type_expr list * type_expr) list) list
+
+  let rec merge_eqns = function
+    | (path1, args) :: (path2, args') :: tail when path1 = path2 ->
+      merge_eqns ((path1, args' @ args) :: tail)
+    | head :: tail ->
+      head :: merge_eqns tail
+    | [] -> []
 
   let rec wellformed_eqns = function
-    | (path1, _) :: ((path2, _) :: _ as tail) ->
-      (path1 < path2) && wellformed_eqns tail
+    | (path1, args) :: ((path2, _) :: _ as tail) ->
+      (path1 < path2) &&
+      (match args with
+      (* One base-kinded *)
+      | [[], _] -> true
+      (* Or one-or-more higher-kinded, same arity *)
+      | (((_ :: _), _ as first) :: rest) ->
+        let arity (params,_path) = List.length params in
+        let a0 = arity first in
+        assert (List.for_all (fun t -> arity t = a0) rest);
+        true
+      | _ -> false) &&
+      wellformed_eqns tail
     | _ -> true
 
   (* Checking that an individial type is smaller than another one.
@@ -473,25 +493,53 @@ end = struct
     with Type_is_smaller ->
       `Smaller
 
+  let smallers env t1s t2s : [`Smaller | `Equal | `Different] =
+    try
+      let rec aux t2s acc = function
+        | [] -> acc
+        | (params, t1) :: t1s ->
+          let (params', t2), t2s = list_extract
+              (fun (params', t2) -> equal env true params params')
+              t2s in
+          match smaller env t1 t2 with
+          | `Different -> raise Not_found
+          | `Equal -> aux t2s acc t1s
+          | `Smaller -> aux t2s `Smaller t1s
+      in
+      aux t2s `Equal t1s
+    with Not_found ->
+      `Different
+
   (* Check that a set of equations is stronger than another one.
      [stronger env neqns oeqns] returns true iff
      - all equations from oeqns must be smaller or equal in neqns, AND
      - one equation must be strictly smaller or neqns must contain more
        equations. *)
   let rec stronger env acc (neqns : eqns) (oeqns : eqns) =
+    let is_base_kinded = function
+      | _, [[], _] -> true
+      | _, _ -> false in
     match neqns, oeqns with
       (* Equation on same path, check inclusion of type *)
-    | (n, nt) :: neqns, (o, ot) :: oeqns when n = o ->
+      (* Base-kinded *)
+    | (n, [[], nt]) :: neqns, (o, [[], ot]) :: oeqns when n = o ->
         begin match smaller env nt ot with
+        | `Equal -> stronger env acc neqns oeqns
+        | `Smaller -> stronger env true neqns oeqns
+        | `Different -> false
+        end
+      (* Higher-kinded *)
+    | (n, nt) :: neqns, (o, ot) :: oeqns when n = o ->
+        begin match smallers env nt ot with
         | `Equal -> stronger env acc neqns oeqns
         | `Smaller -> stronger env true neqns oeqns
         | `Different -> false
         end
       (* Same number of equations, at least one must have been stronger *)
     | [], [] -> acc
-      (* More equations, always stronger *)
-    | _, [] -> true
-    | (n, _) :: neqns, (o, _) :: _ when n < o ->
+      (* More equations, stronger if base-kinded *)
+    | _, [] -> List.exists is_base_kinded neqns
+    | (n, _ as neqn) :: neqns, (o, _) :: _ when n < o && is_base_kinded neqn ->
       stronger env true neqns oeqns
       (* Less equations, always weaker *)
     | [], _ -> false
@@ -527,12 +575,8 @@ end = struct
          try
            let id, path = Path.flatten eqn.eq_lhs_path in
            let _uid, eqns = Ident.find_same id table in
-           if eqn.eq_lhs_params = [] then
-             let path = List.map fst path in
-             eqns := (path, eqn.eq_rhs) :: !eqns
-           else
-             (*TODO, handle higher-kinded equations in termination*)
-             ()
+           let path = List.map fst path in
+           eqns := (path, [eqn.eq_lhs_params, eqn.eq_rhs]) :: !eqns
          with Not_found -> assert false)
       eqns;
     List.map
@@ -540,17 +584,43 @@ end = struct
          try
            let uid, eqns = Ident.find_same target.target_id table in
            let eqns = List.sort (fun (a,_) (b,_) -> compare a b) !eqns in
+           let eqns = merge_eqns eqns in
            assert (wellformed_eqns eqns);
            (uid, eqns)
          with Not_found -> assert false)
       targets
 
-  exception Terminate
+  let explain success ppf (eqns,eqns') =
+    let print_ppath ppf (path,params) = match params with
+      | [] -> Format.pp_print_string ppf path
+      | [p] -> Format.fprintf ppf "%a %s" Printtyp.type_expr p path
+      | (p::ps) -> Format.fprintf ppf "(%a%a) %s"
+                     Printtyp.type_expr p
+                     (fun ppf -> List.iter (fun ty ->
+                         Format.fprintf ppf ", %a" Printtyp.type_expr ty))
+                     ps
+                     path in
+    let print_eqn ppf path (params,ty) =
+      Format.fprintf ppf "\t%a = %a\n"
+        print_ppath (path,params)
+        Printtyp.type_expr ty in
+    let print_eqns_at_path ppf (path,eqns) =
+      let path = String.concat "." path in
+      List.iter (print_eqn ppf path) eqns in
+    let print_eqns ppf peqns = List.iter (print_eqns_at_path ppf) peqns in
+    Format.fprintf ppf "Equation set [\n%a] is %sstronger than [\n%a]\n%!"
+      print_eqns eqns
+      (if success then "" else "not ")
+      print_eqns eqns'
+
+  exception Terminate of (eqns * eqns)
   let check env (uid, eqns) stack =
     begin try
       let eqns' = Ident.find_same uid stack in
-      if not (stronger env eqns eqns') then raise Terminate;
-    with Not_found -> ()
+      if not (stronger env eqns eqns') then raise (Terminate (eqns, eqns'));
+      explain true printf_output (eqns,eqns')
+    with Not_found ->
+      explain true printf_output (eqns,[])
     end;
     Ident.add uid eqns stack
 
@@ -739,15 +809,33 @@ end = struct
         ());
 
     let eqns = !new_eqns in
+    printf "new equations\n";
+    List.iter (fun {eq_lhs; eq_rhs} ->
+      printf "\t%a = %a\n%!"
+        Printtyp.type_expr eq_lhs
+        Printtyp.type_expr eq_rhs)
+      eqns;
+    (* Pass the env will all arguments bound to next state: constraints
+       might be referring to other modules in any order, e.g in
+       functor F (X : T) (Y : S) = ...
+
+       we might have type t = Y.t X.t as a constraint on X *)
+    let state_env = env in
+    let state_eq_table = eq_table in
     (* Constraints target types *)
-    let sub_targets = Constraints.targets state.env sub_targets eqns in
+    let sub_targets = Constraints.targets state_env sub_targets eqns in
     (* Add termination criteria *)
     let sub_criteria = Termination.normalize_equations sub_targets eqns in
 
     let sub_targets = List.combine sub_targets sub_criteria in
 
     (* Keep new equations potentially added to top variables *)
-    let state = {state with eq_initial = !(state.eq_var); debug_path = Some path} in
+    let debug_path = match state.debug_path with
+      | None -> Some path
+      | Some path' -> Some (papply path' path)
+    in
+    let state = {state with eq_initial = !(state.eq_var); debug_path;
+                  env = state_env; eq_table = state_eq_table} in
     match sub_targets with
     | [] ->
       `Done {state with payload = path}
@@ -763,7 +851,9 @@ end = struct
       try
         step0 state candidate, candidates
       with
-      | Termination.Terminate as exn -> raise exn
+      | Termination.Terminate eqns as exn ->
+        printf "%a\n%!" (Termination.explain false) eqns;
+        raise exn
       | exn ->
         report_error exn;
         step state candidates
@@ -885,7 +975,8 @@ let find_pending_instance inst =
       let p2 = Solution.get alternative in
       raise Typecore.(Error (loc, env, Ambiguous_implicit (inst,p1,p2)))
   with
-  | Termination.Terminate ->
+  | Termination.Terminate eqns ->
+      printf "%a\n%!" (Termination.explain false) eqns;
       raise Typecore.(Error (loc, env, Termination_fail inst))
   | Not_found ->
       false
