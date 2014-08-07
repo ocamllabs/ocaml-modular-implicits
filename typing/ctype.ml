@@ -3253,8 +3253,8 @@ type equality_equation = {
 }
 
 let equality_equations
-  : equality_equation list ref Ident.tbl ref
-  = ref Ident.empty
+  : (Ident.t, equality_equation list ref) Tbl.t ref
+  = ref Tbl.empty
 
 let with_equality_equations tbl f =
   let equality_equations' = !equality_equations in
@@ -3364,19 +3364,19 @@ let rec eqtype rename type_pairs subst env t1 t2 =
               unify_univar t1' t2' !univar_pairs
 
           | Tconstr (p1, _, _), Tconstr (p2, _, _)
-            when Ident.mem (Path.head p1) !equality_equations
-              && Ident.mem (Path.head p2) !equality_equations ->
+            when Tbl.mem (Path.head p1) !equality_equations
+              && Tbl.mem (Path.head p2) !equality_equations ->
               if p1 < p2 then
                 eqtype_modulo_equation rename type_pairs subst env t1' t2'
               else
                 eqtype_modulo_equation rename type_pairs subst env t1' t2'
 
           | Tconstr (p, _, _), te
-            when Ident.mem (Path.head p) !equality_equations ->
+            when Tbl.mem (Path.head p) !equality_equations ->
               eqtype_modulo_equation rename type_pairs subst env t1' t2'
 
           | te, Tconstr (p, _, _)
-            when Ident.mem (Path.head p) !equality_equations ->
+            when Tbl.mem (Path.head p) !equality_equations ->
               eqtype_modulo_equation rename type_pairs subst env t2' t1'
 
           | (_, _) ->
@@ -3390,7 +3390,7 @@ and eqtype_modulo_equation rename type_pairs subst env lhs rhs =
   (* Ground types *)
   | Tconstr (path, [], _) ->
     let equations =
-      try Ident.find_same (Path.head path) !equality_equations
+      try Tbl.find (Path.head path) !equality_equations
       with Not_found -> assert false
     in
     begin try
@@ -3415,7 +3415,7 @@ and eqtype_modulo_equation rename type_pairs subst env lhs rhs =
   (* Parametric types *)
   | Tconstr (path, params, _) ->
     let equations =
-      try Ident.find_same (Path.head path) !equality_equations
+      try Tbl.find (Path.head path) !equality_equations
       with Not_found -> assert false
     in
     let equation = {
