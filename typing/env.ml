@@ -672,7 +672,7 @@ let rec implicit_cannot_occur path env =
     with Not_found -> false
     end
   | Pdot (p, s, _) -> implicit_cannot_occur p env
-  | Papply _ -> raise Not_found
+  | Papply _ -> false (*raise Not_found*)
 
 let implicit_instances env = env.implicit_instances
 

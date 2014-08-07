@@ -212,7 +212,7 @@ type equality_equation = {
   eq_rhs : type_expr;
 }
 
-val with_equality_equations: equality_equation list ref Ident.tbl -> (unit -> 'a) -> 'a
+val with_equality_equations: (Ident.t, equality_equation list ref) Tbl.t -> (unit -> 'a) -> 'a
 
 val equal: Env.t -> bool -> type_expr list -> type_expr list -> bool
         (* [equal env [x1...xn] tau [y1...yn] sigma]
