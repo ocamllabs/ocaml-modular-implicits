@@ -1975,18 +1975,22 @@ and type_expect_ ?in_function env sexp ty_expected =
       end_def ();
       generalize_structure funct.exp_type
     end;
-    let rec lower_args seen ty_fun =
+    let rec lower_args env seen ty_fun =
       let ty = expand_head env ty_fun in
       if List.memq ty seen then () else
+        let env = match ty.desc with
+          | Tarrow (Tarr_implicit id, _, _, _) ->
+            Env.set_implicit_level id 0 env
+          | _ -> env in
         match ty.desc with
-          Tarrow (l, ty_arg, ty_fun, com) ->
+        | Tarrow (l, ty_arg, ty_fun, com) ->
           (try unify_var env (newvar()) ty_arg with Unify _ -> assert false);
-          lower_args (ty::seen) ty_fun
+          lower_args env (ty::seen) ty_fun
         | _ -> ()
     in
     let ty = instance env funct.exp_type in
     end_def ();
-    wrap_trace_gadt_instances env (lower_args []) ty;
+    wrap_trace_gadt_instances env (lower_args env []) ty;
     begin_def ();
     let (args, ty_res) = type_application env funct sargs in
     let args = List.map
