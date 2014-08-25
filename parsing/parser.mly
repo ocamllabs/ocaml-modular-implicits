@@ -812,7 +812,7 @@ signature_item:
 ;
 open_statement:
   | OPEN open_flag mod_longident post_item_attributes
-      { Opn.mk (mkrhs $3 3) ~override:$2 ~attrs:$4 ~loc:(symbol_rloc()) }
+      { Opn.mk (mkrhs $3 3) ~flag:$2 ~attrs:$4 ~loc:(symbol_rloc()) }
 ;
 module_declaration:
     COLON module_type

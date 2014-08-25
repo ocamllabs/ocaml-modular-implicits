@@ -1477,6 +1477,30 @@ and is_nonexpansive_opt = function
     None -> true
   | Some e -> is_nonexpansive e
 
+(* Helpers for packaged modules. *)
+let create_package_type loc env (p, l) =
+  let s = !Typetexp.transl_modtype_longident loc env p in
+  let fields = List.map (fun (name, ct) ->
+                           name, Typetexp.transl_simple_type env false ct) l in
+  let ty = newty (Tpackage (s,
+                    List.map fst l,
+                   List.map (fun (_, cty) -> cty.ctyp_type) fields))
+  in
+   (s, fields, ty)
+
+let wrap_unpacks sexp unpacks =
+  let open Ast_helper in
+  List.fold_left
+    (fun sexp (name, loc) ->
+      Exp.letmodule ~loc:sexp.pexp_loc
+        (Mb.mk ~loc name
+           (Mod.unpack ~loc
+              (Exp.ident ~loc:name.loc
+                 (mkloc (Longident.Lident name.txt) name.loc))))
+        sexp
+    )
+   sexp unpacks
+
 (* Approximate the type of an expression, for better recursion *)
 
 let rec approx_type env sty =
@@ -2034,15 +2058,15 @@ and type_expect_ ?in_function env sexp ty_expected =
         exp_attributes = sexp.pexp_attributes;
         exp_env = env }
   | Pexp_try(sbody, caselist) ->
-    let body = type_expect env sbody ty_expected in
-    let cases, _ =
-      type_cases env Predef.type_exn ty_expected false loc caselist in
-    re {
-      exp_desc = Texp_try(body, cases);
-      exp_loc = loc; exp_extra = [];
-      exp_type = body.exp_type;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
+      let body = type_expect env sbody ty_expected in
+      let cases, _ =
+        type_cases env Predef.type_exn ty_expected false loc caselist in
+      re {
+        exp_desc = Texp_try(body, cases);
+        exp_loc = loc; exp_extra = [];
+        exp_type = body.exp_type;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env }
   | Pexp_tuple sexpl ->
       if List.length sexpl < 2 then
         Syntaxerr.ill_formed_ast loc "Tuples must have at least 2 components.";
@@ -2060,24 +2084,40 @@ and type_expect_ ?in_function env sexp ty_expected =
         exp_attributes = sexp.pexp_attributes;
         exp_env = env }
   | Pexp_construct(lid, sarg) ->
-    type_construct env loc lid sarg ty_expected sexp.pexp_attributes
+      type_construct env loc lid sarg ty_expected sexp.pexp_attributes
   | Pexp_variant(l, sarg) ->
-    (* Keep sharing *)
-    let ty_expected0 = instance env ty_expected in
-    begin try match
-      sarg, expand_head env ty_expected, expand_head env ty_expected0 with
-    | Some sarg, {desc = Tvariant row}, {desc = Tvariant row0} ->
-      let row = row_repr row in
-      begin match row_field_repr (List.assoc l row.row_fields),
-        row_field_repr (List.assoc l row0.row_fields) with
-        Rpresent (Some ty), Rpresent (Some ty0) ->
-        let arg = type_argument env sarg ty ty0 in
-        re { exp_desc = Texp_variant(l, Some arg);
-             exp_loc = loc; exp_extra = [];
-             exp_type = ty_expected0;
-             exp_attributes = sexp.pexp_attributes;
-             exp_env = env }
+      (* Keep sharing *)
+      let ty_expected0 = instance env ty_expected in
+      begin try match
+        sarg, expand_head env ty_expected, expand_head env ty_expected0 with
+      | Some sarg, {desc = Tvariant row}, {desc = Tvariant row0} ->
+          let row = row_repr row in
+          begin match row_field_repr (List.assoc l row.row_fields),
+          row_field_repr (List.assoc l row0.row_fields) with
+            Rpresent (Some ty), Rpresent (Some ty0) ->
+              let arg = type_argument env sarg ty ty0 in
+              re { exp_desc = Texp_variant(l, Some arg);
+                   exp_loc = loc; exp_extra = [];
+                   exp_type = ty_expected0;
+                   exp_attributes = sexp.pexp_attributes;
+                   exp_env = env }
+          | _ -> raise Not_found
+          end
       | _ -> raise Not_found
+      with Not_found ->
+        let arg = may_map (type_exp env) sarg in
+        let arg_type = may_map (fun arg -> arg.exp_type) arg in
+        rue {
+          exp_desc = Texp_variant(l, arg);
+          exp_loc = loc; exp_extra = [];
+          exp_type= newty (Tvariant{row_fields = [l, Rpresent arg_type];
+                                    row_more = newvar ();
+                                    row_bound = ();
+                                    row_closed = false;
+                                    row_fixed = false;
+                                    row_name = None});
+          exp_attributes = sexp.pexp_attributes;
+          exp_env = env }
       end
   | Pexp_record(lid_sexp_list, opt_sexp) ->
       if lid_sexp_list = [] then
@@ -2191,686 +2231,560 @@ and type_expect_ ?in_function env sexp ty_expected =
       let (_, ty_arg, ty_res) = instance_label false label in
       unify_exp env record ty_res;
       rue {
-        exp_desc = Texp_variant(l, arg);
+        exp_desc = Texp_field(record, lid, label);
         exp_loc = loc; exp_extra = [];
-        exp_type= newty (Tvariant{row_fields = [l, Rpresent arg_type];
-                                  row_more = newvar ();
-                                  row_bound = ();
-                                  row_closed = false;
-                                  row_fixed = false;
-                                  row_name = None});
+        exp_type = ty_arg;
         exp_attributes = sexp.pexp_attributes;
         exp_env = env }
-    end
-  | Pexp_record(lid_sexp_list, opt_sexp) ->
-    let opt_exp =
-      match opt_sexp with
-        None -> None
-      | Some sexp ->
-        if !Clflags.principal then begin_def ();
-        let exp = type_exp env sexp in
-        if !Clflags.principal then begin
-          end_def ();
-          generalize_structure exp.exp_type
-        end;
-        Some exp
-    in
-    let ty_record, opath =
-      let get_path ty =
-        try
-          let (p0, p,_) = extract_concrete_record env ty in
-          (* XXX level may be wrong *)
-          Some (p0, p, ty.level = generic_level || not !Clflags.principal)
-        with Not_found -> None
-      in
-      match get_path ty_expected with
-        None ->
-        begin match opt_exp with
-          None -> newvar (), None
-        | Some exp ->
-          match get_path exp.exp_type with
-            None -> newvar (), None
-          | Some (_, p', _) as op ->
-            let decl = Env.find_type p' env in
-            begin_def ();
-            let ty =
-              newconstr p' (instance_list env decl.type_params) in
-            end_def ();
-            generalize_structure ty;
-            ty, op
-        end
-      | op -> ty_expected, op
-    in
-    let closed = (opt_sexp = None) in
-    let lbl_exp_list =
-      wrap_disambiguate "This record expression is expected to have" ty_record
-        (type_label_a_list loc closed env
-           (type_label_exp true env loc ty_record)
-           opath)
-        lid_sexp_list
-    in
-    unify_exp_types loc env ty_record (instance env ty_expected);
-
-    (* type_label_a_list returns a list of labels sorted by lbl_pos *)
-    (* note: check_duplicates would better be implemented in
-       type_label_a_list directly *)
-    let rec check_duplicates = function
-      | (_, lbl1, _) :: (_, lbl2, _) :: _ when lbl1.lbl_pos = lbl2.lbl_pos ->
-        raise(Error(loc, env, Label_multiply_defined lbl1.lbl_name))
-      | _ :: rem ->
-        check_duplicates rem
-      | [] -> ()
-    in
-    check_duplicates lbl_exp_list;
-    let opt_exp =
-      match opt_exp, lbl_exp_list with
-        None, _ -> None
-      | Some exp, (lid, lbl, lbl_exp) :: _ ->
-        let ty_exp = instance env exp.exp_type in
-        let unify_kept lbl =
-          (* do not connect overridden labels *)
-          if List.for_all
-              (fun (_, lbl',_) -> lbl'.lbl_pos <> lbl.lbl_pos)
-              lbl_exp_list
-          then begin
-            let _, ty_arg1, ty_res1 = instance_label false lbl
-            and _, ty_arg2, ty_res2 = instance_label false lbl in
-            unify env ty_arg1 ty_arg2;
-            unify env (instance env ty_expected) ty_res2;
-            unify_exp_types exp.exp_loc env ty_exp ty_res1;
-          end in
-        Array.iter unify_kept lbl.lbl_all;
-        Some {exp with exp_type = ty_exp}
-      | _ -> assert false
-    in
-    let num_fields =
-      match lbl_exp_list with [] -> assert false
-                            | (_, lbl,_)::_ -> Array.length lbl.lbl_all in
-    if opt_sexp = None && List.length lid_sexp_list <> num_fields then begin
-      let present_indices =
-        List.map (fun (_, lbl, _) -> lbl.lbl_pos) lbl_exp_list in
-      let label_names = extract_label_names sexp env ty_expected in
-      let rec missing_labels n = function
-          [] -> []
-        | lbl :: rem ->
-          if List.mem n present_indices then missing_labels (n + 1) rem
-          else lbl :: missing_labels (n + 1) rem
-      in
-      let missing = missing_labels 0 label_names in
-      raise(Error(loc, env, Label_missing missing))
-    end
-    else if opt_sexp <> None && List.length lid_sexp_list = num_fields then
-      Location.prerr_warning loc Warnings.Useless_record_with;
-    re {
-      exp_desc = Texp_record(lbl_exp_list, opt_exp);
-      exp_loc = loc; exp_extra = [];
-      exp_type = instance env ty_expected;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
-  | Pexp_field(srecord, lid) ->
-    let (record, label, _) = type_label_access env loc srecord lid in
-    let (_, ty_arg, ty_res) = instance_label false label in
-    unify_exp env record ty_res;
-    rue {
-      exp_desc = Texp_field(record, lid, label);
-      exp_loc = loc; exp_extra = [];
-      exp_type = ty_arg;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
   | Pexp_setfield(srecord, lid, snewval) ->
-    let (record, label, opath) = type_label_access env loc srecord lid in
-    let ty_record = if opath = None then newvar () else record.exp_type in
-    let (label_loc, label, newval) =
-      type_label_exp false env loc ty_record (lid, label, snewval) in
-    unify_exp env record ty_record;
-    if label.lbl_mut = Immutable then
-      raise(Error(loc, env, Label_not_mutable lid.txt));
-    rue {
-      exp_desc = Texp_setfield(record, label_loc, label, newval);
-      exp_loc = loc; exp_extra = [];
-      exp_type = instance_def Predef.type_unit;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
-  | Pexp_array(sargl) ->
-    let ty = newgenvar() in
-    let to_unify = Predef.type_array ty in
-    unify_exp_types loc env to_unify ty_expected;
-    let argl = List.map (fun sarg -> type_expect env sarg ty) sargl in
-    re {
-      exp_desc = Texp_array argl;
-      exp_loc = loc; exp_extra = [];
-      exp_type = instance env ty_expected;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
-  | Pexp_ifthenelse(scond, sifso, sifnot) ->
-    let cond = type_expect env scond Predef.type_bool in
-    begin match sifnot with
-      None ->
-      let ifso = type_expect env sifso Predef.type_unit in
+      let (record, label, opath) = type_label_access env loc srecord lid in
+      let ty_record = if opath = None then newvar () else record.exp_type in
+      let (label_loc, label, newval) =
+        type_label_exp false env loc ty_record (lid, label, snewval) in
+      unify_exp env record ty_record;
+      if label.lbl_mut = Immutable then
+        raise(Error(loc, env, Label_not_mutable lid.txt));
       rue {
-        exp_desc = Texp_ifthenelse(cond, ifso, None);
+        exp_desc = Texp_setfield(record, label_loc, label, newval);
         exp_loc = loc; exp_extra = [];
-        exp_type = ifso.exp_type;
+        exp_type = instance_def Predef.type_unit;
         exp_attributes = sexp.pexp_attributes;
         exp_env = env }
-    | Some sifnot ->
-      let ifso = type_expect env sifso ty_expected in
-      let ifnot = type_expect env sifnot ty_expected in
-      (* Keep sharing *)
-      unify_exp env ifnot ifso.exp_type;
+  | Pexp_array(sargl) ->
+      let ty = newgenvar() in
+      let to_unify = Predef.type_array ty in
+      unify_exp_types loc env to_unify ty_expected;
+      let argl = List.map (fun sarg -> type_expect env sarg ty) sargl in
       re {
-        exp_desc = Texp_ifthenelse(cond, ifso, Some ifnot);
+        exp_desc = Texp_array argl;
         exp_loc = loc; exp_extra = [];
-        exp_type = ifso.exp_type;
+        exp_type = instance env ty_expected;
         exp_attributes = sexp.pexp_attributes;
         exp_env = env }
-    end
+  | Pexp_ifthenelse(scond, sifso, sifnot) ->
+      let cond = type_expect env scond Predef.type_bool in
+      begin match sifnot with
+        None ->
+          let ifso = type_expect env sifso Predef.type_unit in
+          rue {
+            exp_desc = Texp_ifthenelse(cond, ifso, None);
+            exp_loc = loc; exp_extra = [];
+            exp_type = ifso.exp_type;
+            exp_attributes = sexp.pexp_attributes;
+            exp_env = env }
+      | Some sifnot ->
+          let ifso = type_expect env sifso ty_expected in
+          let ifnot = type_expect env sifnot ty_expected in
+          (* Keep sharing *)
+          unify_exp env ifnot ifso.exp_type;
+          re {
+            exp_desc = Texp_ifthenelse(cond, ifso, Some ifnot);
+            exp_loc = loc; exp_extra = [];
+            exp_type = ifso.exp_type;
+            exp_attributes = sexp.pexp_attributes;
+            exp_env = env }
+      end
   | Pexp_sequence(sexp1, sexp2) ->
-    let exp1 = type_statement env sexp1 in
-    let exp2 = type_expect env sexp2 ty_expected in
-    re {
-      exp_desc = Texp_sequence(exp1, exp2);
-      exp_loc = loc; exp_extra = [];
-      exp_type = exp2.exp_type;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
+      let exp1 = type_statement env sexp1 in
+      let exp2 = type_expect env sexp2 ty_expected in
+      re {
+        exp_desc = Texp_sequence(exp1, exp2);
+        exp_loc = loc; exp_extra = [];
+        exp_type = exp2.exp_type;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env }
   | Pexp_while(scond, sbody) ->
-    let cond = type_expect env scond Predef.type_bool in
-    let body = type_statement env sbody in
-    rue {
-      exp_desc = Texp_while(cond, body);
-      exp_loc = loc; exp_extra = [];
-      exp_type = instance_def Predef.type_unit;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
+      let cond = type_expect env scond Predef.type_bool in
+      let body = type_statement env sbody in
+      rue {
+        exp_desc = Texp_while(cond, body);
+        exp_loc = loc; exp_extra = [];
+        exp_type = instance_def Predef.type_unit;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env }
   | Pexp_for(param, slow, shigh, dir, sbody) ->
-    let low = type_expect env slow Predef.type_int in
-    let high = type_expect env shigh Predef.type_int in
-    let id, new_env =
-      match param.ppat_desc with
-      | Ppat_any -> Ident.create "_for", env
-      | Ppat_var {txt} ->
-        Env.enter_value txt {val_type = instance_def Predef.type_int;
-                             val_attributes = [];
-                             val_kind = Val_reg; Types.val_loc = loc; } env
-          ~check:(fun s -> Warnings.Unused_for_index s)
-      | _ ->
-        raise (Error (param.ppat_loc, env, Invalid_for_loop_index))
-    in
-    let body = type_statement new_env sbody in
-    rue {
-      exp_desc = Texp_for(id, param, low, high, dir, body);
-      exp_loc = loc; exp_extra = [];
-      exp_type = instance_def Predef.type_unit;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
-  | Pexp_constraint (sarg, sty) ->
-    let separate = true in (* always separate, 1% slowdown for lablgtk *)
-    if separate then begin_def ();
-    let cty = Typetexp.transl_simple_type env false sty in
-    let ty = cty.ctyp_type in
-    let (arg, ty') =
-      if separate then begin
-        end_def ();
-        generalize_structure ty;
-        (type_argument env sarg ty (instance env ty), instance env ty)
-      end else
-        (type_argument env sarg ty ty, ty)
-    in
-    rue {
-      exp_desc = arg.exp_desc;
-      exp_loc = arg.exp_loc;
-      exp_type = ty';
-      exp_attributes = arg.exp_attributes;
-      exp_env = env;
-      exp_extra =
-        (Texp_constraint cty, loc, sexp.pexp_attributes) :: arg.exp_extra;
-    }
-  | Pexp_coerce(sarg, sty, sty') ->
-    let separate = true (* always separate, 1% slowdown for lablgtk *)
-    (* !Clflags.principal || Env.has_local_constraints env *) in
-    let (arg, ty',cty,cty') =
-      match sty with
-      | None ->
-        let (cty', force) =
-          Typetexp.transl_simple_type_delayed env sty'
-        in
-        let ty' = cty'.ctyp_type in
-        if separate then begin_def ();
-        let arg = type_exp env sarg in
-        let gen =
-          if separate then begin
-            end_def ();
-            let tv = newvar () in
-            let gen = generalizable tv.level arg.exp_type in
-            unify_var env tv arg.exp_type;
-            gen
-          end else true
-        in
-        begin match arg.exp_desc, !self_coercion, (repr ty').desc with
-          Texp_ident(_, _, {val_kind=Val_self _}), (path,r) :: _,
-          Tconstr(path',_,_) when Path.same path path' ->
-          (* prerr_endline "self coercion"; *)
-          r := loc :: !r;
-          force ()
-        | _ when free_variables ~env arg.exp_type = []
-                 && free_variables ~env ty' = [] ->
-          if not gen && (* first try a single coercion *)
-             let snap = snapshot () in
-             let ty, b = enlarge_type env ty' in
-             try
-               force (); Ctype.unify env arg.exp_type ty; true
-             with Unify _ ->
-               backtrack snap; false
-          then ()
-          else begin try
-            let force' = subtype env arg.exp_type ty' in
-            force (); force' ();
-            if not gen then
-              Location.prerr_warning loc
-                (Warnings.Not_principal "this ground coercion");
-          with Subtype (tr1, tr2) ->
-            (* prerr_endline "coercion failed"; *)
-            raise(Error(loc, env, Not_subtype(tr1, tr2)))
-          end;
+      let low = type_expect env slow Predef.type_int in
+      let high = type_expect env shigh Predef.type_int in
+      let id, new_env =
+        match param.ppat_desc with
+        | Ppat_any -> Ident.create "_for", env
+        | Ppat_var {txt} ->
+            Env.enter_value txt {val_type = instance_def Predef.type_int;
+                                 val_attributes = [];
+                                 val_kind = Val_reg; Types.val_loc = loc; } env
+              ~check:(fun s -> Warnings.Unused_for_index s)
         | _ ->
-          let ty, b = enlarge_type env ty' in
-          force ();
-          begin try Ctype.unify env arg.exp_type ty with Unify trace ->
-            raise(Error(sarg.pexp_loc, env,
-                  Coercion_failure(ty', full_expand env ty', trace, b)))
-          end
-        end;
-        (arg, ty', None, cty')
-      | Some sty ->
-        if separate then begin_def ();
-        let (cty, force) =
-          Typetexp.transl_simple_type_delayed env sty
-        and (cty', force') =
-          Typetexp.transl_simple_type_delayed env sty'
-        in
-        let ty = cty.ctyp_type in
-        let ty' = cty'.ctyp_type in
-        begin try
-          let force'' = subtype env ty ty' in
-          force (); force' (); force'' ()
-        with Subtype (tr1, tr2) ->
-          raise(Error(loc, env, Not_subtype(tr1, tr2)))
-        end;
+            raise (Error (param.ppat_loc, env, Invalid_for_loop_index))
+      in
+      let body = type_statement new_env sbody in
+      rue {
+        exp_desc = Texp_for(id, param, low, high, dir, body);
+        exp_loc = loc; exp_extra = [];
+        exp_type = instance_def Predef.type_unit;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env }
+  | Pexp_constraint (sarg, sty) ->
+      let separate = true in (* always separate, 1% slowdown for lablgtk *)
+      if separate then begin_def ();
+      let cty = Typetexp.transl_simple_type env false sty in
+      let ty = cty.ctyp_type in
+      let (arg, ty') =
         if separate then begin
           end_def ();
           generalize_structure ty;
-          generalize_structure ty';
-          (type_argument env sarg ty (instance env ty),
-           instance env ty', Some cty, cty')
+          (type_argument env sarg ty (instance env ty), instance env ty)
         end else
-          (type_argument env sarg ty ty, ty', Some cty, cty')
-    in
-    rue {
-      exp_desc = arg.exp_desc;
-      exp_loc = arg.exp_loc;
-      exp_type = ty';
-      exp_attributes = arg.exp_attributes;
-      exp_env = env;
-      exp_extra = (Texp_coerce (cty, cty'), loc, sexp.pexp_attributes) ::
-          arg.exp_extra;
-    }
+          (type_argument env sarg ty ty, ty)
+      in
+      rue {
+        exp_desc = arg.exp_desc;
+        exp_loc = arg.exp_loc;
+        exp_type = ty';
+        exp_attributes = arg.exp_attributes;
+        exp_env = env;
+        exp_extra =
+          (Texp_constraint cty, loc, sexp.pexp_attributes) :: arg.exp_extra;
+      }
+  | Pexp_coerce(sarg, sty, sty') ->
+      let separate = true (* always separate, 1% slowdown for lablgtk *)
+        (* !Clflags.principal || Env.has_local_constraints env *) in
+      let (arg, ty',cty,cty') =
+        match sty with
+        | None ->
+            let (cty', force) =
+              Typetexp.transl_simple_type_delayed env sty'
+            in
+            let ty' = cty'.ctyp_type in
+            if separate then begin_def ();
+            let arg = type_exp env sarg in
+            let gen =
+              if separate then begin
+                end_def ();
+                let tv = newvar () in
+                let gen = generalizable tv.level arg.exp_type in
+                unify_var env tv arg.exp_type;
+                gen
+              end else true
+            in
+            begin match arg.exp_desc, !self_coercion, (repr ty').desc with
+              Texp_ident(_, _, {val_kind=Val_self _}), (path,r) :: _,
+              Tconstr(path',_,_) when Path.same path path' ->
+                (* prerr_endline "self coercion"; *)
+                r := loc :: !r;
+                force ()
+            | _ when free_variables ~env arg.exp_type = []
+                  && free_variables ~env ty' = [] ->
+                if not gen && (* first try a single coercion *)
+                  let snap = snapshot () in
+                  let ty, b = enlarge_type env ty' in
+                  try
+                    force (); Ctype.unify env arg.exp_type ty; true
+                  with Unify _ ->
+                    backtrack snap; false
+                then ()
+                else begin try
+                  let force' = subtype env arg.exp_type ty' in
+                  force (); force' ();
+                  if not gen then
+                    Location.prerr_warning loc
+                      (Warnings.Not_principal "this ground coercion");
+                with Subtype (tr1, tr2) ->
+                  (* prerr_endline "coercion failed"; *)
+                  raise(Error(loc, env, Not_subtype(tr1, tr2)))
+                end;
+            | _ ->
+                let ty, b = enlarge_type env ty' in
+                force ();
+                begin try Ctype.unify env arg.exp_type ty with Unify trace ->
+                  raise(Error(sarg.pexp_loc, env,
+                        Coercion_failure(ty', full_expand env ty', trace, b)))
+                end
+            end;
+            (arg, ty', None, cty')
+        | Some sty ->
+            if separate then begin_def ();
+            let (cty, force) =
+              Typetexp.transl_simple_type_delayed env sty
+            and (cty', force') =
+              Typetexp.transl_simple_type_delayed env sty'
+            in
+            let ty = cty.ctyp_type in
+            let ty' = cty'.ctyp_type in
+            begin try
+              let force'' = subtype env ty ty' in
+              force (); force' (); force'' ()
+            with Subtype (tr1, tr2) ->
+              raise(Error(loc, env, Not_subtype(tr1, tr2)))
+            end;
+            if separate then begin
+              end_def ();
+              generalize_structure ty;
+              generalize_structure ty';
+              (type_argument env sarg ty (instance env ty),
+               instance env ty', Some cty, cty')
+            end else
+              (type_argument env sarg ty ty, ty', Some cty, cty')
+      in
+      rue {
+        exp_desc = arg.exp_desc;
+        exp_loc = arg.exp_loc;
+        exp_type = ty';
+        exp_attributes = arg.exp_attributes;
+        exp_env = env;
+        exp_extra = (Texp_coerce (cty, cty'), loc, sexp.pexp_attributes) ::
+                       arg.exp_extra;
+      }
   | Pexp_send (e, met) ->
-    if !Clflags.principal then begin_def ();
-    let obj = type_exp env e in
-    begin try
-      let (meth, exp, typ) =
-        match obj.exp_desc with
-          Texp_ident(path, _, {val_kind = Val_self (meths, _, _, privty)}) ->
-          let (id, typ) =
-            filter_self_method env met Private meths privty
-          in
-          if is_Tvar (repr typ) then
-            Location.prerr_warning loc
-              (Warnings.Undeclared_virtual_method met);
-          (Tmeth_val id, None, typ)
-        | Texp_ident(path, lid, {val_kind = Val_anc (methods, cl_num)}) ->
-          let method_id =
-            begin try List.assoc met methods with Not_found ->
-              raise(Error(e.pexp_loc, env, Undefined_inherited_method met))
+      if !Clflags.principal then begin_def ();
+      let obj = type_exp env e in
+      begin try
+        let (meth, exp, typ) =
+          match obj.exp_desc with
+            Texp_ident(path, _, {val_kind = Val_self (meths, _, _, privty)}) ->
+              let (id, typ) =
+                filter_self_method env met Private meths privty
+              in
+              if is_Tvar (repr typ) then
+                Location.prerr_warning loc
+                  (Warnings.Undeclared_virtual_method met);
+              (Tmeth_val id, None, typ)
+          | Texp_ident(path, lid, {val_kind = Val_anc (methods, cl_num)}) ->
+              let method_id =
+                begin try List.assoc met methods with Not_found ->
+                  raise(Error(e.pexp_loc, env, Undefined_inherited_method met))
+                end
+              in
+              begin match
+                Env.lookup_value (Longident.Lident ("selfpat-" ^ cl_num)) env,
+                Env.lookup_value (Longident.Lident ("self-" ^cl_num)) env
+              with
+                (_, ({val_kind = Val_self (meths, _, _, privty)} as desc)),
+                (path, _) ->
+                  let (_, typ) =
+                    filter_self_method env met Private meths privty
+                  in
+                  let method_type = newvar () in
+                  let (obj_ty, res_ty) = filter_arrow env method_type Tarr_simple in
+                  unify env obj_ty desc.val_type;
+                  unify env res_ty (instance env typ);
+                  let exp =
+                    Texp_apply({exp_desc =
+                                Texp_ident(Path.Pident method_id, lid,
+                                           {val_type = method_type;
+                                            val_kind = Val_reg;
+                                            val_attributes = [];
+                                            Types.val_loc = Location.none});
+                                exp_loc = loc; exp_extra = [];
+                                exp_type = method_type;
+                                exp_attributes = []; (* check *)
+                                exp_env = env},
+                      [{ arg_flag = Tapp_simple;
+                         arg_expression =
+                           Some {exp_desc = Texp_ident(path, lid, desc);
+                                 exp_loc = obj.exp_loc; exp_extra = [];
+                                 exp_type = desc.val_type;
+                                 exp_attributes = []; (* check *)
+                                 exp_env = env} }])
+                  in
+                  (Tmeth_name met, Some (re {exp_desc = exp;
+                                             exp_loc = loc; exp_extra = [];
+                                             exp_type = typ;
+                                             exp_attributes = []; (* check *)
+                                             exp_env = env}), typ)
+              |  _ ->
+                  assert false
+              end
+          | _ ->
+              (Tmeth_name met, None,
+               filter_method env met Public obj.exp_type)
+        in
+        if !Clflags.principal then begin
+          end_def ();
+          generalize_structure typ;
+        end;
+        let typ =
+          match repr typ with
+            {desc = Tpoly (ty, [])} ->
+              instance env ty
+          | {desc = Tpoly (ty, tl); level = l} ->
+              if !Clflags.principal && l <> generic_level then
+                Location.prerr_warning loc
+                  (Warnings.Not_principal "this use of a polymorphic method");
+              snd (instance_poly false tl ty)
+          | {desc = Tvar _} as ty ->
+              let ty' = newvar () in
+              unify env (instance_def ty) (newty(Tpoly(ty',[])));
+              (* if not !Clflags.nolabels then
+                 Location.prerr_warning loc (Warnings.Unknown_method met); *)
+              ty'
+          | _ ->
+              assert false
+        in
+        rue {
+          exp_desc = Texp_send(obj, meth, exp);
+          exp_loc = loc; exp_extra = [];
+          exp_type = typ;
+          exp_attributes = sexp.pexp_attributes;
+          exp_env = env }
+      with Unify _ ->
+        raise(Error(e.pexp_loc, env, Undefined_method (obj.exp_type, met)))
+      end
+  | Pexp_new cl ->
+      let (cl_path, cl_decl) = Typetexp.find_class env loc cl.txt in
+      begin match cl_decl.cty_new with
+          None ->
+            raise(Error(loc, env, Virtual_class cl.txt))
+        | Some ty ->
+            rue {
+              exp_desc = Texp_new (cl_path, cl, cl_decl);
+              exp_loc = loc; exp_extra = [];
+              exp_type = instance_def ty;
+              exp_attributes = sexp.pexp_attributes;
+              exp_env = env }
+        end
+  | Pexp_setinstvar (lab, snewval) ->
+      begin try
+        let (path, desc) = Env.lookup_value (Longident.Lident lab.txt) env in
+        match desc.val_kind with
+          Val_ivar (Mutable, cl_num) ->
+            let newval =
+              type_expect env snewval (instance env desc.val_type) in
+            let (path_self, _) =
+              Env.lookup_value (Longident.Lident ("self-" ^ cl_num)) env
+            in
+            rue {
+              exp_desc = Texp_setinstvar(path_self, path, lab, newval);
+              exp_loc = loc; exp_extra = [];
+              exp_type = instance_def Predef.type_unit;
+              exp_attributes = sexp.pexp_attributes;
+              exp_env = env }
+        | Val_ivar _ ->
+            raise(Error(loc, env, Instance_variable_not_mutable(true,lab.txt)))
+        | _ ->
+            raise(Error(loc, env, Instance_variable_not_mutable(false,lab.txt)))
+      with
+        Not_found ->
+          raise(Error(loc, env, Unbound_instance_variable lab.txt))
+      end
+  | Pexp_override lst ->
+      let _ =
+       List.fold_right
+        (fun (lab, _) l ->
+           if List.exists (fun l -> l.txt = lab.txt) l then
+             raise(Error(loc, env,
+                         Value_multiply_overridden lab.txt));
+           lab::l)
+        lst
+        [] in
+      begin match
+        try
+          Env.lookup_value (Longident.Lident "selfpat-*") env,
+          Env.lookup_value (Longident.Lident "self-*") env
+        with Not_found ->
+          raise(Error(loc, env, Outside_class))
+      with
+        (_, {val_type = self_ty; val_kind = Val_self (_, vars, _, _)}),
+        (path_self, _) ->
+          let type_override (lab, snewval) =
+            begin try
+              let (id, _, _, ty) = Vars.find lab.txt !vars in
+              (Path.Pident id, lab, type_expect env snewval (instance env ty))
+            with
+              Not_found ->
+                raise(Error(loc, env, Unbound_instance_variable lab.txt))
             end
           in
-          begin match
-            Env.lookup_value (Longident.Lident ("selfpat-" ^ cl_num)) env,
-            Env.lookup_value (Longident.Lident ("self-" ^cl_num)) env
-          with
-            (_, ({val_kind = Val_self (meths, _, _, privty)} as desc)),
-            (path, _) ->
-            let (_, typ) =
-              filter_self_method env met Private meths privty
-            in
-            let method_type = newvar () in
-            let (obj_ty, res_ty) = filter_arrow env method_type Tarr_simple in
-            unify env obj_ty desc.val_type;
-            unify env res_ty (instance env typ);
-            let exp =
-              Texp_apply(
-                {exp_desc =
-                   Texp_ident(Path.Pident method_id, lid,
-                     {val_type = method_type;
-                      val_kind = Val_reg;
-                      val_attributes = [];
-                      Types.val_loc = Location.none});
-                 exp_loc = loc; exp_extra = [];
-                 exp_type = method_type;
-                 exp_attributes = []; (* check *)
-                 exp_env = env},
-                [{ arg_flag = Tapp_simple;
-                   arg_expression =
-                     Some { exp_desc = Texp_ident(path, lid, desc);
-                            exp_loc = obj.exp_loc; exp_extra = [];
-                            exp_type = desc.val_type;
-                            exp_attributes = []; (* check *)
-                            exp_env = env };
-                 }]
-              )
-            in
-            (Tmeth_name met, Some (re {exp_desc = exp;
-                                       exp_loc = loc; exp_extra = [];
-                                       exp_type = typ;
-                                       exp_attributes = []; (* check *)
-                                       exp_env = env}), typ)
-          |  _ ->
-            assert false
-          end
+          let modifs = List.map type_override lst in
+          rue {
+            exp_desc = Texp_override(path_self, modifs);
+            exp_loc = loc; exp_extra = [];
+            exp_type = self_ty;
+            exp_attributes = sexp.pexp_attributes;
+            exp_env = env }
+      | _ ->
+          assert false
+      end
+  | Pexp_letmodule({pmb_name = name; pmb_expr = smodl; pmb_implicit;
+                    pmb_attributes; pmb_loc}, sbody) ->
+      let ty = newvar() in
+      (* remember original level *)
+      begin_def ();
+      Ident.set_current_time ty.level;
+      let context = Typetexp.narrow () in
+      let modl = !type_module env smodl in
+      let (id, new_env) =
+        Env.enter_module ~implicit_:pmb_implicit name.txt modl.mod_type env in
+      Ctype.init_def(Ident.current_time());
+      Typetexp.widen context;
+      let body = type_expect new_env sbody ty_expected in
+      (* go back to original level *)
+      end_def ();
+      (* Unification of body.exp_type with the fresh variable ty
+         fails if and only if the prefix condition is violated,
+         i.e. if generative types rooted at id show up in the
+         type body.exp_type.  Thus, this unification enforces the
+         scoping condition on "let module". *)
+      begin try
+        Ctype.unify_var new_env ty body.exp_type
+      with Unify _ ->
+        raise(Error(loc, env, Scoping_let_module(name.txt, body.exp_type)))
+      end;
+      let mb = {mb_id = id; mb_name = name; mb_expr = modl; mb_loc = pmb_loc;
+                mb_implicit = pmb_implicit; mb_attributes = pmb_attributes} in
+      re {
+        exp_desc = Texp_letmodule(mb, body);
+        exp_loc = loc; exp_extra = [];
+        exp_type = ty;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env }
+  | Pexp_assert (e) ->
+      let cond = type_expect env e Predef.type_bool in
+      let exp_type =
+        match cond.exp_desc with
+        | Texp_construct(_, {cstr_name="false"}, _) ->
+            instance env ty_expected
         | _ ->
-          (Tmeth_name met, None,
-           filter_method env met Public obj.exp_type)
+            instance_def Predef.type_unit
+      in
+      rue {
+        exp_desc = Texp_assert cond;
+        exp_loc = loc; exp_extra = [];
+        exp_type;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env;
+      }
+  | Pexp_lazy e ->
+      let ty = newgenvar () in
+      let to_unify = Predef.type_lazy_t ty in
+      unify_exp_types loc env to_unify ty_expected;
+      let arg = type_expect env e ty in
+      re {
+        exp_desc = Texp_lazy arg;
+        exp_loc = loc; exp_extra = [];
+        exp_type = instance env ty_expected;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env;
+      }
+  | Pexp_object s ->
+      let desc, sign, meths = !type_object env loc s in
+      rue {
+        exp_desc = Texp_object (desc, (*sign,*) meths);
+        exp_loc = loc; exp_extra = [];
+        exp_type = sign.csig_self;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env;
+      }
+  | Pexp_poly(sbody, sty) ->
+      if !Clflags.principal then begin_def ();
+      let ty, cty =
+        match sty with None -> repr ty_expected, None
+        | Some sty ->
+            let sty = Ast_helper.Typ.force_poly sty in
+            let cty = Typetexp.transl_simple_type env false sty in
+            repr cty.ctyp_type, Some cty
       in
       if !Clflags.principal then begin
         end_def ();
-        generalize_structure typ;
+        generalize_structure ty
       end;
-      let typ =
-        match repr typ with
-          {desc = Tpoly (ty, [])} ->
-          instance env ty
-        | {desc = Tpoly (ty, tl); level = l} ->
-          if !Clflags.principal && l <> generic_level then
-            Location.prerr_warning loc
-              (Warnings.Not_principal "this use of a polymorphic method");
-          snd (instance_poly false tl ty)
-        | {desc = Tvar _} as ty ->
-          let ty' = newvar () in
-          unify env (instance_def ty) (newty(Tpoly(ty',[])));
-          (* if not !Clflags.nolabels then
-             Location.prerr_warning loc (Warnings.Unknown_method met); *)
-          ty'
-        | _ ->
-          assert false
+      if sty <> None then
+        unify_exp_types loc env (instance env ty) (instance env ty_expected);
+      let exp =
+        match (expand_head env ty).desc with
+          Tpoly (ty', []) ->
+            let exp = type_expect env sbody ty' in
+            { exp with exp_type = instance env ty }
+        | Tpoly (ty', tl) ->
+            (* One more level to generalize locally *)
+            begin_def ();
+            if !Clflags.principal then begin_def ();
+            let vars, ty'' = instance_poly true tl ty' in
+            if !Clflags.principal then begin
+              end_def ();
+              generalize_structure ty''
+            end;
+            let exp = type_expect env sbody ty'' in
+            end_def ();
+            check_univars env false "method" exp ty_expected vars;
+            { exp with exp_type = instance env ty }
+        | Tvar _ ->
+            let exp = type_exp env sbody in
+            let exp = {exp with exp_type = newty (Tpoly (exp.exp_type, []))} in
+            unify_exp env exp ty;
+            exp
+        | _ -> assert false
       in
-      rue {
-        exp_desc = Texp_send(obj, meth, exp);
-        exp_loc = loc; exp_extra = [];
-        exp_type = typ;
-        exp_attributes = sexp.pexp_attributes;
-        exp_env = env }
-    with Unify _ ->
-      raise(Error(e.pexp_loc, env, Undefined_method (obj.exp_type, met)))
-    end
-  | Pexp_new cl ->
-    let (cl_path, cl_decl) = Typetexp.find_class env loc cl.txt in
-    begin match cl_decl.cty_new with
-      None ->
-      raise(Error(loc, env, Virtual_class cl.txt))
-    | Some ty ->
-      rue {
-          exp_desc = Texp_new (cl_path, cl, cl_decl);
-          exp_loc = loc; exp_extra = [];
-          exp_type = instance_def ty;
-          exp_attributes = sexp.pexp_attributes;
-          exp_env = env }
-    end
-  | Pexp_setinstvar (lab, snewval) ->
-    begin try
-      let (path, desc) = Env.lookup_value (Longident.Lident lab.txt) env in
-      match desc.val_kind with
-        Val_ivar (Mutable, cl_num) ->
-        let newval =
-          type_expect env snewval (instance env desc.val_type) in
-        let (path_self, _) =
-          Env.lookup_value (Longident.Lident ("self-" ^ cl_num)) env
-        in
-        rue {
-          exp_desc = Texp_setinstvar(path_self, path, lab, newval);
-          exp_loc = loc; exp_extra = [];
-          exp_type = instance_def Predef.type_unit;
-          exp_attributes = sexp.pexp_attributes;
-          exp_env = env }
-      | Val_ivar _ ->
-        raise(Error(loc, env, Instance_variable_not_mutable(true,lab.txt)))
-      | _ ->
-        raise(Error(loc, env, Instance_variable_not_mutable(false,lab.txt)))
-    with
-      Not_found ->
-      raise(Error(loc, env, Unbound_instance_variable lab.txt))
-    end
-  | Pexp_override lst ->
-    let _ =
-      List.fold_right
-        (fun (lab, _) l ->
-          if List.exists (fun l -> l.txt = lab.txt) l then
-            raise(Error(loc, env,
-                Value_multiply_overridden lab.txt));
-          lab::l)
-        lst
-        [] in
-    begin match
-      try
-        Env.lookup_value (Longident.Lident "selfpat-*") env,
-        Env.lookup_value (Longident.Lident "self-*") env
-      with Not_found ->
-        raise(Error(loc, env, Outside_class))
-    with
-      (_, {val_type = self_ty; val_kind = Val_self (_, vars, _, _)}),
-      (path_self, _) ->
-      let type_override (lab, snewval) =
-        begin try
-          let (id, _, _, ty) = Vars.find lab.txt !vars in
-          (Path.Pident id, lab, type_expect env snewval (instance env ty))
-        with
-          Not_found ->
-          raise(Error(loc, env, Unbound_instance_variable lab.txt))
+      re { exp with exp_extra =
+             (Texp_poly cty, loc, sexp.pexp_attributes) :: exp.exp_extra }
+  | Pexp_newtype(name, sbody) ->
+      let ty = newvar () in
+      (* remember original level *)
+      begin_def ();
+      (* Create a fake abstract type declaration for name. *)
+      let level = get_current_level () in
+      let decl = {
+        type_params = [];
+        type_arity = 0;
+        type_kind = Type_abstract;
+        type_private = Public;
+        type_manifest = None;
+        type_variance = [];
+        type_newtype_level = Some (level, level);
+        type_loc = loc;
+        type_attributes = [];
+      }
+      in
+      Ident.set_current_time ty.level;
+      let (id, new_env) = Env.enter_type name decl env in
+      Ctype.init_def(Ident.current_time());
+
+      let body = type_exp new_env sbody in
+      (* Replace every instance of this type constructor in the resulting
+         type. *)
+      let seen = Hashtbl.create 8 in
+      let rec replace t =
+        if Hashtbl.mem seen t.id then ()
+        else begin
+          Hashtbl.add seen t.id ();
+          match t.desc with
+          | Tconstr (Path.Pident id', _, _) when id == id' -> link_type t ty
+          | _ -> Btype.iter_type_expr replace t
         end
       in
-      let modifs = List.map type_override lst in
-      rue {
-        exp_desc = Texp_override(path_self, modifs);
-        exp_loc = loc; exp_extra = [];
-        exp_type = self_ty;
-        exp_attributes = sexp.pexp_attributes;
-        exp_env = env }
-    | _ ->
-      assert false
-    end
-  | Pexp_letmodule({pmb_name = name; pmb_expr = smodl; pmb_implicit;
-                    pmb_attributes; pmb_loc}, sbody) ->
-    let ty = newvar() in
-    (* remember original level *)
-    begin_def ();
-    Ident.set_current_time ty.level;
-    let context = Typetexp.narrow () in
-    let modl = !type_module env smodl in
-    let (id, new_env) =
-      Env.enter_module ~implicit_:pmb_implicit name.txt modl.mod_type env
-    in
-    Ctype.init_def(Ident.current_time());
-    Typetexp.widen context;
-    let body = type_expect new_env sbody ty_expected in
-    (* go back to original level *)
-    end_def ();
-    (* Unification of body.exp_type with the fresh variable ty
-       fails if and only if the prefix condition is violated,
-       i.e. if generative types rooted at id show up in the
-       type body.exp_type.  Thus, this unification enforces the
-       scoping condition on "let module". *)
-    begin try
-      Ctype.unify_var new_env ty body.exp_type
-    with Unify _ ->
-      raise(Error(loc, env, Scoping_let_module(name.txt, body.exp_type)))
-    end;
-    let mb = { mb_id = id; mb_name = name; mb_expr = modl; mb_loc = pmb_loc;
-               mb_implicit = pmb_implicit; mb_attributes = pmb_attributes }
-    in
-    re {
-      exp_desc = Texp_letmodule (mb, body);
-      exp_loc = loc; exp_extra = [];
-      exp_type = ty;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
-  | Pexp_assert (e) ->
-    let cond = type_expect env e Predef.type_bool in
-    let exp_type =
-      match cond.exp_desc with
-      | Texp_construct(_, {cstr_name="false"}, _) ->
-        instance env ty_expected
-      | _ ->
-        instance_def Predef.type_unit
-    in
-    rue {
-      exp_desc = Texp_assert cond;
-      exp_loc = loc; exp_extra = [];
-      exp_type;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env;
-    }
-  | Pexp_lazy e ->
-    let ty = newgenvar () in
-    let to_unify = Predef.type_lazy_t ty in
-    unify_exp_types loc env to_unify ty_expected;
-    let arg = type_expect env e ty in
-    re {
-      exp_desc = Texp_lazy arg;
-      exp_loc = loc; exp_extra = [];
-      exp_type = instance env ty_expected;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env;
-    }
-  | Pexp_object s ->
-    let desc, sign, meths = !type_object env loc s in
-    rue {
-      exp_desc = Texp_object (desc, (*sign,*) meths);
-      exp_loc = loc; exp_extra = [];
-      exp_type = sign.csig_self;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env;
-    }
-  | Pexp_poly(sbody, sty) ->
-    if !Clflags.principal then begin_def ();
-    let ty, cty =
-      match sty with None -> repr ty_expected, None
-                   | Some sty ->
-                     let sty = Ast_helper.Typ.force_poly sty in
-                     let cty = Typetexp.transl_simple_type env false sty in
-                     repr cty.ctyp_type, Some cty
-    in
-    if !Clflags.principal then begin
+      let ety = Subst.type_expr Subst.identity body.exp_type in
+      replace ety;
+      (* back to original level *)
       end_def ();
-      generalize_structure ty
-    end;
-    if sty <> None then
-      unify_exp_types loc env (instance env ty) (instance env ty_expected);
-    let exp =
-      match (expand_head env ty).desc with
-        Tpoly (ty', []) ->
-        let exp = type_expect env sbody ty' in
-        { exp with exp_type = instance env ty }
-      | Tpoly (ty', tl) ->
-        (* One more level to generalize locally *)
-        begin_def ();
-        if !Clflags.principal then begin_def ();
-        let vars, ty'' = instance_poly true tl ty' in
-        if !Clflags.principal then begin
-          end_def ();
-          generalize_structure ty''
-        end;
-        let exp = type_expect env sbody ty'' in
-        end_def ();
-        check_univars env false "method" exp ty_expected vars;
-        { exp with exp_type = instance env ty }
-      | Tvar _ ->
-        let exp = type_exp env sbody in
-        let exp = {exp with exp_type = newty (Tpoly (exp.exp_type, []))} in
-        unify_exp env exp ty;
-        exp
-      | _ -> assert false
-    in
-    re { exp with exp_extra =
-           (Texp_poly cty, loc, sexp.pexp_attributes) :: exp.exp_extra }
-  | Pexp_newtype(name, sbody) ->
-    let ty = newvar () in
-    (* remember original level *)
-    begin_def ();
-    (* Create a fake abstract type declaration for name. *)
-    let level = get_current_level () in
-    let decl = {
-      type_params = [];
-      type_arity = 0;
-      type_kind = Type_abstract;
-      type_private = Public;
-      type_manifest = None;
-      type_variance = [];
-      type_newtype_level = Some (level, level);
-      type_loc = loc;
-      type_attributes = [];
-    }
-    in
-    Ident.set_current_time ty.level;
-    let (id, new_env) = Env.enter_type name decl env in
-    Ctype.init_def(Ident.current_time());
+      (* lower the levels of the result type *)
+      (* unify_var env ty ety; *)
 
-    let body = type_exp new_env sbody in
-    (* Replace every instance of this type constructor in the resulting
-       type. *)
-    let seen = Hashtbl.create 8 in
-    let rec replace t =
-      if Hashtbl.mem seen t.id then ()
-      else begin
-        Hashtbl.add seen t.id ();
-        match t.desc with
-        | Tconstr (Path.Pident id', _, _) when id == id' -> link_type t ty
-        | _ -> Btype.iter_type_expr replace t
-      end
-    in
-    let ety = Subst.type_expr Subst.identity body.exp_type in
-    replace ety;
-    (* back to original level *)
-    end_def ();
-    (* lower the levels of the result type *)
-    (* unify_var env ty ety; *)
-
-    (* non-expansive if the body is non-expansive, so we don't introduce
-       any new extra node in the typed AST. *)
-    rue { body with exp_loc = loc; exp_type = ety;
-          exp_extra =
+      (* non-expansive if the body is non-expansive, so we don't introduce
+         any new extra node in the typed AST. *)
+      rue { body with exp_loc = loc; exp_type = ety;
+            exp_extra =
             (Texp_newtype name, loc, sexp.pexp_attributes) :: body.exp_extra }
   | Pexp_pack m ->
-    let (p, nl, tl) =
-      match Ctype.expand_head env (instance env ty_expected) with
-        {desc = Tpackage (p, nl, tl)} ->
-        if !Clflags.principal &&
-           (Ctype.expand_head env ty_expected).level < Btype.generic_level
-        then
-          Location.prerr_warning loc
-            (Warnings.Not_principal "this module packing");
-        (p, nl, tl)
-      | {desc = Tvar _} ->
-        raise (Error (loc, env, Cannot_infer_signature))
-      | _ ->
-        raise (Error (loc, env, Not_a_packed_module ty_expected))
-    in
-    let (modl, tl') = !type_package env m p nl tl in
-    rue {
-      exp_desc = Texp_pack modl;
-      exp_loc = loc; exp_extra = [];
-      exp_type = newty (Tpackage (p, nl, tl'));
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env }
+      let (p, nl, tl) =
+        match Ctype.expand_head env (instance env ty_expected) with
+          {desc = Tpackage (p, nl, tl)} ->
+            if !Clflags.principal &&
+              (Ctype.expand_head env ty_expected).level < Btype.generic_level
+            then
+              Location.prerr_warning loc
+                (Warnings.Not_principal "this module packing");
+            (p, nl, tl)
+        | {desc = Tvar _} ->
+            raise (Error (loc, env, Cannot_infer_signature))
+        | _ ->
+            raise (Error (loc, env, Not_a_packed_module ty_expected))
+      in
+      let (modl, tl') = !type_package env m p nl tl in
+      rue {
+        exp_desc = Texp_pack modl;
+        exp_loc = loc; exp_extra = [];
+        exp_type = newty (Tpackage (p, nl, tl'));
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env }
   | Pexp_open (ovf, lid, e) ->
       let (path, newenv) = !type_open ovf env sexp.pexp_loc lid in
       let exp = type_expect newenv e ty_expected in
@@ -2931,6 +2845,7 @@ and type_function ?in_function loc attrs env ty_expected arr caselist =
     exp_type = instance env (newgenty (Tarrow (arr, ty_arg, ty_res, Cok)));
     exp_attributes = attrs;
     exp_env = env }
+
 
 and type_label_access env loc srecord lid =
   if !Clflags.principal then begin_def ();
@@ -3375,7 +3290,7 @@ and type_application env funct
               let t1 = newvar ?name () and t2 = newvar ?name () in
               let not_identity = function
                   Texp_ident(_,_,{val_kind=Val_prim
-                                      {Primitive.prim_name="%identity"}}) ->
+                                  {Primitive.prim_name="%identity"}}) ->
                     false
                 | _ -> true
               in
@@ -3582,7 +3497,7 @@ and type_application env funct
   in
   match funct.exp_desc, sargs with
     (* Special case for ignore: avoid discarding warning *)
-  | Texp_ident (_, _, {val_kind=Val_prim{Primitive.prim_name="%ignore"}}),
+    Texp_ident (_, _, {val_kind=Val_prim{Primitive.prim_name="%ignore"}}),
     [Tapp_simple, sarg] ->
       let ty_arg, ty_res = filter_arrow env (instance env funct.exp_type) Tarr_simple in
       let exp = type_expect env sarg ty_arg in

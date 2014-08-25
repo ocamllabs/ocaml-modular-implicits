@@ -43,7 +43,7 @@ let open_implicit_module m env =
   let open Asttypes in
   let lid = {loc = Location.in_file "command line";
              txt = Longident.Lident m } in
-  snd (Typemod.type_open_ Override env lid.loc lid)
+  snd (Typemod.type_open_ (Open_all Override) env lid.loc lid)
 
 let initial_env () =
   Ident.reinit();
