@@ -33,7 +33,7 @@ val transl_signature:
 val check_nongen_schemes:
         Env.t -> Typedtree.structure_item list -> unit
 val type_open_:
-        ?toplevel:bool -> Asttypes.override_flag ->
+        ?toplevel:bool -> Asttypes.open_flag ->
         Env.t -> Location.t -> Longident.t Asttypes.loc -> Path.t * Env.t
 val modtype_of_package:
         Env.t -> Location.t ->

@@ -923,8 +923,7 @@ signature_item:
 ;
 open_statement:
   | OPEN open_flag mod_longident post_item_attributes
-      { Opn.mk (mkrhs $3 3) ~override:$2 ~attrs:$4
-          ~loc:(symbol_rloc())  ~docs:(symbol_docs ()) }
+      { Opn.mk (mkrhs $3 3) ~flag:$2 ~attrs:$4 ~loc:(symbol_rloc()) ~docs:(symbol_docs ())  }
 ;
 sig_include_statement:
     INCLUDE module_type post_item_attributes %prec below_WITH

@@ -543,9 +543,9 @@ let default_mapper =
 
 
     open_description =
-      (fun this {popen_lid; popen_override; popen_attributes; popen_loc} ->
+      (fun this {popen_lid; popen_flag; popen_attributes; popen_loc} ->
          Opn.mk (map_loc this popen_lid)
-           ~override:popen_override
+           ~flag:popen_flag
            ~loc:(this.location this popen_loc)
            ~attrs:(this.attributes this popen_attributes)
       );

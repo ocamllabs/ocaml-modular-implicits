@@ -1195,7 +1195,7 @@ let signature_item_subst item p sub = match item with
   | Sig_value _ | Sig_typext _ | Sig_class _ | Sig_class_type _ -> sub
 
 let signature_item_ident = function
-  | Sig_value (id, _)     | Sig_exception (id, _)     | Sig_type (id, _, _)
+  | Sig_value (id, _)     | Sig_typext (id, _, _)     | Sig_type (id, _, _)
   | Sig_module (id, _, _) | Sig_modtype (id, _)
   | Sig_class (id, _, _)  | Sig_class_type (id, _, _) ->
       id

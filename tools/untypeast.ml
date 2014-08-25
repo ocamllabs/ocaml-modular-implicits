@@ -67,7 +67,7 @@ and untype_structure_item item =
     | Tstr_modtype mtd ->
         Pstr_modtype (untype_module_type_declaration mtd)
     | Tstr_open od ->
-        Pstr_open {popen_lid = od.open_txt; popen_override = od.open_override;
+        Pstr_open {popen_lid = od.open_txt; popen_flag = od.open_flag;
                    popen_attributes = od.open_attributes;
                    popen_loc = od.open_loc;
                   }
@@ -410,7 +410,7 @@ and untype_signature_item item =
         Psig_modtype (untype_module_type_declaration mtd)
     | Tsig_open od ->
         Psig_open {popen_lid = od.open_txt;
-                   popen_override = od.open_override;
+                   popen_flag = od.open_flag;
                    popen_attributes = od.open_attributes;
                    popen_loc = od.open_loc;
                   }
