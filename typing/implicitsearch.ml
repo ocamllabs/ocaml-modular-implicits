@@ -424,6 +424,11 @@ let target_of_pending inst =
       it.it_type_expr it ty;
       it.it_type_expr it tyvar)
     hkt;
+  unmark_iterators.it_module_type unmark_iterators mty;
+  List.iter (fun (ty,tyvar) ->
+      unmark_type ty;
+      unmark_type tyvar)
+    hkt;
   let id = inst.implicit_id in
   !variables,
   {target_type = mty; target_id = id; target_uid = id; target_hkt = hkt}

@@ -142,6 +142,8 @@ let instantiate_one_implicit loc env id ty_arg ty_res =
   (* Unlink main types *)
   let unlink_it = unlink env unlink_ident in
   List.iter (unlink_it.it_type_expr unlink_it) ty_res;
+  List.iter unmark_type ty_res;
+
   inst
 
 let pack_implicit_ref
