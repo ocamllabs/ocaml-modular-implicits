@@ -344,7 +344,8 @@ and approx_module_declaration env pmd =
   {
     Types.md_type = approx_modtype env pmd.pmd_type;
     md_attributes = pmd.pmd_attributes;
-    md_loc = pmd.pmd_loc; md_implicit = pmd.pmd_implicit;
+    md_loc = pmd.pmd_loc;
+    md_implicit = pmd.pmd_implicit;
   }
 
 and approx_sig env ssg =
@@ -1274,8 +1275,7 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
         newenv
     | Pstr_module {pmb_name = name; pmb_expr = smodl; pmb_attributes = attrs;
                    pmb_loc; pmb_implicit
-                  }
-      ->
+                  } ->
         check_name "module" module_names name;
         let modl =
           type_module ~alias:true true funct_body
@@ -1283,7 +1283,8 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
         let md =
           { md_type = enrich_module_type anchor name.txt modl.mod_type env;
             md_attributes = attrs;
-            md_loc = pmb_loc; md_implicit = pmb_implicit;
+            md_loc = pmb_loc;
+            md_implicit = pmb_implicit;
           }
         in
         let (id, newenv) = Env.enter_module_declaration name.txt md env in
@@ -1301,7 +1302,8 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
         [Sig_module(id,
                     {md_type = modl.mod_type;
                      md_attributes = attrs;
-                     md_loc = pmb_loc; md_implicit = pmb_implicit;
+                     md_loc = pmb_loc;
+                     md_implicit = pmb_implicit;
                     }, Trec_not)],
         newenv
     | Pstr_recmodule sbind ->
@@ -1326,7 +1328,8 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
         let (decls, newenv) =
           transl_recmodule_modtypes loc env
             (List.map (fun (name, imp, smty, smodl, attrs, loc) ->
-                 {pmd_name=name; pmd_type=smty; pmd_implicit = imp;
+                 {pmd_name=name; pmd_type=smty;
+                  pmd_implicit = imp;
                   pmd_attributes=attrs; pmd_loc=loc}) sbind
             ) in
         let bindings1 =
@@ -1346,7 +1349,6 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
             (fun env md ->
                let mdecl =
                  {
-                   Types.
                    md_type = md.md_type.mty_type;
                    md_attributes = md.md_attributes;
                    md_loc = md.md_loc;
@@ -1560,10 +1562,8 @@ let type_package env m p nl tl =
     match modl.mod_desc with
       Tmod_ident (mp,_) -> (mp, env)
     | _ ->
-      let (id, new_env) =
-        Env.enter_module ~arg:true ~implicit_:Nonimplicit
-          "%M" modl.mod_type env
-      in
+      let (id, new_env) = Env.enter_module ~arg:true
+            ~implicit_:Nonimplicit "%M" modl.mod_type env in
       (Pident id, new_env)
   in
   let rec mkpath mp = function
