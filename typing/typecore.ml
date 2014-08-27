@@ -3229,7 +3229,7 @@ and type_argument env sarg ty_expected' ty_expected =
       let eta_pat, eta_var = var_pair "eta" ty_arg in
       let func texp =
         let e =
-          let args = (Tapp_simple, Some eta_var) :: args in
+          let args = args @ [Tapp_simple, Some eta_var] in
           let args = List.map make_argument args in
           {texp with exp_type = ty_res; exp_desc = Texp_apply (texp,args)}
         in
