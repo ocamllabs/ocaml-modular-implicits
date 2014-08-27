@@ -120,8 +120,6 @@ val copy_row:
     bool -> row_desc -> bool -> type_expr -> row_desc
 val copy_kind: field_kind -> field_kind
 
-val copy_commu: commutable -> commutable
-
 val save_desc: type_expr -> type_desc -> unit
         (* Save a type description *)
 val dup_kind: field_kind option ref -> unit

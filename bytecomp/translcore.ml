@@ -672,7 +672,7 @@ and transl_exp0 e =
   | Texp_apply({exp_desc = Texp_ident(path, _, {val_kind = Val_prim p})},
                oargs)
     when List.length oargs >= p.prim_arity
-      && List.for_all (fun arg -> arg.arg_expression <> None) oargs ->
+    && List.for_all (fun arg -> arg.arg_expression <> None) oargs ->
       let args, args' = cut p.prim_arity oargs in
       let wrap f =
         if args' = []
@@ -971,7 +971,7 @@ and transl_apply lam sargs loc =
         Lapply(lexp, args, loc)
   in
   let rec build_apply lam args = function
-    | (None, optional) :: l ->
+      (None, optional) :: l ->
         let defs = ref [] in
         let protect name lam =
           match lam with

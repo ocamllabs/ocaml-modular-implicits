@@ -30,7 +30,6 @@ type error =
   | Orpat_vars of Ident.t
   | Expr_type_clash of (type_expr * type_expr) list
   | Apply_non_function of type_expr
-  | Apply_unexpected_implicit of type_expr
   | Apply_wrong_label of apply_flag * type_expr
   | Label_multiply_defined of string
   | Label_missing of Ident.t list
@@ -69,6 +68,7 @@ type error =
   | No_value_clauses
   | Exception_pattern_below_toplevel
 
+  | Apply_unexpected_implicit of type_expr
   | No_instance_found of Typeimplicit.pending_implicit
   | Ambiguous_implicit of Typeimplicit.pending_implicit * Path.t * Path.t
   | Termination_fail of Typeimplicit.pending_implicit
@@ -1509,10 +1509,10 @@ let wrap_unpacks sexp unpacks =
 
 let rec approx_type env sty =
   match sty.ptyp_desc with
-  | Ptyp_arrow (Parr_optional s, lhs, sty) ->
-      let ty1 = type_option (approx_type env lhs) in
+  | Ptyp_arrow (Parr_optional s, _, sty) ->
+      let ty1 = type_option (newvar ()) in
       newty (Tarrow (Tarr_optional s, ty1, approx_type env sty, Cok))
-  | Ptyp_arrow (Parr_implicit _s, _lhs, _sty) ->
+  | Ptyp_arrow (Parr_implicit _s, _, _sty) ->
       newvar ()
       (*let loc, (ppath, pcstrs) = match lhs with
         | {ptyp_desc = Ptyp_package pkg; ptyp_loc} ->
@@ -1528,8 +1528,8 @@ let rec approx_type env sty =
         Env.enter_module ~arg:true ~implicit_:(Implicit 0) s mty env in
       newty (Tarrow(Tarr_implicit id, pkg_ty,
                     approx_type env sty, Cok))*)
-  | Ptyp_arrow (p, lhs, sty) ->
-      newty (Tarrow (tarr_of_parr p, approx_type env lhs, approx_type env sty, Cok))
+  | Ptyp_arrow (p, _, sty) ->
+      newty (Tarrow (tarr_of_parr p, newvar (), approx_type env sty, Cok))
   | Ptyp_tuple args ->
       newty (Ttuple (List.map (approx_type env) args))
   | Ptyp_constr (lid, ctl) ->
@@ -1539,7 +1539,7 @@ let rec approx_type env sty =
         let tyl = List.map (approx_type env) ctl in
         newconstr path tyl
       with Not_found ->
-        Format.eprintf "@[%a@] not found\n%!" Printtyp.longident lid.txt;
+        (*Format.eprintf "@[%a@] not found\n%!" Printtyp.longident lid.txt;*)
         newvar ()
       end
   | Ptyp_poly (_, sty) ->
@@ -1549,7 +1549,7 @@ let rec approx_type env sty =
 let rec type_approx env sexp =
   match sexp.pexp_desc with
     Pexp_let (_, _, e) -> type_approx env e
-  | Pexp_fun (Parr_optional s, _, lhs, e) ->
+  | Pexp_fun (Parr_optional s, _, _, e) ->
       newty (Tarrow(Tarr_optional s, type_option (newvar ()),
                     type_approx env e, Cok))
   (* Traversing implicit in type_approx might be a bad idea: the type variable
@@ -1573,7 +1573,7 @@ let rec type_approx env sexp =
      FIXME *)
   | Pexp_fun (Parr_implicit _, _, _, _) ->
       newvar ()
-  | Pexp_fun (p, _, lhs, e) ->
+  | Pexp_fun (p, _, _, e) ->
       newty (Tarrow(tarr_of_parr p, newvar (), type_approx env e, Cok))
   | Pexp_function ({pc_rhs=e}::_) ->
       newty (Tarrow(Tarr_simple, newvar (), type_approx env e, Cok))
@@ -1948,90 +1948,90 @@ and type_expect_ ?in_function env sexp ty_expected =
       in
       type_expect ?in_function env sfun ty_expected
   | Pexp_fun (Parr_implicit name, None, spat, sbody) ->
-    let ty = newvar () in
-    (* remember original level *)
-    begin_def ();
-    Ident.set_current_time ty.level;
-    let lev = get_current_level () in
-    let id = Ident.create name in
-    let ty_arg = newvar () in
-    (* type argument *)
-    begin_def ();
-    let (c_lhs, new_env, pattern_force, unpacks) =
-      let scope = Some (Annot.Idef sbody.pexp_loc) in
-      type_pattern ~lev env spat scope ty_arg in
-    end_def();
-    assert (unpacks = []);
-    (* `Contaminating' unifications start here *)
-    List.iter (fun f -> f()) pattern_force;
-    begin_def ();
-    let body = type_implicit_arg id lev new_env sbody in
-    let case = {c_lhs; c_guard = None; c_rhs = body} in
-    let arr = Tarr_implicit id in
-    end_def (); (* exit rhs *)
-    end_def (); (* exit implicit binding *)
-    rue {
-      exp_desc = Texp_function (arr, [case], Total);
-      exp_loc = loc; exp_extra = [];
-      exp_type = instance env (newgenty (Tarrow (arr, ty_arg, body.exp_type, Cok)));
-      exp_attributes = [];
-      exp_env = env;
-    }
-  (* TODO: keep attributes, call type_function directly *)
+      let ty = newvar () in
+      (* remember original level *)
+      begin_def ();
+      Ident.set_current_time ty.level;
+      let lev = get_current_level () in
+      let id = Ident.create name in
+      let ty_arg = newvar () in
+      (* type argument *)
+      begin_def ();
+      let (c_lhs, new_env, pattern_force, unpacks) =
+        let scope = Some (Annot.Idef sbody.pexp_loc) in
+        type_pattern ~lev env spat scope ty_arg in
+      end_def();
+      assert (unpacks = []);
+      (* `Contaminating' unifications start here *)
+      List.iter (fun f -> f()) pattern_force;
+      begin_def ();
+      let body = type_implicit_arg id lev new_env sbody in
+      let case = {c_lhs; c_guard = None; c_rhs = body} in
+      let arr = Tarr_implicit id in
+      end_def (); (* exit rhs *)
+      end_def (); (* exit implicit binding *)
+      let typ = Tarrow (arr, ty_arg, body.exp_type, Cok) in
+      rue {
+        exp_desc = Texp_function (arr, [case], Total);
+        exp_loc = loc; exp_extra = [];
+        exp_type = instance env (newgenty typ);
+        exp_attributes = [];
+        exp_env = env;
+      }
+        (* TODO: keep attributes, call type_function directly *)
   | Pexp_fun (arr, None, spat, sexp) ->
-      type_function ?in_function loc sexp.pexp_attributes env
-        ty_expected arr [{pc_lhs=spat; pc_guard=None; pc_rhs=sexp}]
+      type_function ?in_function loc sexp.pexp_attributes env ty_expected
+        arr [{pc_lhs=spat; pc_guard=None; pc_rhs=sexp}]
   | Pexp_function caselist ->
-    type_function ?in_function loc sexp.pexp_attributes env
-      ty_expected Parr_simple caselist
+      type_function ?in_function
+        loc sexp.pexp_attributes env ty_expected Parr_simple caselist
   | Pexp_apply(sfunct, sargs) ->
-    if sargs = [] then
-      Syntaxerr.ill_formed_ast loc "Function application with no argument.";
-    begin_def (); (* one more level for non-returning functions *)
-    if !Clflags.principal then begin_def ();
-    let funct = type_exp env sfunct in
-    let funct =
-      if Typeimplicit.has_implicit funct.exp_type then
-        {funct with exp_type = Subst.type_expr Subst.identity funct.exp_type}
-      else
-        funct in
-    if !Clflags.principal then begin
+      if sargs = [] then
+        Syntaxerr.ill_formed_ast loc "Function application with no argument.";
+      begin_def (); (* one more level for non-returning functions *)
+      if !Clflags.principal then begin_def ();
+      let funct = type_exp env sfunct in
+      let funct =
+        if Typeimplicit.has_implicit funct.exp_type then
+          {funct with exp_type = Subst.type_expr Subst.identity funct.exp_type}
+        else
+          funct in
+      if !Clflags.principal then begin
+          end_def ();
+          generalize_structure funct.exp_type
+        end;
+      let rec lower_args env seen ty_fun =
+        let ty = expand_head env ty_fun in
+        if List.memq ty seen then () else
+          let env = match ty.desc with
+            | Tarrow (Tarr_implicit id, _, _, _) ->
+              Env.set_implicit_level id 0 env
+            | _ -> env in
+          match ty.desc with
+          | Tarrow (l, ty_arg, ty_fun, com) ->
+            (try unify_var env (newvar()) ty_arg with Unify _ -> assert false);
+            lower_args env (ty::seen) ty_fun
+          | _ -> ()
+      in
+      let ty = instance env funct.exp_type in
       end_def ();
-      generalize_structure funct.exp_type
-    end;
-    let rec lower_args env seen ty_fun =
-      let ty = expand_head env ty_fun in
-      if List.memq ty seen then () else
-        let env = match ty.desc with
-          | Tarrow (Tarr_implicit id, _, _, _) ->
-            Env.set_implicit_level id 0 env
-          | _ -> env in
-        match ty.desc with
-        | Tarrow (l, ty_arg, ty_fun, com) ->
-          (try unify_var env (newvar()) ty_arg with Unify _ -> assert false);
-          lower_args env (ty::seen) ty_fun
-        | _ -> ()
-    in
-    let ty = instance env funct.exp_type in
-    end_def ();
-    wrap_trace_gadt_instances env (lower_args env []) ty;
-    begin_def ();
-    let (args, ty_res) = type_application env funct sargs in
-    let args = List.map
-        (fun (arr,argo) -> match argo with
-           | None -> make_argument (tapp_of_tarr arr, None)
-           | Some arg -> arg)
-        args
-    in
-    end_def ();
-    unify_var env (newvar()) funct.exp_type;
-    rue {
-      exp_desc = Texp_apply(funct, args);
-      exp_loc = loc; exp_extra = [];
-      exp_type = ty_res;
-      exp_attributes = sexp.pexp_attributes;
-      exp_env = env;
-    }
+      wrap_trace_gadt_instances env (lower_args env []) ty;
+      begin_def ();
+      let (args, ty_res) = type_application env funct sargs in
+      let args = List.map
+          (fun (arr,argo) -> match argo with
+             | None -> make_argument (tapp_of_tarr arr, None)
+             | Some arg -> arg)
+          args
+      in
+      end_def ();
+      unify_var env (newvar()) funct.exp_type;
+      rue {
+        exp_desc = Texp_apply(funct, args);
+        exp_loc = loc; exp_extra = [];
+        exp_type = ty_res;
+        exp_attributes = sexp.pexp_attributes;
+        exp_env = env }
   | Pexp_match(sarg, caselist) ->
       begin_def ();
       let arg = type_exp env sarg in
@@ -3171,7 +3171,7 @@ and type_argument env sarg ty_expected' ty_expected =
   (* ty_expected' may be generic *)
   let no_labels ty =
     let ls, tvar = list_labels env ty in
-    not tvar && List.for_all (function Tarr_simple -> true | _ -> false) ls
+    not tvar && List.for_all Btype.arrow_is_simple ls
   in
   let rec is_inferred sexp =
     match sexp.pexp_desc with
@@ -3196,9 +3196,7 @@ and type_argument env sarg ty_expected' ty_expected =
         | Tarrow (Tarr_optional s,ty_arg,ty_fun,_) ->
             let ty = option_none (instance env ty_arg) sarg.pexp_loc in
             make_args ((Tapp_optional s, Some ty) :: args) ty_fun
-        | Tarrow (l,_,ty_res',_)
-          when (match l with Tarr_simple -> true | _ -> false)
-            || !Clflags.classic ->
+        | Tarrow (l,_,ty_res',_) when Btype.arrow_is_simple l || !Clflags.classic ->
             List.rev args, ty_fun, no_labels ty_res'
         | Tvar _ ->  List.rev args, ty_fun, false
         |  _ -> [], texp.exp_type, false
