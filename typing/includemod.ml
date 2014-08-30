@@ -399,7 +399,7 @@ and signature_components old_env env cxt subst paired =
       implicit_flags env cxt id1
         mty1.md_implicit mty1.md_loc
         mty2.md_implicit mty2.md_loc;
-      (pos, cc) :: signature_components env cxt subst rem
+      (pos, cc) :: comps_rec rem
   | (Sig_modtype(id1, info1), Sig_modtype(id2, info2), pos) :: rem ->
       modtype_infos env cxt subst id1 info1 info2;
       comps_rec rem
@@ -409,7 +409,7 @@ and signature_components old_env env cxt subst paired =
   | (Sig_class_type(id1, info1, _),
      Sig_class_type(id2, info2, _), pos) :: rem ->
       class_type_declarations ~old_env env cxt subst id1 info1 info2;
-      signature_components env cxt subst rem
+      comps_rec rem
   | _ ->
       assert false
 
