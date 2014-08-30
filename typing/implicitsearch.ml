@@ -1025,6 +1025,30 @@ module Solution = struct
   let get {result} = Search.get result
 end
 
+let rec canonical_path env path =
+  try
+    let md = Env.find_module path env in
+    match md.Types.md_type with
+    | Mty_alias path -> canonical_path env path
+    | _ -> match path with
+      | Path.Pident _ -> path
+      | Path.Pdot (p1,s,i) ->
+          let p1' = canonical_path env p1 in
+          if p1 == p1' then
+            path
+          else
+            Path.Pdot (p1', s, i)
+      | Path.Papply (p1, p2) ->
+          let p1' = canonical_path env p1
+          and p2' = canonical_path env p2 in
+          if p1' == p1 && p2 == p2' then
+            path
+          else
+            Path.Papply (p1', p2')
+  with Not_found ->
+    (*?!*)
+    path
+
 let find_pending_instance inst =
   let snapshot = Btype.snapshot () in
   let vars, target = target_of_pending inst in
@@ -1051,19 +1075,25 @@ let find_pending_instance inst =
   let query = Search.start env (List.map snd vars) target in
   try
     let solution = Solution.search query in
-    let alternative =
-      try Some (Solution.search_next solution)
-      with _ -> None
+    let path = Solution.get solution in
+    let reference = canonical_path env path in
+    let rec check_alternatives solution =
+      match (try Some (Solution.search_next solution)
+             with _ -> None)
+      with
+      | Some alternative ->
+        let path' = Solution.get alternative in
+        let reference' = canonical_path env (Solution.get alternative) in
+        if reference = reference' then
+          check_alternatives alternative
+        else
+          raise Typecore.(Error (loc, env, Ambiguous_implicit (inst,path,path')))
+      | None -> ()
     in
-    match alternative with
-    | None ->
-      Btype.backtrack snapshot;
-      Link.to_path inst (Solution.get solution);
-      true
-    | Some alternative ->
-      let p1 = Solution.get solution in
-      let p2 = Solution.get alternative in
-      raise Typecore.(Error (loc, env, Ambiguous_implicit (inst,p1,p2)))
+    check_alternatives solution;
+    Btype.backtrack snapshot;
+    Link.to_path inst path;
+    true
   with
   | Termination.Terminate eqns ->
       printf "%a\n%!" (Termination.explain false) eqns;
