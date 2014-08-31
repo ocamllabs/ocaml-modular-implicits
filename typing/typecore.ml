@@ -1961,7 +1961,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       (* `Contaminating' unifications start here *)
       List.iter (fun f -> f()) pattern_force;
       begin_def ();
-      let body = type_implicit_arg id lev new_env sbody in
+      let body = type_implicit_arg id new_env sbody in
       let case = {c_lhs; c_guard = None; c_rhs = body} in
       let arr = Tarr_implicit id in
       end_def (); (* exit rhs *)
@@ -2001,7 +2001,7 @@ and type_expect_ ?in_function env sexp ty_expected =
         if List.memq ty seen then () else
           let env = match ty.desc with
             | Tarrow (Tarr_implicit id, _, _, _) ->
-              Env.set_implicit_level id 0 env
+              Env.set_implicit_mark id `Global env
             | _ -> env in
           match ty.desc with
           | Tarrow (l, ty_arg, ty_fun, com) ->
@@ -3732,7 +3732,7 @@ and type_cases ?in_function env ty_arg ty_res partial_flag loc caselist =
   end;
   cases, partial
 
-and type_implicit_arg id level env sbody =
+and type_implicit_arg id env sbody =
   let ty = newvar() in
   (* remember original level *)
   begin_def ();
@@ -3745,7 +3745,6 @@ and type_implicit_arg id level env sbody =
   in
   let modl = !type_module env smodl in
   let new_env = Env.add_module ~arg:true ~implicit_:(Implicit 0) id modl.mod_type env in
-  let new_env = Env.set_implicit_level id level new_env in
   Ctype.init_def(Ident.current_time());
   Typetexp.widen context;
   let body = type_exp new_env sbody in

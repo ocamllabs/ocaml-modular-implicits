@@ -63,11 +63,8 @@ val find_type_expansion_opt:
 val find_modtype_expansion: Path.t -> t -> module_type
 val is_functor_arg: Path.t -> t -> bool
 
-val implicit_level: Path.t -> t -> int
-val set_implicit_level: Ident.t -> int -> t -> t
-val has_implicit_level: Path.t -> t -> bool
-val implicit_cannot_occur: Path.t -> t -> bool
-val forbid_implicit_occur: Ident.t -> t -> t
+val implicit_mark: Path.t -> t -> Ident.t * [`Global | `Local | `Forbidden]
+val set_implicit_mark: Ident.t -> [`Global | `Local | `Forbidden] -> t -> t
 
 val normalize_path: Location.t option -> t -> Path.t -> Path.t
 (* Normalize the path to a concrete value or module.

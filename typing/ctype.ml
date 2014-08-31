@@ -739,10 +739,12 @@ let printtyp_expr
       module M = struct type t let _ = (x : t list ref) end
     (without this constraint, the type system would actually be unsound.)
 *)
-let get_level no_implicit env p =
+let get_level allowed_implicits env p =
   try
-    let level = Env.implicit_level p env in
-    if no_implicit then generic_level else level
+    match Env.implicit_mark p env with
+    | id, `Local when List.mem id allowed_implicits -> 0
+    | _, (`Global | `Forbidden) -> 0
+    | _ -> generic_level
   with Not_found ->
   try
     match (Env.find_type p env).type_newtype_level with
@@ -763,18 +765,30 @@ let rec normalize_package_path env p =
 
 let rec has_implicit_application env = function
   | Path.Papply (p1, p2)
-    when Env.has_implicit_level p1 env || Env.has_implicit_level p2 env -> true
+    when (try ignore (Env.implicit_mark p1 env : _ * _); true
+          with Not_found ->
+          try ignore (Env.implicit_mark p2 env : _ * _); true
+          with Not_found -> false)
+    -> true
   | Path.Papply (p1, p2) ->
      has_implicit_application env p1 || has_implicit_application env p2
   | Path.Pdot (p, _, _) -> has_implicit_application env p
   | Path.Pident _ -> false
 
-let update_no_implicit no_implicit env p =
-  no_implicit || Env.has_implicit_level p env
+let update_allowed_implicits allowed_implicits env p =
+  try
+    match Env.implicit_mark p env with
+    | id, `Local ->
+        let rec filter = function
+          | x :: _ as allowed_implicits when Ident.same x id ->
+              allowed_implicits
+          | _ :: xs -> filter xs
+          | [] -> [] in
+        filter allowed_implicits
+    | _ -> allowed_implicits
+  with Not_found -> allowed_implicits
 
-let rec update_level no_implicit env level ty =
-  (*Format.fprintf Format.err_formatter
-    "update_level of %a from %d to %d\n%!" !printtyp_expr ty ty.level level;*)
+let rec update_level allowed_implicits env level ty =
   let ty = repr ty in
   if ty.level > level then begin
     begin match Env.gadt_instance_level env ty with
@@ -788,44 +802,45 @@ let rec update_level no_implicit env level ty =
         raise (Unify [(ty, newvar2 level)])
 
     | Tconstr(p, tl, abbrev)
-      when level < get_level no_implicit env p ->
-        let no_implicit = update_no_implicit no_implicit env p in
+      when level < get_level allowed_implicits env p ->
+        let allowed_implicits = update_allowed_implicits allowed_implicits env p in
         (* Try first to replace an abbreviation by its expansion. *)
         begin try
           (* if is_newtype env p then raise Cannot_expand; *)
           link_type ty (!forward_try_expand_once env ty);
-          update_level no_implicit env level ty
+          update_level allowed_implicits env level ty
         with Cannot_expand ->
           (* +++ Levels should be restored... *)
           (* Format.printf "update_level: %i < %i@." level (get_level env p); *)
-          if level < get_level no_implicit env p then
+          if level < get_level allowed_implicits env p then
             raise (Unify [(ty, newvar2 level)]);
-          iter_type_expr (update_level no_implicit env level) ty
+          iter_type_expr (update_level allowed_implicits env level) ty
         end
 
     | Tconstr (p, _, _) ->
         set_level ty level;
-        let no_implicit = update_no_implicit no_implicit env p in
-        iter_type_expr (update_level no_implicit env level) ty
+        let allowed_implicits = update_allowed_implicits allowed_implicits env p in
+        iter_type_expr (update_level allowed_implicits env level) ty
 
-    | Tpackage (p, nl, tl) when level < get_level no_implicit env p ->
+    | Tpackage (p, nl, tl) when level < get_level allowed_implicits env p ->
         let p' = normalize_package_path env p in
         if Path.same p p' then raise (Unify [(ty, newvar2 level)]);
         log_type ty; ty.desc <- Tpackage (p', nl, tl);
-        update_level no_implicit env level ty
+        update_level allowed_implicits env level ty
     | Tobject(_, ({contents=Some(p, tl)} as nm))
-      when level < get_level no_implicit env p ->
-        set_name nm None; update_level no_implicit env level ty
+      when level < get_level allowed_implicits env p ->
+        set_name nm None;
+        update_level allowed_implicits env level ty
     | Tvariant row ->
         let row = row_repr row in
         begin match row.row_name with
-        | Some (p, tl) when level < get_level no_implicit env p ->
+        | Some (p, tl) when level < get_level allowed_implicits env p ->
             log_type ty;
             ty.desc <- Tvariant {row with row_name = None}
         | _ -> ()
         end;
         set_level ty level;
-        iter_type_expr (update_level no_implicit env level) ty
+        iter_type_expr (update_level allowed_implicits env level) ty
     | Tfield(lab, _, ty1, _)
       when lab = dummy_method && (repr ty1).level > level ->
         raise (Unify [(ty1, newvar2 level)])
@@ -833,16 +848,17 @@ let rec update_level no_implicit env level ty =
     | Tarrow (Tarr_implicit id, _, _, _) ->
         set_level ty level;
         (* XXX what about abbreviations in Tconstr ? *)
-        iter_type_expr (update_level no_implicit (Env.set_implicit_level id level env) level) ty
+        iter_type_expr (update_level (id :: allowed_implicits)
+                          (Env.set_implicit_mark id `Local env) level) ty
 
     | _ ->
         set_level ty level;
         (* XXX what about abbreviations in Tconstr ? *)
-        iter_type_expr (update_level no_implicit env level) ty
+        iter_type_expr (update_level allowed_implicits env level) ty
   end
 
 let update_level env level ty =
-  update_level false env level ty
+  update_level [] env level ty
 
 (* Generalize and lower levels of contravariant branches simultaneously *)
 
@@ -1817,7 +1833,9 @@ let occur_univar_and_implicit env ty =
       | Tpoly (ty, tyl) ->
           let bound = List.fold_right TypeSet.add (List.map repr tyl) bound in
           occur_rec bound  ty
-      | Tconstr (p, _, _) when Env.implicit_cannot_occur p env ->
+      | Tconstr (p, _, _)
+        when (try snd (Env.implicit_mark p env) = `Forbidden
+              with Not_found -> false) ->
           raise (Unify [])
       | Tconstr (_, [], _) -> ()
       | Tconstr (p, tl, _) ->
@@ -2513,10 +2531,8 @@ and unify3 env t1 t1' t2 t2' =
           unify env t1 t2;
           let mty = modtype_of_tpackage !env t1 in
           let env' = Env.add_module id1 mty !env in
-          let env' = Env.forbid_implicit_occur id1 env' in
-          let env' = Env.forbid_implicit_occur id2 env' in
-          let env' = Env.set_implicit_level id1 0 env' in
-          let env' = Env.set_implicit_level id2 0 env' in
+          let env' = Env.set_implicit_mark id1 `Forbidden env' in
+          let env' = Env.set_implicit_mark id2 `Forbidden env' in
           env := env';
           let subst = Subst.add_module id2 (Path.Pident id1) Subst.identity in
           let u2 = Subst.type_expr subst u2 in
