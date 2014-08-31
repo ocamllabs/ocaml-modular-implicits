@@ -76,9 +76,8 @@ let unlink env unlink_on =
        implicit *)
     match ty.desc with
     | Tconstr (path,args,_) ->
-      (* First recurse in sub expressions *)
-      type_iterators.it_type_expr it ty;
       let ident = Path.head path in
+      (* First eventually copy type and levels *)
       begin match unlink_on ident with
       | None -> ()
         (* Identifier is shadowed, skip unlinking *)
@@ -94,12 +93,15 @@ let unlink env unlink_on =
         ty'.desc  <- desc;
         ty'.level <- lv;
         add_constraint register path ty' ty
-      end
+      end;
+      (* Then recurse in sub types, as level are affected by marking *)
+      type_iterators.it_type_expr it ty
     | Tarrow (Tarr_implicit id, lhs, rhs, _) ->
-      it_type_expr shadow_tbl it lhs;
+      mark_type_node ty;
+      it.it_type_expr it lhs;
       let shadow_tbl = Ident.add id () shadow_tbl in
       let it = {it with it_type_expr = it_type_expr shadow_tbl} in
-      it_type_expr shadow_tbl it rhs
+      it.it_type_expr it rhs
     | _ -> type_iterators.it_type_expr it ty
   in
 
