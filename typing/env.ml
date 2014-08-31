@@ -633,6 +633,12 @@ let rec implicit_level path env =
   | Pdot (p, s, _) -> implicit_level p env
   | Papply _ -> raise Not_found
 
+let has_implicit_level path env =
+  try
+    let _ : int = implicit_level path env in
+    true
+  with Not_found -> false
+
 let rec implicit_cannot_occur path env =
   match path with
     Pident id ->

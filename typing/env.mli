@@ -65,6 +65,7 @@ val is_functor_arg: Path.t -> t -> bool
 
 val implicit_level: Path.t -> t -> int
 val set_implicit_level: Ident.t -> int -> t -> t
+val has_implicit_level: Path.t -> t -> bool
 val implicit_cannot_occur: Path.t -> t -> bool
 val forbid_implicit_occur: Ident.t -> t -> t
 

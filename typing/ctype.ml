@@ -739,8 +739,10 @@ let printtyp_expr
       module M = struct type t let _ = (x : t list ref) end
     (without this constraint, the type system would actually be unsound.)
 *)
-let get_level env p =
-  try Env.implicit_level p env
+let get_level no_implicit env p =
+  try
+    let level = Env.implicit_level p env in
+    if no_implicit then generic_level else level
   with Not_found ->
   try
     match (Env.find_type p env).type_newtype_level with
@@ -759,7 +761,18 @@ let rec normalize_package_path env p =
   | Some (Mty_ident p) -> normalize_package_path env p
   | Some (Mty_signature _ | Mty_functor _ | Mty_alias _) | None -> p
 
-let rec update_level env level ty =
+let rec has_implicit_application env = function
+  | Path.Papply (p1, p2)
+    when Env.has_implicit_level p1 env || Env.has_implicit_level p2 env -> true
+  | Path.Papply (p1, p2) ->
+     has_implicit_application env p1 || has_implicit_application env p2
+  | Path.Pdot (p, _, _) -> has_implicit_application env p
+  | Path.Pident _ -> false
+
+let update_no_implicit no_implicit env p =
+  no_implicit || Env.has_implicit_level p env
+
+let rec update_level no_implicit env level ty =
   (*Format.fprintf Format.err_formatter
     "update_level of %a from %d to %d\n%!" !printtyp_expr ty ty.level level;*)
   let ty = repr ty in
@@ -769,39 +782,50 @@ let rec update_level env level ty =
     | None -> ()
     end;
     match ty.desc with
-      Tconstr(p, tl, abbrev)
-      when level < get_level env p ->
+      Tconstr (p, _, _) | Tpackage (p, _, _)
+    | Tobject (_, {contents=Some(p, _)})
+      when has_implicit_application env p ->
+        raise (Unify [(ty, newvar2 level)])
+
+    | Tconstr(p, tl, abbrev)
+      when level < get_level no_implicit env p ->
+        let no_implicit = update_no_implicit no_implicit env p in
         (* Try first to replace an abbreviation by its expansion. *)
         begin try
           (* if is_newtype env p then raise Cannot_expand; *)
           link_type ty (!forward_try_expand_once env ty);
-          update_level env level ty
+          update_level no_implicit env level ty
         with Cannot_expand ->
           (* +++ Levels should be restored... *)
           (* Format.printf "update_level: %i < %i@." level (get_level env p); *)
-          if level < get_level env p then
+          if level < get_level no_implicit env p then
             raise (Unify [(ty, newvar2 level)]);
-          iter_type_expr (update_level env level) ty
+          iter_type_expr (update_level no_implicit env level) ty
         end
-    | Tpackage (p, nl, tl) when level < get_level env p ->
+
+    | Tconstr (p, _, _) ->
+        set_level ty level;
+        let no_implicit = update_no_implicit no_implicit env p in
+        iter_type_expr (update_level no_implicit env level) ty
+
+    | Tpackage (p, nl, tl) when level < get_level no_implicit env p ->
         let p' = normalize_package_path env p in
         if Path.same p p' then raise (Unify [(ty, newvar2 level)]);
         log_type ty; ty.desc <- Tpackage (p', nl, tl);
-        update_level env level ty
+        update_level no_implicit env level ty
     | Tobject(_, ({contents=Some(p, tl)} as nm))
-      when level < get_level env p ->
-        set_name nm None;
-        update_level env level ty
+      when level < get_level no_implicit env p ->
+        set_name nm None; update_level no_implicit env level ty
     | Tvariant row ->
         let row = row_repr row in
         begin match row.row_name with
-        | Some (p, tl) when level < get_level env p ->
+        | Some (p, tl) when level < get_level no_implicit env p ->
             log_type ty;
             ty.desc <- Tvariant {row with row_name = None}
         | _ -> ()
         end;
         set_level ty level;
-        iter_type_expr (update_level env level) ty
+        iter_type_expr (update_level no_implicit env level) ty
     | Tfield(lab, _, ty1, _)
       when lab = dummy_method && (repr ty1).level > level ->
         raise (Unify [(ty1, newvar2 level)])
@@ -809,13 +833,16 @@ let rec update_level env level ty =
     | Tarrow (Tarr_implicit id, _, _, _) ->
         set_level ty level;
         (* XXX what about abbreviations in Tconstr ? *)
-        iter_type_expr (update_level (Env.set_implicit_level id level env) level) ty
+        iter_type_expr (update_level no_implicit (Env.set_implicit_level id level env) level) ty
 
     | _ ->
         set_level ty level;
         (* XXX what about abbreviations in Tconstr ? *)
-        iter_type_expr (update_level env level) ty
+        iter_type_expr (update_level no_implicit env level) ty
   end
+
+let update_level env level ty =
+  update_level false env level ty
 
 (* Generalize and lower levels of contravariant branches simultaneously *)
 
