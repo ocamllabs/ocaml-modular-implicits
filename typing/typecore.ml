@@ -3745,6 +3745,7 @@ and type_implicit_arg id env sbody =
   in
   let modl = !type_module env smodl in
   let new_env = Env.add_module ~arg:true ~implicit_:(Implicit 0) id modl.mod_type env in
+  let new_env = Env.set_implicit_mark id `Arg new_env in
   Ctype.init_def(Ident.current_time());
   Typetexp.widen context;
   let body = type_exp new_env sbody in

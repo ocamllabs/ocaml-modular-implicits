@@ -744,6 +744,7 @@ let get_level allowed_implicits env p =
     match Env.implicit_mark p env with
     | id, `Local when List.mem id allowed_implicits -> 0
     | _, (`Global | `Forbidden) -> 0
+    | _, `Arg -> raise Not_found
     | _ -> generic_level
   with Not_found ->
   try

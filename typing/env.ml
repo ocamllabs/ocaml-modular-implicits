@@ -164,7 +164,22 @@ module EnvTbl =
 type type_descriptions =
     constructor_description list * label_description list
 
-type implicit_flag = [`Global | `Local | `Forbidden]
+(* `Global: the implicit is bound from the outside of the current scope,
+      receives the level 0 (like persistent modules)
+   `Local: the implicit is bound by a binder that was crossed by current
+      operation.
+      E.g when computing update_level ((implicit M : T) -> M.t),
+      M is marked local on the RHS
+   `Forbidden: the implicit is bound somewhere in a type being unified,
+      and should be rejected during the occur check.
+      E.g when unifying (implicit M : T) -> 'a
+                    and (implicit N : T) -> N.t
+          the unification of 'a with N.t fails.
+   `Arg: the implicit is bound because it is a local argument in a function
+      Use in applicative functors should be rejected, otherwise it behaves as a
+      normal module.
+*)
+type implicit_flag = [`Global | `Local | `Forbidden | `Arg]
 
 let in_signature_flag = 0x01
 let implicit_coercion_flag = 0x02
