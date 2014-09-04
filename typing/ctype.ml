@@ -2054,6 +2054,11 @@ let modtype_of_tpackage env ty =
       !modtype_of_package env Location.none p1 nl1 tl1
   | _ -> assert false
 
+let bind_implicit_arg id ty env =
+  let mty = modtype_of_tpackage env ty in
+  let env = Env.add_module id mty env in
+  Env.set_implicit_level id 0 env
+
 (* mcomp type_pairs subst env t1 t2 does not raise an
    exception if it is possible that t1 and t2 are actually
    equal, assuming the types in type_pairs are equal and

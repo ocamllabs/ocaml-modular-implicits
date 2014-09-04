@@ -366,6 +366,10 @@ let rec check_constraints_rec env loc visited ty =
   | Tpoly (ty, tl) ->
       let _, ty = Ctype.instance_poly false tl ty in
       check_constraints_rec env loc visited ty
+  | Tarrow (Tarr_implicit id, lhs, rhs, _) ->
+      check_constraints_rec env loc visited lhs;
+      check_constraints_rec (Ctype.bind_implicit_arg id lhs env)
+        loc visited rhs
   | _ ->
       Btype.iter_type_expr (check_constraints_rec env loc visited) ty
   end
@@ -536,7 +540,7 @@ let check_recursion env loc path decl to_check =
 
   let visited = ref [] in
 
-  let rec check_regular cpath args prev_exp ty =
+  let rec check_regular env cpath args prev_exp ty =
     let ty = Ctype.repr ty in
     if not (List.memq ty !visited) then begin
       visited := ty :: !visited;
@@ -565,15 +569,19 @@ let check_recursion env loc path decl to_check =
                   raise (Error(loc, Constraint_failed
                                  (ty, Ctype.newconstr path' params0)));
               end;
-              check_regular path' args (path' :: prev_exp) body
+              check_regular env path' args (path' :: prev_exp) body
             with Not_found -> ()
           end;
-          List.iter (check_regular cpath args prev_exp) args'
+          List.iter (check_regular env cpath args prev_exp) args'
       | Tpoly (ty, tl) ->
           let (_, ty) = Ctype.instance_poly ~keep_names:true false tl ty in
-          check_regular cpath args prev_exp ty
+          check_regular env cpath args prev_exp ty
+      | Tarrow (Tarr_implicit id, lhs, rhs, _) ->
+          check_regular env cpath args prev_exp lhs;
+          check_regular (Ctype.bind_implicit_arg id lhs env)
+            cpath args prev_exp rhs
       | _ ->
-          Btype.iter_type_expr (check_regular cpath args prev_exp) ty
+          Btype.iter_type_expr (check_regular env cpath args prev_exp) ty
     end in
 
   Misc.may
@@ -581,7 +589,7 @@ let check_recursion env loc path decl to_check =
       let (args, body) =
         Ctype.instance_parameterized_type
           ~keep_names:true decl.type_params body in
-      check_regular path args [] body)
+      check_regular env path args [] body)
     decl.type_manifest
 
 let check_abbrev_recursion env id_loc_list to_check tdecl =
