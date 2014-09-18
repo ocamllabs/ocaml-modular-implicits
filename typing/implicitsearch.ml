@@ -361,17 +361,22 @@ let remove_type_variables () =
   let variables = ref [] in
   let it_type_expr it ty =
     let ty = repr ty in
-    match ty.desc with
-    | Tvar name when ty.level < generic_level ->
-        let name = match name with
-          | None -> "ex" ^ string_of_int (incr k; !k)
-          | Some name -> name
-        in
-        let ident = Ident.create name in
-        variables := (ty, ident) :: !variables;
-        let ty' = newgenty (Tconstr (Path.Pident ident, [], ref Mnil)) in
-        link_type ty ty'
-    | _ -> type_iterators.it_type_expr it ty;
+    if ty.level >= lowest_level then begin
+      match ty.desc with
+      | Tvar name when ty.level < generic_level ->
+          let name = match name with
+            | None -> "ex" ^ string_of_int (incr k; !k)
+            | Some name -> name
+          in
+          let ident = Ident.create name in
+          variables := (ty, ident) :: !variables;
+          let ty' = newgenty (Tconstr (Path.Pident ident, [], ref Mnil)) in
+          link_type ty ty';
+          mark_type_node ty
+      | _ ->
+          mark_type_node ty;
+          type_iterators.it_do_type_expr it ty;
+    end
   in
   let it = {type_iterators with it_type_expr} in
   variables, it
