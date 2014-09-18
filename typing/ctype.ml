@@ -790,6 +790,8 @@ let update_allowed_implicits allowed_implicits env p =
   with Not_found -> allowed_implicits
 
 let rec update_level allowed_implicits env level ty =
+  (*Format.fprintf Format.err_formatter
+    "update_level of %a from %d to %d\n%!" !printtyp_expr ty ty.level level;*)
   let ty = repr ty in
   if ty.level > level then begin
     begin match Env.gadt_instance_level env ty with
