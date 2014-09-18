@@ -4123,7 +4123,7 @@ let rec subtype_rec env trace t1 t2 cstrs =
     | (_, Tconstr(p2, tl2, abbrev2))
       when generic_abbrev env p2 && safe_abbrev env t2 ->
         subtype_rec env trace t1 (expand_abbrev env t2) cstrs
-    | (Tconstr(p1, tl1, _), Tconstr(p2, tl2, _)) when Path.same p1 p2 ->
+    | (Tconstr(p1, tl1, _), Tconstr(p2, tl2, _)) when Path.same p1 p2 && List.length tl1 = List.length tl2 ->
         begin try
           let decl = Env.find_type p1 env in
           List.fold_left2
