@@ -1638,6 +1638,7 @@ let list_labels env ty =
 
 (* Check that all univars are safe in a type *)
 let check_univars env expans kind exp ty_expected vars =
+  Typeimplicit.generalize_implicits ();
   if expans && not (is_nonexpansive exp) then
     generalize_expansive env exp.exp_type;
   (* need to expand twice? cf. Ctype.unify2 *)
@@ -2037,6 +2038,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       begin_def ();
       let arg = type_exp env sarg in
       end_def ();
+      Typeimplicit.generalize_implicits ();
       if is_nonexpansive arg then generalize arg.exp_type
       else generalize_expansive env arg.exp_type;
       let rec split_cases vc ec = function
@@ -3163,6 +3165,7 @@ and type_label_exp create env loc ty_expected
       begin_def ();
       let arg = type_exp env sarg in
       end_def ();
+      Typeimplicit.generalize_implicits ();
       generalize_expansive env arg.exp_type;
       unify_exp env arg ty_arg;
       check_univars env false "field value" arg label.lbl_arg vars;
