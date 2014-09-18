@@ -134,13 +134,16 @@ class printer  ()= object(self:'self)
   val pipe = false
   val semi = false
   val ifthenelse = false
+  val in_implicit = false
   method under_pipe = {<pipe=true>}
   method under_semi = {<semi=true>}
   method under_ifthenelse = {<ifthenelse=true>}
+  method under_implicit = {<in_implicit=true>}
   method reset_semi = {<semi=false>}
   method reset_ifthenelse = {<ifthenelse=false>}
   method reset_pipe = {<pipe=false>}
-  method reset = {<pipe=false;semi=false;ifthenelse=false>}
+  method reset_implicit = {<in_implicit=false>}
+  method reset = {<pipe=false;semi=false;ifthenelse=false;in_implicit=false>}
   method list : 'a . ?sep:space_formatter -> ?first:space_formatter ->
     ?last:space_formatter -> (Format.formatter -> 'a -> unit) ->
     Format.formatter -> 'a list -> unit
@@ -235,7 +238,7 @@ class printer  ()= object(self:'self)
     | Parr_labelled s ->
         pp f "%s:%a" s self#core_type1 c
     | Parr_implicit s ->
-        pp f "(implicit %s : %a)" s self#core_type1 c
+        pp f "(implicit %s : %a)" s self#under_implicit#core_type1 c
 
   method core_type f x =
     if x.ptyp_attributes <> [] then begin
@@ -324,10 +327,14 @@ class printer  ()= object(self:'self)
         let aux f (s, ct) =
           pp f "type %a@ =@ %a" self#longident_loc s self#core_type ct  in
         (match cstrs with
-        |[] -> pp f "@[<hov2>(module@ %a)@]" self#longident_loc lid
-        |_ ->
-            pp f "@[<hov2>(module@ %a@ with@ %a)@]" self#longident_loc lid
-              (self#list aux  ~sep:"@ and@ ")  cstrs)
+         | [] when in_implicit -> pp f "@[<hov2>%a@]" self#longident_loc lid
+         | [] -> pp f "@[<hov2>(module@ %a)@]" self#longident_loc lid
+         | _ when in_implicit ->
+           pp f "@[<hov2>%a@ with@ %a@]" self#longident_loc lid
+             (self#list aux  ~sep:"@ and@ ") cstrs
+         | _ ->
+           pp f "@[<hov2>(module@ %a@ with@ %a)@]" self#longident_loc lid
+             (self#list aux  ~sep:"@ and@ ") cstrs)
     | Ptyp_extension e -> self#extension f e
     | _ -> self#paren true self#core_type f x
           (********************pattern********************)
@@ -377,6 +384,8 @@ class printer  ()= object(self:'self)
     | Ppat_var ({txt = txt;_}) -> protect_ident f txt
     | Ppat_array l ->
         pp f "@[<2>[|%a|]@]"  (self#list self#pattern1 ~sep:";") l
+    | Ppat_unpack (s) when in_implicit ->
+        pp f "%s" s.txt
     | Ppat_unpack (s) ->
         pp f "(module@ %s)@ " s.txt
     | Ppat_type li ->
@@ -430,7 +439,7 @@ class printer  ()= object(self:'self)
           | _ ->  pp f "~%s:%a@;" s self#simple_pattern p
         end
     | Parr_implicit s ->
-        pp f "(implicit %s : %a)@;" s self#simple_pattern p
+        pp f "(implicit %s : %a)@;" s self#under_implicit#simple_pattern p
 
   method sugar_expr f e =
     if e.pexp_attributes <> [] then false
@@ -659,6 +668,8 @@ class printer  ()= object(self:'self)
         (* |`Normal -> self#longident_loc f li *)
         (* | `Prefix _ | `Infix _ -> pp f "( %a )" self#longident_loc li) *)
     | Pexp_constant c -> self#constant f c;
+    | Pexp_pack me when in_implicit ->
+        self#reset_implicit#module_expr f me
     | Pexp_pack me ->
         pp f "(module@;%a)"  self#module_expr me
     | Pexp_newtype (lid, e) ->
@@ -1401,7 +1412,7 @@ class printer  ()= object(self:'self)
         else
           pp f "~%s:%a" s self#simple_expr e
     | Papp_implicit ->
-        pp f "(implicit %a)" self#simple_expr e
+        pp f "(implicit %a)" self#under_implicit#simple_expr e
 
   method directive_argument f x =
     (match x with
