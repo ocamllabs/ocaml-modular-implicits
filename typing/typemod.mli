@@ -16,7 +16,8 @@ open Types
 open Format
 
 val type_module:
-        Env.t -> Parsetree.module_expr -> Typedtree.module_expr
+  ?implicit_arity:int -> Env.t -> Parsetree.module_expr ->
+  Typedtree.module_expr
 val type_structure:
         Env.t -> Parsetree.structure -> Location.t ->
          Typedtree.structure * Types.signature * Env.t
