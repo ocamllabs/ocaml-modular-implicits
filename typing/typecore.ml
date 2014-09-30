@@ -51,7 +51,7 @@ type error =
   | Coercion_failure of
       type_expr * type_expr * (type_expr * type_expr) list * bool
   | Too_many_arguments of bool * type_expr
-  | Abstract_wrong_label of arrow_flag * type_expr
+  | Abstract_wrong_label of Parsetree.arrow_flag * type_expr
   | Scoping_let_module of string * type_expr
   | Masked_instance_variable of Longident.t
   | Not_a_variant_type of Longident.t
@@ -67,7 +67,6 @@ type error =
   | Invalid_for_loop_index
   | No_value_clauses
   | Exception_pattern_below_toplevel
-
   | Apply_unexpected_implicit of type_expr
   | No_instance_found of Typeimplicit.pending_implicit
   | Ambiguous_implicit of Typeimplicit.pending_implicit * Path.t * Path.t
@@ -1950,38 +1949,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       in
       type_expect ?in_function env sfun ty_expected
   | Pexp_fun (Parr_implicit name, None, spat, sbody) ->
-      let ty = newvar () in
-      (* remember original level *)
-      begin_def ();
-      Ident.set_current_time ty.level;
-      let lev = get_current_level () in
-      let id = Ident.create name in
-      let ty_arg = newvar () in
-      (* type argument *)
-      begin_def ();
-      let (c_lhs, new_env, pattern_force, unpacks) =
-        let scope = Some (Annot.Idef sbody.pexp_loc) in
-        type_pattern ~lev env spat scope ty_arg in
-      end_def();
-      assert (unpacks = []);
-      (* `Contaminating' unifications start here *)
-      List.iter (fun f -> f()) pattern_force;
-      begin_def ();
-      let body = type_implicit_arg id lev new_env sbody in
-      let case = {c_lhs; c_guard = None; c_rhs = body} in
-      let arr = Tarr_implicit id in
-      end_def (); (* exit rhs *)
-      Typeimplicit.generalize_implicits (); (* generalize any implicits *)
-      end_def (); (* exit implicit binding *)
-      let typ = Tarrow (arr, ty_arg, body.exp_type, Cok) in
-      rue {
-        exp_desc = Texp_function (arr, [case], Total);
-        exp_loc = loc; exp_extra = [];
-        exp_type = instance env (newgenty typ);
-        exp_attributes = [];
-        exp_env = env;
-      }
-        (* TODO: keep attributes, call type_function directly *)
+      type_implicit_function ?in_function loc env ty_expected name spat sbody
   | Pexp_fun (arr, None, spat, sexp) ->
       type_function ?in_function loc sexp.pexp_attributes env ty_expected
         arr [{pc_lhs=spat; pc_guard=None; pc_rhs=sexp}]
@@ -2808,20 +2776,20 @@ and type_expect_ ?in_function env sexp ty_expected =
   | Pexp_extension ext ->
       raise (Error_forward (Typetexp.error_of_extension ext))
 
-and type_function ?in_function loc attrs env ty_expected arr caselist =
+and type_function ?in_function loc attrs env ty_expected parr caselist =
   let (loc_fun, ty_fun) =
     match in_function with Some p -> p
     | None -> (loc, instance env ty_expected)
   in
   let separate = !Clflags.principal || Env.has_local_constraints env in
-  let arr = tarr_of_parr arr in
+  let arr = tarr_of_parr parr in
   if separate then begin_def ();
   let (ty_arg, ty_res) =
     try filter_arrow env (instance env ty_expected) arr
     with Unify _ ->
       match expand_head env ty_expected with
         {desc = Tarrow _} as ty ->
-          raise(Error(loc, env, Abstract_wrong_label(arr, ty)))
+          raise(Error(loc, env, Abstract_wrong_label(parr, ty)))
       | _ ->
           raise(Error(loc_fun, env,
                       Too_many_arguments (in_function <> None, ty_fun)))
@@ -3754,40 +3722,104 @@ and type_cases ?in_function env ty_arg ty_res partial_flag loc caselist =
   end;
   cases, partial
 
-and type_implicit_arg id level env sbody =
-  let ty = newvar() in
-  (* remember original level *)
+and type_implicit_function ?in_function loc env ty_expected name spat sbody =
+  let (loc_fun, ty_fun) =
+    match in_function with Some p -> p
+    | None -> (loc, instance env ty_expected)
+  in
+  (* Propogate expected types *)
+  let separate = !Clflags.principal || Env.has_local_constraints env in
+  if separate then begin_def ();
+  let expect =
+    try filter_implicit env (instance env ty_expected)
+    with Unify _ ->
+      match expand_head env ty_expected with
+        {desc = Tarrow _} as ty ->
+          raise(Error(loc, env,
+                      Abstract_wrong_label (Parr_implicit name, ty)))
+      | _ ->
+          raise(Error(loc_fun, env,
+                      Too_many_arguments (in_function <> None, ty_fun)))
+  in
+  let ty_arg =
+    match expect with
+    | Some(_, ty_arg, _) -> ty_arg
+    | None -> newgenvar ()
+  in
+  if separate then begin
+    end_def ();
+    match expect with
+    | Some(_, ty_arg, ty_res) ->
+        generalize_structure ty_arg;
+        generalize_structure ty_res
+    | None -> ()
+  end;
+  (* Type argument *)
   begin_def ();
-  Ident.set_current_time ty.level;
+  let (c_lhs, pat_env, pattern_force, unpacks) =
+    let scope = Some (Annot.Idef sbody.pexp_loc) in
+    type_pattern ~lev:(get_current_level ()) env spat scope ty_arg
+  in
+  end_def();
+  assert (unpacks = []);
+  (* `Contaminating' unifications start here *)
+  List.iter (fun f -> f()) pattern_force;
+  (* Type body *)
+  begin_def ();
+  let level = get_current_level () in
+  begin_def ();
+  Ident.set_current_time level;
   let context = Typetexp.narrow () in
-  let name = Ident.name id in
   let smodl =
     let open Ast_helper in
     Mod.unpack (Exp.ident (mknoloc (Longident.Lident name)))
   in
-  let modl = !type_module env smodl in
-  let new_env = Env.add_module ~arg:true ~implicit_:(Implicit 0) id modl.mod_type env in
-  let new_env = Env.set_implicit_level id level new_env in
+  let modl = !type_module pat_env smodl in
+  let (id, body_env) =
+    Env.enter_module ~arg:true ~implicit_:(Implicit 0)
+      name modl.mod_type pat_env
+  in
+  let body_env = Env.set_implicit_level id level body_env in
   Ctype.init_def(Ident.current_time());
   Typetexp.widen context;
-  let body = type_exp new_env sbody in
-  (* go back to original level *)
-  end_def ();
-  (* Unification of body.exp_type with the fresh variable ty
-     fails if and only if the prefix condition is violated,
-     i.e. if generative types rooted at id show up in the
-     type body.exp_type.  Thus, this unification enforces the
-     scoping condition on "let module". *)
+  let body =
+    match expect with
+    | Some(id', _, ty_res) ->
+        let subst = Subst.add_module id' (Path.Pident id) Subst.identity in
+        let ty_res' = Subst.type_expr subst ty_res in
+        let in_function = Some(loc_fun, ty_fun) in
+          type_expect ?in_function body_env sbody ty_res'
+    | None -> type_exp body_env sbody
+  in
   let mb = { mb_id = id; mb_name = mknoloc name; mb_expr = modl;
              mb_implicit = Implicit 0;
              mb_attributes = []; mb_loc = sbody.pexp_loc }
   in
-  re {
-    exp_desc = Texp_letmodule(mb, body);
-    exp_loc = sbody.pexp_loc; exp_extra = [];
-    exp_type = body.exp_type;
-    exp_attributes = sbody.pexp_attributes;
-    exp_env = env }
+  let body' =
+    re {
+      exp_desc = Texp_letmodule(mb, body);
+      exp_loc = sbody.pexp_loc; exp_extra = [];
+      exp_type = body.exp_type;
+      exp_attributes = sbody.pexp_attributes;
+      exp_env = pat_env }
+  in
+  end_def ();
+  let case = {c_lhs; c_guard = None; c_rhs = body'} in
+  let arr = Tarr_implicit id in
+  let typ = Tarrow (arr, ty_arg, body.exp_type, Cok) in
+  let exp =
+    re {
+      exp_desc = Texp_function (arr, [case], Total);
+      exp_loc = loc; exp_extra = [];
+      exp_type = instance env (newgenty typ);
+      exp_attributes = [];
+      exp_env = env;
+    }
+  in
+  end_def ();
+  Typeimplicit.generalize_implicits (); (* generalize any implicits *)
+  unify_exp env exp (instance env ty_expected);
+  exp
 
 (* Typing of let bindings *)
 
@@ -4178,13 +4210,14 @@ let report_error env ppf = function
       end
   | Abstract_wrong_label (l, ty) ->
       let label_mark = function
-        | Tarr_simple -> "but its first argument is not labelled"
-        | Tarr_labelled s ->
+        | Parsetree.Parr_simple -> "but its first argument is not labelled"
+        | Parsetree.Parr_labelled s ->
             sprintf "but its first argument is labelled ~%s" s
-        | Tarr_optional s ->
+        | Parsetree.Parr_optional s ->
             sprintf "but its first argument is labelled ?%s" s
-        | Tarr_implicit id ->
-            sprintf "but its first argument is implicit %s" (Ident.name id) in
+        | Parsetree.Parr_implicit s ->
+            sprintf "but its first argument is implicit %s" s
+      in
       reset_and_mark_loops ty;
       fprintf ppf "@[<v>@[<2>This function should have type@ %a@]@,%s@]"
       type_expr ty (label_mark l)
