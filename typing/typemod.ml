@@ -1073,7 +1073,7 @@ let wrap_constraint env arg mty explicit =
 
 (* Type a module value expression *)
 
-let rec type_module ?(alias=false) sttn funct_body anchor env smod =
+let rec type_module ?(implicit_arity=0) ?(alias=false) sttn funct_body anchor env smod =
   match smod.pmod_desc with
     Pmod_ident lid ->
       let path =
@@ -1120,10 +1120,13 @@ let rec type_module ?(alias=false) sttn funct_body anchor env smod =
         match ty_arg with
         | None -> (Ident.create "*", env), false
         | Some mty ->
-            Env.enter_module ~arg:true ~implicit_:Nonimplicit name.txt mty env,
-            true
+           let implicit_ =
+             if implicit_arity >= 0 then Implicit 0 else Nonimplicit
+           in Env.enter_module ~arg:true ~implicit_ name.txt mty env,
+              true
       in
-      let body = type_module sttn funct_body None newenv sbody in
+      let implicit_arity = pred implicit_arity in
+      let body = type_module ~implicit_arity sttn true None newenv sbody in
       rm { mod_desc = Tmod_functor(id, name, mty, body);
            mod_type = Mty_functor(id, ty_arg, body.mod_type);
            mod_env = env;
@@ -1277,8 +1280,12 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
                    pmb_loc; pmb_implicit
                   } ->
         check_name "module" module_names name;
+        let implicit_arity = match pmb_implicit with
+          | Nonimplicit -> 0 
+          | Implicit ar -> ar
+        in
         let modl =
-          type_module ~alias:true true funct_body
+          type_module ~implicit_arity ~alias:true true funct_body
             (anchor_submodule name.txt anchor) env smodl in
         let md =
           { md_type = enrich_module_type anchor name.txt modl.mod_type env;
@@ -1501,7 +1508,7 @@ let type_toplevel_phrase env s =
   Env.reset_required_globals ();
   type_structure ~toplevel:true false None env s Location.none
 (*let type_module_alias = type_module ~alias:true true false None*)
-let type_module = type_module true false None
+let type_module ?implicit_arity = type_module ?implicit_arity true false None
 let type_structure = type_structure false None
 
 (* Normalize types in a signature *)

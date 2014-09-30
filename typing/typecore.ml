@@ -79,8 +79,9 @@ exception Error_forward of Location.error
 (* Forward declaration, to be filled in by Typemod.type_module *)
 
 let type_module =
-  ref ((fun env md -> assert false) :
-       Env.t -> Parsetree.module_expr -> Typedtree.module_expr)
+  ref ((fun ?implicit_arity env md -> assert false) :
+       ?implicit_arity:int -> Env.t -> Parsetree.module_expr ->
+       Typedtree.module_expr)
 
 (* Forward declaration, to be filled in by Typemod.type_open *)
 
@@ -2611,7 +2612,11 @@ and type_expect_ ?in_function env sexp ty_expected =
       begin_def ();
       Ident.set_current_time ty.level;
       let context = Typetexp.narrow () in
-      let modl = !type_module env smodl in
+      let implicit_arity = match pmb_implicit with
+        | Nonimplicit -> 0 
+        | Implicit ar -> ar
+      in
+      let modl = !type_module ~implicit_arity env smodl in
       let (id, new_env) =
         Env.enter_module ~implicit_:pmb_implicit name.txt modl.mod_type env in
       Ctype.init_def(Ident.current_time());
