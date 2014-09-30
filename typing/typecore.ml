@@ -1971,6 +1971,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       let case = {c_lhs; c_guard = None; c_rhs = body} in
       let arr = Tarr_implicit id in
       end_def (); (* exit rhs *)
+      Typeimplicit.generalize_implicits (); (* generalize any implicits *)
       end_def (); (* exit implicit binding *)
       let typ = Tarrow (arr, ty_arg, body.exp_type, Cok) in
       rue {
