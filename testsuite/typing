@@ -2,6 +2,7 @@ tests/typing-extensions
 tests/typing-fstclassmod
 tests/typing-gadts
 tests/typing-implicit_unpack
+tests/typing-modular_implicits
 tests/typing-labels
 tests/typing-misc
 tests/typing-misc-bugs
