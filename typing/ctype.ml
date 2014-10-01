@@ -2962,6 +2962,13 @@ let filter_self_method env lab priv meths ty =
     pair
 
 
+let filter_implicit env t =
+  let t = expand_head_trace env t in
+  match t.desc with
+    Tvar _ -> None
+  | Tarrow(Tarr_implicit id, t1, t2, _) -> Some (id, t1, t2)
+  | _ -> raise (Unify [])
+
                         (***********************************)
                         (*  Matching between type schemes  *)
                         (***********************************)
