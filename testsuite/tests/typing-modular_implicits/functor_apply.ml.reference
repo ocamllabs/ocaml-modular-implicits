@@ -1,0 +1,5 @@
+
+#                 module Foo : functor (P : sig  end) -> sig type t = A end
+module Bar : sig  end
+module X : sig type t = private Foo(Bar).t end
+# 
