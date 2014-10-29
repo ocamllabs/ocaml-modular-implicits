@@ -43,6 +43,11 @@ let rec name ?(paren=kfalse) = function
       name ~paren p ^ if paren s then ".( " ^ s ^ " )" else "." ^ s
   | Papply(p1, p2) -> name ~paren p1 ^ "(" ^ name ~paren p2 ^ ")"
 
+let rec is_application = function
+  | Pdot (p, _, _) -> is_application p
+  | Papply _ -> true
+  | Pident _ -> false
+
 let rec head = function
     Pident id -> id
   | Pdot(p, s, pos) -> head p
