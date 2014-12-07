@@ -3376,7 +3376,8 @@ let rec eqtype rename type_pairs subst env t1 t2 =
               unify_univar t1' t2' !univar_pairs
 
           | Tconstr (p1, tl1, _), Tconstr (p2, tl2, _)
-            when Tbl.mem (Path.head p1) !equality_equations
+            when (not (Path.is_application p1) && not (Path.is_application p2))
+              && Tbl.mem (Path.head p1) !equality_equations
               && Tbl.mem (Path.head p2) !equality_equations ->
               let (tl, tr) =
                 (* Base-kinded have priorioties *)
@@ -3391,11 +3392,13 @@ let rec eqtype rename type_pairs subst env t1 t2 =
               eqtype_modulo_equation rename type_pairs subst env tl tr
 
           | Tconstr (p, _, _), te
-            when Tbl.mem (Path.head p) !equality_equations ->
+            when not (Path.is_application p)
+              && Tbl.mem (Path.head p) !equality_equations ->
               eqtype_modulo_equation rename type_pairs subst env t1' t2'
 
           | te, Tconstr (p, _, _)
-            when Tbl.mem (Path.head p) !equality_equations ->
+            when not (Path.is_application p)
+              && Tbl.mem (Path.head p) !equality_equations ->
               eqtype_modulo_equation rename type_pairs subst env t2' t1'
 
           | (_, _) ->
