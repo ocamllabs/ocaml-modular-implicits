@@ -264,6 +264,7 @@ let type_iterators =
     | Sig_modtype (_, mtd)  -> it.it_modtype_declaration it mtd
     | Sig_class (_, cd, _)  -> it.it_class_declaration it cd
     | Sig_class_type (_, ctd, _) -> it.it_class_type_declaration it ctd
+    | Sig_implicit _        -> (*FIXME: do something?*) ()
   and it_value_description it vd =
     it.it_type_expr it vd.val_type
   and it_type_declaration it td =

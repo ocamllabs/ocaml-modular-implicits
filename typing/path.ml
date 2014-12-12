@@ -62,6 +62,7 @@ let rec to_longident = function
   | Pident id -> Longident.Lident (Ident.name id)
   | Pdot(p, s, _) -> Longident.Ldot (to_longident p, s)
   | Papply (p1, p2) -> Longident.Lapply (to_longident p1, to_longident p2)
+let to_string p = Longident.to_string (to_longident p)
 
 let rec flatten acc = function
   | Pident id -> id, acc

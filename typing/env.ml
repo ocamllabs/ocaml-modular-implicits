@@ -646,6 +646,12 @@ let rec implicit_cannot_occur path env =
 
 let implicit_instances env = env.implicit_instances
 
+let register_as_implicit path arity env =
+  let md = find_module path env in
+  let md = {md with md_implicit = Implicit arity} in
+  (* FIXME: Check arity *)
+  register_if_implicit path md env
+
 (* Lookup by name *)
 
 exception Recmodule
@@ -1098,6 +1104,32 @@ let rec scrape_alias env ?path mty =
 
 let scrape_alias env mty = scrape_alias env mty
 
+(* Follow all aliases in a path *)
+
+let rec canonical_path env path =
+  try
+    let md = find_module path env in
+    match md.Types.md_type with
+    | Mty_alias path -> canonical_path env path
+    | _ -> match path with
+      | Path.Pident _ -> path
+      | Path.Pdot (p1,s,i) ->
+          let p1' = canonical_path env p1 in
+          if p1 == p1' then
+            path
+          else
+            Path.Pdot (p1', s, i)
+      | Path.Papply (p1, p2) ->
+          let p1' = canonical_path env p1
+          and p2' = canonical_path env p2 in
+          if p1' == p1 && p2 == p2' then
+            path
+          else
+            Path.Papply (p1', p2')
+  with Not_found ->
+    (*?!*)
+    path
+
 (* Compute constructor descriptions *)
 
 let constructors_of_type ty_path decl =
@@ -1132,24 +1164,29 @@ let signature_item_size = function
   | Sig_type _       -> 0
   | Sig_modtype _    -> 0
   | Sig_class_type _ -> 0
+  | Sig_implicit _   -> 0
 
 let signature_item_subst item p sub = match item with
   | Sig_type (id, _, _) -> Subst.add_type id p sub
   | Sig_module (id, _, _) -> Subst.add_module id p sub
   | Sig_modtype (id, _) -> Subst.add_modtype id (Mty_ident p) sub
-  | Sig_value _ | Sig_typext _ | Sig_class _ | Sig_class_type _ -> sub
+  | Sig_value _ | Sig_typext _ | Sig_implicit _
+  | Sig_class _ | Sig_class_type _ -> sub
 
 let signature_item_ident = function
   | Sig_value (id, _)     | Sig_typext (id, _, _)     | Sig_type (id, _, _)
   | Sig_module (id, _, _) | Sig_modtype (id, _)
   | Sig_class (id, _, _)  | Sig_class_type (id, _, _) ->
       id
+  | Sig_implicit _ -> assert false
 
 (* Given a signature and a root path, prefix all idents in the signature
    by the root path and build the corresponding substitution. *)
 
 let rec prefix_idents root pos sub = function
-    [] -> ([], sub)
+  | [] -> ([], sub)
+  | Sig_implicit _ :: rem ->
+      prefix_idents root pos sub rem
   | item :: rem ->
       let id   = signature_item_ident item in
       let size = signature_item_size item in
@@ -1178,6 +1215,8 @@ let subst_signature sub sg =
           Sig_class(id, Subst.class_declaration sub decl, x)
       | Sig_class_type(id, decl, x) ->
           Sig_class_type(id, Subst.cltype_declaration sub decl, x)
+      | Sig_implicit(path, arity) ->
+          Sig_implicit(Subst.module_path sub path, arity)
     )
     sg
 
@@ -1285,7 +1324,8 @@ and components_of_module_maker (env, sub, path, mty) =
         | Sig_class_type(id, decl, _) ->
             let decl' = Subst.cltype_declaration sub decl in
             c.comp_cltypes <-
-              Tbl.add (Ident.name id) (decl', !pos) c.comp_cltypes)
+              Tbl.add (Ident.name id) (decl', !pos) c.comp_cltypes
+        | Sig_implicit _ -> ())
         sg pl;
         Structure_comps c
   | Mty_functor(param, ty_arg, ty_res) ->
@@ -1565,6 +1605,7 @@ let add_item comp env =
   | Sig_modtype(id, decl)   -> add_modtype id decl env
   | Sig_class(id, decl, _)  -> add_class id decl env
   | Sig_class_type(id, decl, _) -> add_cltype id decl env
+  | Sig_implicit(path, arity) -> register_as_implicit path arity env
 
 let rec add_signature sg env =
   match sg with
@@ -1598,6 +1639,8 @@ let open_signature slot root sg env0 =
             store_class slot (Ident.hide id) p decl env env0
         | Sig_class_type(id, decl, _) ->
             store_cltype slot (Ident.hide id) p decl env env0
+        | Sig_implicit(path, arity) ->
+            register_as_implicit path arity env
       )
       env0 sg pl in
   { newenv with summary = Env_open(env0.summary, root) }

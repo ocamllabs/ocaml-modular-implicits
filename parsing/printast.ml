@@ -707,6 +707,10 @@ and signature_item i ppf x =
   | Psig_attribute (s, arg) ->
       line i ppf "Psig_attribute \"%s\"\n" s.txt;
       payload i ppf arg
+  | Psig_implicit id ->
+      line i ppf "Psig_implicit %a %d\n"
+        fmt_longident_loc id.pimp_lid id.pimp_arity;
+      attributes i ppf id.pimp_attributes
 
 and modtype_declaration i ppf = function
   | None -> line i ppf "#abstract"
@@ -814,6 +818,10 @@ and structure_item i ppf x =
   | Pstr_attribute (s, arg) ->
       line i ppf "Pstr_attribute \"%s\"\n" s.txt;
       payload i ppf arg
+  | Pstr_implicit id ->
+      line i ppf "Pstr_implicit %a %d\n"
+        fmt_longident_loc id.pimp_lid id.pimp_arity;
+      attributes i ppf id.pimp_attributes
 
 and module_declaration i ppf pmd =
   string_loc i ppf pmd.pmd_name;

@@ -164,6 +164,7 @@ module Sig = struct
   let rec_module ?loc a = mk ?loc (Psig_recmodule a)
   let modtype ?loc a = mk ?loc (Psig_modtype a)
   let open_ ?loc a = mk ?loc (Psig_open a)
+  let implicit_ ?loc a = mk ?loc (Psig_implicit a)
   let include_ ?loc a = mk ?loc (Psig_include a)
   let class_ ?loc a = mk ?loc (Psig_class a)
   let class_type ?loc a = mk ?loc (Psig_class_type a)
@@ -184,6 +185,7 @@ module Str = struct
   let rec_module ?loc a = mk ?loc (Pstr_recmodule a)
   let modtype ?loc a = mk ?loc (Pstr_modtype a)
   let open_ ?loc a = mk ?loc (Pstr_open a)
+  let implicit_ ?loc a = mk ?loc (Pstr_implicit a)
   let class_ ?loc a = mk ?loc (Pstr_class a)
   let class_type ?loc a = mk ?loc (Pstr_class_type a)
   let include_ ?loc a = mk ?loc (Pstr_include a)
@@ -328,6 +330,16 @@ module Opn = struct
      popen_flag = flag;
      popen_loc = loc;
      popen_attributes = attrs;
+    }
+end
+
+module Imp = struct
+  let mk ?(loc = !default_loc) ?(attrs = []) ?(arity = 0) lid =
+    {
+      pimp_lid = lid;
+      pimp_loc = loc;
+      pimp_attributes = attrs;
+      pimp_arity = arity;
     }
 end
 

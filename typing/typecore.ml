@@ -192,6 +192,7 @@ let iter_expression f e =
     | Pstr_exception _
     | Pstr_modtype _
     | Pstr_open _
+    | Pstr_implicit _
     | Pstr_class_type _
     | Pstr_attribute _
     | Pstr_extension _ -> ()
@@ -1451,7 +1452,8 @@ and is_nonexpansive_mod mexp =
       List.for_all
         (fun item -> match item.str_desc with
           | Tstr_eval _ | Tstr_primitive _ | Tstr_type _
-          | Tstr_modtype _ | Tstr_open _ | Tstr_class_type _  -> true
+          | Tstr_modtype _ | Tstr_open _
+          | Tstr_implicit _ | Tstr_class_type _  -> true
           | Tstr_value (_, pat_exp_list) ->
               List.for_all (fun vb -> is_nonexpansive vb.vb_expr) pat_exp_list
           | Tstr_module {mb_expr=m;_}
@@ -2584,7 +2586,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       Ident.set_current_time ty.level;
       let context = Typetexp.narrow () in
       let implicit_arity = match pmb_implicit with
-        | Nonimplicit -> 0 
+        | Nonimplicit -> 0
         | Implicit ar -> ar
       in
       let modl = !type_module ~implicit_arity env smodl in

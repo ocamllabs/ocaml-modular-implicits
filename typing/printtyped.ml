@@ -666,6 +666,10 @@ and signature_item i ppf x =
       line i ppf "Psig_include\n";
       attributes i ppf incl.incl_attributes;
       module_type i ppf incl.incl_mod
+  | Tsig_implicit imp ->
+      line i ppf "Psig_implicit %a %d\n"
+        fmt_path imp.imp_path imp.imp_arity;
+      attributes i ppf imp.imp_attributes
   | Tsig_class (l) ->
       line i ppf "Psig_class\n";
       list i class_description ppf l;
@@ -779,6 +783,10 @@ and structure_item i ppf x =
       line i ppf "Pstr_include";
       attributes i ppf incl.incl_attributes;
       module_expr i ppf incl.incl_mod;
+  | Tstr_implicit imp ->
+      line i ppf "Pstr_implicit %a %d\n"
+        fmt_path imp.imp_path imp.imp_arity;
+      attributes i ppf imp.imp_attributes
   | Tstr_attribute (s, arg) ->
       line i ppf "Pstr_attribute \"%s\"\n" s.txt;
       Printast.payload i ppf arg
