@@ -114,6 +114,7 @@ module Typedtree_search =
           Hashtbl.add table (P (Name.from_ident vd.val_id)) tt
       | Typedtree.Tstr_open _ -> ()
       | Typedtree.Tstr_include _ -> ()
+      | Typedtree.Tstr_implicit _ -> ()
       | Typedtree.Tstr_eval _ -> ()
       | Typedtree.Tstr_attribute _ -> ()
 
@@ -1088,6 +1089,7 @@ module Analyser =
           (* don't care *)
           (0, env, [])
       | Parsetree.Pstr_attribute _
+      | Parsetree.Pstr_implicit _
       | Parsetree.Pstr_extension _ ->
           (0, env, [])
       | Parsetree.Pstr_value (rec_flag, pat_exp_list) ->

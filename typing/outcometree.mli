@@ -97,6 +97,7 @@ and out_sig_item =
   | Osig_module of string * out_module_type * out_rec_status * Asttypes.implicit_flag
   | Osig_type of out_type_decl * out_rec_status
   | Osig_value of string * out_type * string list
+  | Osig_implicit of out_ident * int
 and out_type_decl =
   { otype_name: string;
     otype_params: (string * (bool * bool)) list;

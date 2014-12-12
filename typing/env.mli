@@ -134,6 +134,9 @@ val open_pers_signature: string -> t -> t
 
 val open_implicit: Path.t -> signature -> t -> t
 
+(* Mark one path as implicit *)
+val register_as_implicit: Path.t -> int -> t -> t
+
 (* Insertion by name *)
 
 val enter_value:
@@ -267,3 +270,4 @@ val fold_cltypes:
 
 (** Utilities *)
 val scrape_alias: t -> module_type -> module_type
+val canonical_path: t -> Path.t -> Path.t

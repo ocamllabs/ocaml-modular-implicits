@@ -39,6 +39,7 @@ type mapper = {
                          -> extension_constructor;
   include_declaration: mapper -> include_declaration -> include_declaration;
   include_description: mapper -> include_description -> include_description;
+  implicit_description: mapper -> implicit_description -> implicit_description;
   label_declaration: mapper -> label_declaration -> label_declaration;
   location: mapper -> Location.t -> Location.t;
   module_binding: mapper -> module_binding -> module_binding;

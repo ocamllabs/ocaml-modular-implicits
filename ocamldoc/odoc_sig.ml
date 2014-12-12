@@ -60,6 +60,8 @@ module Signature_search =
           Hashtbl.add table (M (Name.from_ident ident)) signat
       | Types.Sig_modtype (ident,_) ->
           Hashtbl.add table (MT (Name.from_ident ident)) signat
+      | Types.Sig_implicit _ ->
+          ()
 
     let table signat =
       let t = Hashtbl.create 13 in
@@ -327,6 +329,7 @@ module Analyser =
         | Parsetree.Psig_exception _
         | Parsetree.Psig_open _
         | Parsetree.Psig_include _
+        | Parsetree.Psig_implicit _
         | Parsetree.Psig_class _
         | Parsetree.Psig_class_type _ as tp -> take_item tp
         | Parsetree.Psig_type types ->
@@ -1186,7 +1189,7 @@ module Analyser =
               f ~first: true 0 pos_start_ele class_type_declaration_list
             in
             (maybe_more, new_env, eles)
-        | Parsetree.Psig_attribute _
+        | Parsetree.Psig_attribute _ | Parsetree.Psig_implicit _
         | Parsetree.Psig_extension _ ->
             (0, env, [])
 

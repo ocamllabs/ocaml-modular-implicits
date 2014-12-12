@@ -1071,6 +1071,12 @@ class printer  ()= object(self:'self)
     | Psig_extension(e, a) ->
         self#item_extension f e;
         self#item_attributes f a
+    | Psig_implicit id ->
+        (*FIXME Arity*)
+        pp f "@[<hov2>implicit@ %a@]%a"
+          self#longident_loc id.pimp_lid
+          self#item_attributes id.pimp_attributes
+
   end
   method module_expr f x =
     if x.pmod_attributes <> [] then begin
@@ -1256,6 +1262,10 @@ class printer  ()= object(self:'self)
     | Pstr_extension(e, a) ->
         self#item_extension f e;
         self#item_attributes f a
+    | Pstr_implicit id ->
+        pp f "@[<hov2>implicit@ %a@]%a"
+          self#longident_loc id.pimp_lid
+          self#item_attributes id.pimp_attributes
   end
   method type_param f (ct, a) =
     pp f "%s%a" (type_variance a) self#core_type ct

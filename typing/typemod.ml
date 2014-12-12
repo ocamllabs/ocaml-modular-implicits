@@ -90,6 +90,30 @@ let type_open ?toplevel env sod =
   in
   (path, newenv, od)
 
+let type_implicit env id =
+  let arity = id.pimp_arity in
+  let lid = id.pimp_lid.Location.txt in
+  let path = Env.lookup_module ~load:true lid env in
+  (* FIXME: Check that arity match *)
+  let newenv = Env.register_as_implicit path arity env in
+  let imp = {Typedtree. imp_path = path;
+             imp_txt = id.pimp_lid;
+             imp_loc = id.pimp_loc;
+             imp_attributes = id.pimp_attributes;
+             imp_arity = arity}
+  in
+  path, arity, newenv, imp
+
+(* Bind a module as implicit in current environment *)
+
+let type_open_ ?toplevel opf env loc lid =
+  let path, md = Typetexp.find_module env lid.loc lid.txt in
+  let sg = extract_sig_open env lid.loc md.md_type in
+  let env = match opf with
+    | Open_all ovf -> Env.open_signature ~loc ?toplevel ovf path sg env
+    | Open_implicit -> Env.open_implicit path sg env in
+  path, env
+
 (* Record a module type *)
 let rm node =
   Stypes.record (Stypes.Ti_mod node);
@@ -688,6 +712,11 @@ and transl_signature env sg =
             let (trem, rem, final_env) = transl_sig newenv srem in
             mksig (Tsig_open od) env loc :: trem,
             rem, final_env
+        | Psig_implicit id ->
+            let (path, arity, newenv, imp) = type_implicit env id in
+            let (trem, rem, final_env) = transl_sig newenv srem in
+            mksig (Tsig_implicit imp) env loc :: trem,
+            Sig_implicit (path, arity) :: rem, final_env
         | Psig_include sincl ->
             let smty = sincl.pincl_mod in
             let tmty = transl_modtype env smty in
@@ -1472,6 +1501,9 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
     | Pstr_open sod ->
         let (path, newenv, od) = type_open ~toplevel env sod in
         Tstr_open od, [], newenv
+    | Pstr_implicit id ->
+        let (path, arity, newenv, imp) = type_implicit env id in
+        Tstr_implicit imp, [], newenv
     | Pstr_class cl ->
         List.iter
           (fun {pci_name = name} -> check_name "type" type_names name)
@@ -1541,7 +1573,7 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
                   | Sig_value (_, {val_kind=Val_reg})
                   | Sig_typext _ | Sig_class _ as it ->
                       incr pos; it
-                  | Sig_value _ | Sig_type _ | Sig_modtype _
+                  | Sig_value _ | Sig_type _ | Sig_modtype _ | Sig_implicit _
                   | Sig_class_type _ as it ->
                       it)
                 sg

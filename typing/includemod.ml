@@ -165,11 +165,13 @@ let item_ident_name = function
   | Sig_modtype(id, d) -> (id, d.mtd_loc, Field_modtype(Ident.name id))
   | Sig_class(id, d, _) -> (id, d.cty_loc, Field_class(Ident.name id))
   | Sig_class_type(id, d, _) -> (id, d.clty_loc, Field_classtype(Ident.name id))
+  | Sig_implicit _ -> assert false
 
 let is_runtime_component = function
   | Sig_value(_,{val_kind = Val_prim _})
   | Sig_type(_,_,_)
   | Sig_modtype(_,_)
+  | Sig_implicit(_,_)
   | Sig_class_type(_,_,_) -> false
   | Sig_value(_,_)
   | Sig_typext(_,_,_)
@@ -329,6 +331,7 @@ and signatures env cxt subst sig1 sig2 =
      The table is indexed by kind and name of component *)
   let rec build_component_table pos tbl = function
       [] -> pos, tbl
+    | Sig_implicit _ :: rem -> build_component_table pos tbl rem
     | item :: rem ->
         let (id, _loc, name) = item_ident_name item in
         let nextpos = if is_runtime_component item then pos + 1 else pos in
@@ -360,6 +363,8 @@ and signatures env cxt subst sig1 sig2 =
                 Tcoerce_structure (cc, id_pos_list)
           | _  -> raise(Error unpaired)
         end
+    | Sig_implicit _ :: rem ->
+        pair_components subst paired unpaired rem
     | item2 :: rem ->
         let (id2, loc, name2) = item_ident_name item2 in
         let name2, report =
@@ -382,7 +387,7 @@ and signatures env cxt subst sig1 sig2 =
                 Subst.add_module id2 (Pident id1) subst
             | Sig_modtype _ ->
                 Subst.add_modtype id2 (Mty_ident (Pident id1)) subst
-            | Sig_value _ | Sig_typext _
+            | Sig_value _ | Sig_typext _ | Sig_implicit _
             | Sig_class _ | Sig_class_type _ ->
                 subst
           in

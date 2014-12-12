@@ -71,6 +71,11 @@ and untype_structure_item item =
                    popen_attributes = od.open_attributes;
                    popen_loc = od.open_loc;
                   }
+    | Tstr_implicit imp ->
+        Pstr_implicit {pimp_lid = imp.imp_txt; pimp_arity = imp.imp_arity;
+                       pimp_attributes = imp.imp_attributes;
+                       pimp_loc = imp.imp_loc;
+                      }
     | Tstr_class list ->
         Pstr_class
           (List.map
@@ -414,6 +419,11 @@ and untype_signature_item item =
                    popen_attributes = od.open_attributes;
                    popen_loc = od.open_loc;
                   }
+    | Tsig_implicit imp ->
+        Psig_implicit {pimp_lid = imp.imp_txt; pimp_arity = imp.imp_arity;
+                       pimp_attributes = imp.imp_attributes;
+                       pimp_loc = imp.imp_loc;
+                      }
     | Tsig_include incl ->
         Psig_include {pincl_mod = untype_module_type incl.incl_mod;
                       pincl_attributes = incl.incl_attributes;

@@ -681,6 +681,8 @@ and signature_item_desc =
         (* [@@@id] *)
   | Psig_extension of extension * attributes
         (* [%%id] *)
+  | Psig_implicit of implicit_description
+        (* implicit Path *)
 
 and module_declaration =
     {
@@ -714,6 +716,14 @@ and open_description =
                               shadowing' warning)
    open  X - popen_override = Fresh
  *)
+
+and implicit_description =
+  {
+    pimp_lid: Longident.t loc;
+    pimp_loc: Location.t;
+    pimp_attributes: attributes;
+    pimp_arity: int;
+  }
 
 and 'a include_infos =
     {
@@ -821,6 +831,8 @@ and structure_item_desc =
         (* [@@@id] *)
   | Pstr_extension of extension * attributes
         (* [%%id] *)
+  | Pstr_implicit of implicit_description
+        (* implicit Path.t *)
 
 and value_binding =
   {

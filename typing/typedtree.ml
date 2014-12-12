@@ -235,6 +235,7 @@ and structure_item_desc =
   | Tstr_class of (class_declaration * string list * virtual_flag) list
   | Tstr_class_type of (Ident.t * string loc * class_type_declaration) list
   | Tstr_include of include_declaration
+  | Tstr_implicit of implicit_description
   | Tstr_attribute of attribute
 
 and module_binding =
@@ -300,6 +301,7 @@ and signature_item_desc =
   | Tsig_modtype of module_type_declaration
   | Tsig_open of open_description
   | Tsig_include of include_description
+  | Tsig_implicit of implicit_description
   | Tsig_class of class_description list
   | Tsig_class_type of class_type_declaration list
   | Tsig_attribute of attribute
@@ -330,6 +332,15 @@ and open_description =
      open_flag: open_flag;
      open_loc: Location.t;
      open_attributes: attribute list;
+    }
+
+and implicit_description =
+    {
+     imp_path: Path.t;
+     imp_txt: Longident.t loc;
+     imp_arity: int;
+     imp_loc: Location.t;
+     imp_attributes: attribute list;
     }
 
 and 'a include_infos =

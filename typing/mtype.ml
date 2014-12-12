@@ -87,6 +87,8 @@ and strengthen_sig env sg p =
       sigelt :: strengthen_sig env rem p
   | (Sig_class_type(id, decl, rs) as sigelt) :: rem ->
       sigelt :: strengthen_sig env rem p
+  | (Sig_implicit _ as sigelt) :: rem ->
+      sigelt :: strengthen_sig env rem p
 
 and strengthen_decl env md p =
   {md with md_type = strengthen env md.md_type p}
@@ -100,6 +102,16 @@ let () = Env.strengthen := strengthen
 type variance = Co | Contra | Strict
 
 let nondep_supertype env mid mty =
+
+  let nondep_alias env p =
+    if Path.isfree mid p then
+      let p = Env.canonical_path env p in
+      if Path.isfree mid p then
+        (* FIXME: do better *)
+        failwith "Path would escape"
+      else p
+    else p
+  in
 
   let rec nondep_mty env va mty =
     match mty with
@@ -168,6 +180,9 @@ let nondep_supertype env mid mty =
       | Sig_class_type(id, d, rs) ->
           Sig_class_type(id, Ctype.nondep_cltype_declaration env mid d, rs)
           :: rem'
+      | Sig_implicit (path, arity) ->
+          Sig_implicit (nondep_alias env path, arity)
+          :: rem'
 
   and nondep_modtype_decl env mtd =
     {mtd with mtd_type = Misc.may_map (nondep_mty env Strict) mtd.mtd_type}
@@ -229,7 +244,7 @@ and type_paths_sig env p pos sg =
       type_paths_sig (Env.add_modtype id decl env) p pos rem
   | (Sig_typext _ | Sig_class _) :: rem ->
       type_paths_sig env p (pos+1) rem
-  | (Sig_class_type _) :: rem ->
+  | (Sig_class_type _ | Sig_implicit _) :: rem ->
       type_paths_sig env p pos rem
 
 let rec no_code_needed env mty =
@@ -250,7 +265,7 @@ and no_code_needed_sig env sg =
   | Sig_module(id, md, _) :: rem ->
       no_code_needed env md.md_type &&
       no_code_needed_sig (Env.add_module_declaration id md env) rem
-  | (Sig_type _ | Sig_modtype _ | Sig_class_type _) :: rem ->
+  | (Sig_type _ | Sig_modtype _ | Sig_class_type _ | Sig_implicit _) :: rem ->
       no_code_needed_sig env rem
   | (Sig_typext _ | Sig_class _) :: rem ->
       false
@@ -285,7 +300,8 @@ and contains_type_item env = function
   | Sig_type _
   | Sig_typext _
   | Sig_class _
-  | Sig_class_type _ ->
+  | Sig_class_type _
+  | Sig_implicit _->
       ()
 
 let contains_type env mty =

@@ -1254,6 +1254,8 @@ and tree_of_signature_rec env' = function
             [tree_of_class_declaration id decl rs]
         | Sig_class_type(id, decl, rs) ->
             [tree_of_cltype_declaration id decl rs]
+        | Sig_implicit(path, arity) ->
+            [Osig_implicit (tree_of_path path, arity)]
       in
       let env' = Env.add_signature (item :: sg) env' in
       trees @ tree_of_signature_rec env' rem

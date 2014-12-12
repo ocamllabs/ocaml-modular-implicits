@@ -67,6 +67,8 @@ let rec to_longident = function
   | Papply (p1, p2, i) ->
       Longident.Lapply (to_longident p1, to_longident p2, i)
 
+let to_string p = Longident.to_string (to_longident p)
+
 let rec flatten acc = function
   | Pident id -> id, acc
   | Pdot (p, s, pos) -> flatten ((s,pos) :: acc) p
