@@ -670,6 +670,7 @@ structure_item:
       { mkstr(Pstr_modtype (Mtd.mk (mkrhs $3 3)
                               ~typ:$5 ~attrs:$6 ~loc:(symbol_rloc()))) }
   | open_statement { mkstr(Pstr_open $1) }
+  | implicit_statement { mkstr(Pstr_implicit $1) }
   | CLASS class_declarations
       { mkstr(Pstr_class (List.rev $2)) }
   | CLASS TYPE class_type_declarations
@@ -704,6 +705,14 @@ module_binding:
   | IMPLICIT MODULE UIDENT module_binding_body post_item_attributes
       { Mb.mk (mkrhs $3 3) $4 ~implicit_:Implicit
           ~attrs:$5 ~loc:(symbol_rloc ()) }
+
+implicit_statement:
+  | IMPLICIT mod_longident implicit_statement_arity post_item_attributes
+      { Imp.mk (mkrhs $2 2) ~arity:$3 ~attrs:$4 ~loc:(symbol_rloc()) }
+;
+implicit_statement_arity:
+  | /* empty */ { 0 }
+  | implicit_statement_arity LPAREN UNDERSCORE RPAREN { 1 + $1 }
 ;
 
 /* Module types */
@@ -783,6 +792,8 @@ signature_item:
                               ~attrs:$6)) }
   | open_statement
       { mksig(Psig_open $1) }
+  | implicit_statement
+      { mksig(Psig_implicit $1) }
   | INCLUDE module_type post_item_attributes %prec below_WITH
       { mksig(Psig_include (Incl.mk $2 ~attrs:$3 ~loc:(symbol_rloc()))) }
   | CLASS class_descriptions
