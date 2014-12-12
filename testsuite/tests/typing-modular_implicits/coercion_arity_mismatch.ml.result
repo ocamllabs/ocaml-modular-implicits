@@ -1,8 +1,0 @@
-
-#   module type S = sig type t end
-# module type T = sig type _ t end
-# M# let f (x : (implicit X:S) -> X.t) () = [4m(x :> (implicit X:T) -> unit X.t)[24m;;
-[24mError: Type (implicit X : S) -> X.t is not a subtype of
-         (implicit X : T) -> unit X.t 
-       Type (module T) is not a subtype of (module S) 
-# 
