@@ -1121,7 +1121,7 @@ let rec type_module ?(implicit_arity=0) ?(alias=false) sttn funct_body anchor en
         | None -> (Ident.create "*", env), false
         | Some mty ->
            let implicit_ =
-             if implicit_arity >= 0 then Implicit 0 else Nonimplicit
+             if implicit_arity > 0 then Implicit 0 else Nonimplicit
            in Env.enter_module ~arg:true ~implicit_ name.txt mty env,
               true
       in
