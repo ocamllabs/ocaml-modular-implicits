@@ -841,7 +841,11 @@ let rec generalize_expansive env var_level ty =
             variance tyl
       | Tpackage (_, _, tyl) ->
           List.iter (generalize_contravariant env var_level) tyl
-      | Tarrow (_, t1, t2, _) ->
+      | Tarrow (kind, t1, t2, _) ->
+          let env = match kind with
+            | Tarr_implicit id -> Env.set_implicit_level id var_level env
+            | _ -> env
+          in
           generalize_contravariant env var_level t1;
           generalize_expansive env var_level t2
       | _ ->
