@@ -1131,7 +1131,7 @@ let pack_implicit inst path =
         | Mty_functor (param, Some mty_param, mty_res) ->
             let coercion = Includemod.modtypes env marg.mod_type mty_param in
             let mty_appl = Subst.modtype
-                (Subst.add_module param path Subst.identity)  mty_res
+                (Subst.add_module param p2 Subst.identity)  mty_res
             in
             { mod_desc = Tmod_apply(mfun, marg, coercion);
               mod_type = mty_appl;
