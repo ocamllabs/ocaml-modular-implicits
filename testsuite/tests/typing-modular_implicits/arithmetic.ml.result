@@ -1,0 +1,103 @@
+
+#                                                                       type z = Z
+type 'n s = S of 'n
+module type N = sig type n val n : n end
+implicit module Z : sig type n = z val n : n end
+implicit functor S (N : N) : sig type n = N.n s val n : n end
+module type ADD = sig type a and b and c val a : a val b : b val c : c end
+val add : (implicit Add : ADD) -> Add.a -> Add.b -> Add.c = <fun>
+implicit functor AddZ (B : N) :
+  sig type a = z and b = B.n and c = B.n val a : a val b : b val c : c end
+implicit functor AddS (A : N) (B : N) (Add : sig
+                                               type a = A.n
+                                               and b = B.n
+                                               and c
+                                               val a : a
+                                               val b : b
+                                               val c : c
+                                             end) :
+  sig
+    type a = A.n s
+    and b = B.n
+    and c = Add.c s
+    val a : a
+    val b : b
+    val c : c
+  end
+#   *     MMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24mMMMMM# 
+  (* Stress Implicitsearch.translpath
+     Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
+  add (S Z) Z
+  ;;
+[24m- : AddS(Z)(Z)(AddZ(Z)).c = S Z
+# 
