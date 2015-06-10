@@ -676,6 +676,12 @@ let rec implicit_cannot_occur path env =
 
 let implicit_instances env = env.implicit_instances
 
+let register_as_implicit path arity env =
+  let md = find_module path env in
+  let md = {md with md_implicit = Implicit arity} in
+  (* FIXME: Check arity *)
+  register_if_implicit path md env
+
 (* Lookup by name *)
 
 exception Recmodule
