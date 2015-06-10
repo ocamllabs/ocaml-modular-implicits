@@ -1138,14 +1138,18 @@ let rec type_module ?(implicit_arity=0) ?(alias=false) sttn funct_body anchor en
   | Pmod_functor(name, smty, sbody) ->
       let mty = may_map (transl_modtype env) smty in
       let ty_arg = may_map (fun m -> m.mty_type) mty in
-      let (id, newenv), funct_body =
+      let id, newenv, funct_body =
         match ty_arg with
-        | None -> (Ident.create "*", env), false
+        | None -> Ident.create "*", env, false
         | Some mty ->
-           let implicit_ =
-             if implicit_arity > 0 then Implicit 0 else Nonimplicit
-           in Env.enter_module ~arg:true ~implicit_ name.txt mty env,
-              true
+            let id, env =
+              Env.enter_module ~arg:true ~implicit_:Nonimplicit name.txt mty env
+            in
+            let env = if implicit_arity > 0
+              then Env.register_as_implicit (Pident id) 0 env
+              else env
+            in
+            id, env, true
       in
       let implicit_arity = pred implicit_arity in
       let body = type_module ~implicit_arity sttn true None newenv sbody in
