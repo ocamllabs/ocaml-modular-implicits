@@ -29,6 +29,7 @@ let structure_item sub x =
   | Tstr_recmodule list -> List.iter (sub # module_binding) list
   | Tstr_modtype mtd -> opt (sub # module_type) mtd.mtd_type
   | Tstr_open _ -> ()
+  | Tstr_implicit _ -> ()
   | Tstr_class list ->
       List.iter (fun (ci, _, _) -> sub # class_expr ci.ci_expr) list
   | Tstr_class_type list ->
@@ -192,6 +193,7 @@ let signature_item sub item =
   | Tsig_modtype mtd ->
       opt (sub # module_type) mtd.mtd_type
   | Tsig_open _ -> ()
+  | Tsig_implicit _ -> ()
   | Tsig_include incl -> sub # module_type incl.incl_mod
   | Tsig_class list ->
       List.iter (sub # class_description) list

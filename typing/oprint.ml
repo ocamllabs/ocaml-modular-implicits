@@ -482,6 +482,11 @@ and print_out_sig_item ppf =
       in
       fprintf ppf "@[<2>%s %a :@ %a%a@]" kwd value_ident name !out_type
         ty pr_prims prims
+  | Osig_implicit (name, arity) ->
+      print_ident ppf name;
+      for _i = 1 to arity do
+        pp_print_string ppf "(_)"
+      done
 
 and print_out_type_decl kwd ppf td =
   let print_constraints ppf =

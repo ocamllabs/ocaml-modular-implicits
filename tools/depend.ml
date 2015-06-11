@@ -267,6 +267,8 @@ and add_sig_item bv item =
       List.iter (add_class_description bv) cdl; bv
   | Psig_class_type cdtl ->
       List.iter (add_class_type_declaration bv) cdtl; bv
+  | Psig_implicit id ->
+      addmodule bv id.pimp_lid; bv
   | Psig_attribute _ | Psig_extension _ ->
       bv
 
@@ -328,6 +330,8 @@ and add_struct_item bv item =
       List.iter (add_class_type_declaration bv) cdtl; bv
   | Pstr_include incl ->
       add_module bv incl.pincl_mod; bv
+  | Pstr_implicit od ->
+      addmodule bv od.pimp_lid; bv
   | Pstr_attribute _ | Pstr_extension _ ->
       bv
 

@@ -269,3 +269,4 @@ val fold_cltypes:
 
 (** Utilities *)
 val scrape_alias: t -> module_type -> module_type
+val canonical_path: t -> Path.t -> Path.t

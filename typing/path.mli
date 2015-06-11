@@ -33,6 +33,8 @@ val head: t -> Ident.t
 val last: t -> string
 
 val to_longident: t -> Longident.t
+val to_string: t -> string
 
 val flatten: t -> Ident.t * (string * int) list
 val unflatten: Ident.t -> (string * int) list -> t
+

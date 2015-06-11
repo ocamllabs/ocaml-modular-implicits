@@ -293,6 +293,7 @@ and signature_item =
   | Sig_modtype of Ident.t * modtype_declaration
   | Sig_class of Ident.t * class_declaration * rec_status
   | Sig_class_type of Ident.t * class_type_declaration * rec_status
+  | Sig_implicit of Path.t * int
 
 and module_declaration =
   {

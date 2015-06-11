@@ -47,6 +47,7 @@ type mapper = {
                          -> extension_constructor;
   include_declaration: mapper -> include_declaration -> include_declaration;
   include_description: mapper -> include_description -> include_description;
+  implicit_description: mapper -> implicit_description -> implicit_description;
   label_declaration: mapper -> label_declaration -> label_declaration;
   location: mapper -> Location.t -> Location.t;
   module_binding: mapper -> module_binding -> module_binding;
@@ -252,6 +253,8 @@ module MT = struct
     | Psig_extension (x, attrs) ->
         extension ~loc (sub.extension sub x) ~attrs:(sub.attributes sub attrs)
     | Psig_attribute x -> attribute ~loc (sub.attribute sub x)
+    | Psig_implicit x -> implicit_ ~loc (sub.implicit_description sub x)
+
 end
 
 
@@ -299,6 +302,7 @@ module M = struct
     | Pstr_extension (x, attrs) ->
         extension ~loc (sub.extension sub x) ~attrs:(sub.attributes sub attrs)
     | Pstr_attribute x -> attribute ~loc (sub.attribute sub x)
+    | Pstr_implicit x -> implicit_ ~loc (sub.implicit_description sub x)
 end
 
 module E = struct
@@ -562,6 +566,13 @@ let default_mapper =
            ~attrs:(this.attributes this pincl_attributes)
       );
 
+    implicit_description =
+      (fun this {pimp_lid; pimp_arity; pimp_attributes; pimp_loc} ->
+         Imp.mk (map_loc this pimp_lid)
+           ~arity:pimp_arity
+           ~loc:(this.location this pimp_loc)
+           ~attrs:(this.attributes this pimp_attributes)
+      );
 
     value_binding =
       (fun this {pvb_pat; pvb_expr; pvb_attributes; pvb_loc} ->
