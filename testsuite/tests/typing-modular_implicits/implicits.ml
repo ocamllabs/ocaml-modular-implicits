@@ -2,26 +2,35 @@
 module type T = sig type t val x : t end;;
 
 (* BAD *)
-let f () = let x = ref [] in let g (implicit M : T) () = x := [M.x] in ();;
+let f () =
+  let x = ref [] in
+  let g {M : T} () = x := [M.x] in
+    ();;
 
 (* BAD *)
-let f (x : 'a) (implicit M : T) = (x : M.t); ();;
+let f (x : 'a) {M : T} =
+  (x : M.t);
+  ();;
 
 (* OK *)
-let f (implicit M : T) (x : M.t) y = (y : M.t); ();;
+let f {M : T} (x : M.t) y =
+  (y : M.t);
+  ();;
 
 (* OK *)
-let rec f (implicit M : T) (x : M.t) = ();;
+let rec f {M : T} (x : M.t) = ();;
 
 (* OK *)
-let rec f (implicit M : T) (x : M.t) y = (y : M.t); ();;
+let rec f {M : T} (x : M.t) y =
+  (y : M.t);
+  ();;
 
 (* BAD *)
-let f : (implicit M : T) -> 'a -> unit =
-  fun (implicit M : T) (x : M.t) -> ();;
+let f : {M : T} -> 'a -> unit =
+  fun {M : T} (x : M.t) -> ();;
 
 (* OK *)
-let f (g : (implicit M : T) -> M.t -> unit) () = ();;
+let f (g : {M : T} -> M.t -> unit) () = ();;
 
 (* OK *)
-let f (implicit M : T) (implicit N : T) = N.x;;
+let f {M : T} {N : T} = N.x;;

@@ -4,9 +4,9 @@ module type Monad = sig
   val bind : 'a t -> ('a -> 'b t) -> 'b t
 end;;
 
-let return (implicit M : Monad) x = M.return x;;
+let return {M : Monad} x = M.return x;;
 
-let (>>=) (implicit M : Monad) m k = M.bind m k;;
+let (>>=) {M : Monad} m k = M.bind m k;;
 
 implicit module ListMonad = struct
   type 'a t = 'a list
@@ -38,8 +38,8 @@ let m = [1; 2; 3] >>= fun x -> return x;;
 let n = return 5 >>= fun x -> [x; 2; 3];;
 
 (* Various implementations of sequence to test the handling of recursion *)
-let rec sequence : (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
-  fun (implicit M : Monad) (x : 'a M.t list) ->
+let rec sequence : {M : Monad} -> 'a M.t list -> 'a list M.t =
+  fun {M : Monad} (x : 'a M.t list) ->
     match x with
     | [] -> (return [] : 'a list M.t)
     | x :: xs ->
@@ -47,8 +47,8 @@ let rec sequence : (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
         sequence xs >>= fun ys ->
           return (y :: ys);;
 
-let rec sequence : type a. (implicit M : Monad) -> a M.t list -> a list M.t =
-  fun (implicit M : Monad) (x : a M.t list) ->
+let rec sequence : type a. {M : Monad} -> a M.t list -> a list M.t =
+  fun {M : Monad} (x : a M.t list) ->
     match x with
     | [] -> (return [] : a list M.t)
     | x :: xs ->
@@ -56,8 +56,8 @@ let rec sequence : type a. (implicit M : Monad) -> a M.t list -> a list M.t =
         sequence xs >>= fun ys ->
           return (y :: ys);;
 
-let rec sequence : (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
-  fun (implicit M : Monad) x ->
+let rec sequence : {M : Monad} -> 'a M.t list -> 'a list M.t =
+  fun {M : Monad} x ->
     match x with
     | [] -> return []
     | x :: xs ->
@@ -65,8 +65,8 @@ let rec sequence : (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
         sequence xs >>= fun ys ->
           return (y :: ys);;
 
-let rec sequence : 'a. (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
-  fun (implicit M : Monad) x ->
+let rec sequence : 'a. {M : Monad} -> 'a M.t list -> 'a list M.t =
+  fun {M : Monad} x ->
     match x with
     | [] -> return []
     | x :: xs ->
@@ -74,8 +74,8 @@ let rec sequence : 'a. (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
         sequence xs >>= fun ys ->
           return (y :: ys);;
 
-let rec sequence : type a. (implicit M : Monad) -> a M.t list -> a list M.t =
-  fun (implicit M : Monad) x ->
+let rec sequence : type a. {M : Monad} -> a M.t list -> a list M.t =
+  fun {M : Monad} x ->
     match x with
     | [] -> return []
     | x :: xs ->
@@ -83,8 +83,8 @@ let rec sequence : type a. (implicit M : Monad) -> a M.t list -> a list M.t =
         sequence xs >>= fun ys ->
           return (y :: ys);;
 
-let rec sequence : (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
-  fun (implicit M : Monad) x ->
+let rec sequence : {M : Monad} -> 'a M.t list -> 'a list M.t =
+  fun {M : Monad} x ->
     match x with
     | [] -> M.return []
     | x :: xs ->
@@ -92,8 +92,8 @@ let rec sequence : (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
         M.bind (sequence xs) (fun ys ->
           M.return (y :: ys)));;
 
-let rec sequence : 'a. (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
-  fun (implicit M : Monad) x ->
+let rec sequence : 'a. {M : Monad} -> 'a M.t list -> 'a list M.t =
+  fun {M : Monad} x ->
     match x with
     | [] -> M.return []
     | x :: xs ->
@@ -101,8 +101,8 @@ let rec sequence : 'a. (implicit M : Monad) -> 'a M.t list -> 'a list M.t =
         M.bind (sequence xs) (fun ys ->
           M.return (y :: ys)));;
 
-let rec sequence : type a. (implicit M : Monad) -> a M.t list -> a list M.t =
-  fun (implicit M : Monad) x ->
+let rec sequence : type a. {M : Monad} -> a M.t list -> a list M.t =
+  fun {M : Monad} x ->
     match x with
     | [] -> M.return []
     | x :: xs ->

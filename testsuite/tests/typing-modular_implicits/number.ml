@@ -30,7 +30,7 @@ let x = 1 + 4 + 5 / 5;;
 
 let y = 1.2 + 4.4 + 5.9 / 6.2;;
 
-let sq (implicit N : Num) (x : N.t) = x * x;;
+let sq {N : Num} (x : N.t) = x * x;;
 
 let a = sq 4.9;;
 

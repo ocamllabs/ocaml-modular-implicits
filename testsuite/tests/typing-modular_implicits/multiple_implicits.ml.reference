@@ -1,4 +1,4 @@
 
 #     module type T = sig type a end
-#       val f : (implicit A : T) -> (implicit B : T) -> A.a * B.a -> unit = <fun>
+#       val f : {A : T} -> {B : T} -> A.a * B.a -> unit = <fun>
 # 
