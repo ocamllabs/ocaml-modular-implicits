@@ -214,6 +214,10 @@ let lapply p1 p2 =
   then Lapply(p1, p2)
   else raise (Syntaxerr.Error(Syntaxerr.Applicative_path (symbol_rloc())))
 
+let rec mod_ext_apply p1 = function
+  | [] -> p1
+  | p2 :: rest -> Lapply(mod_ext_apply p1 rest, p2)
+
 let exp_of_label lbl pos =
   mkexp (Pexp_ident(mkrhs (Lident(Longident.last lbl)) pos))
 
@@ -815,35 +819,24 @@ and_module_binding:
 ;
 
 
-implicit_parameter:
-  | LPAREN functor_arg_name COLON module_type RPAREN
-      { (mkrhs $2 2, $4) }
-;
 implicit_parameters:
-    implicit_parameters implicit_parameter
-      { $2 :: $1 }
-  | implicit_parameter
-      { [ $1 ] }
+    /* empty */
+      { [] }
+  | implicit_parameters LBRACE functor_arg_name COLON module_type RBRACE
+      { (mkrhs $3 3, $5) :: $1 }
 ;
-
 implicit_binding:
-    MODULE UIDENT implicit_binding_body post_item_attributes
-    { Mb.implicit_ (mkrhs $2 2) [] $3 ~loc:(symbol_rloc ()) ~attrs:$4 }
-  | FUNCTOR UIDENT implicit_parameters implicit_binding_body post_item_attributes
+    MODULE UIDENT implicit_parameters implicit_binding_body post_item_attributes
     { Mb.implicit_ (mkrhs $2 2) (List.rev $3) $4 ~loc:(symbol_rloc ()) ~attrs:$5 }
 ;
-
 implicit_binding_body:
     EQUAL module_expr
     { $2 }
   | COLON module_type EQUAL module_expr
     { mkmod(Pmod_constraint($4, $2)) }
 ;
-
 implicit_declaration:
-  | MODULE UIDENT implicit_declaration_body post_item_attributes
-    { Md.implicit_ (mkrhs $2 2) [] $3 ~attrs:$4 ~loc:(symbol_rloc()) }
-  | FUNCTOR UIDENT implicit_parameters implicit_declaration_body post_item_attributes
+    MODULE UIDENT implicit_parameters implicit_declaration_body post_item_attributes
     { Md.implicit_ (mkrhs $2 2) (List.rev $3) $4 ~attrs:$5 ~loc:(symbol_rloc()) }
 ;
 implicit_declaration_body:
@@ -1250,9 +1243,9 @@ labeled_simple_pattern:
       { (Parr_labelled (fst $2), None, snd $2) }
   | LABEL simple_pattern
       { (Parr_labelled $1, None, $2) }
-  | LPAREN IMPLICIT UIDENT COLON implicit_module_type RPAREN
-    { (Parr_implicit $3, None,
-       mkpat(Ppat_constraint(mkpat(Ppat_var (mkrhs $3 3)), $5))) }
+  | LBRACE UIDENT COLON implicit_module_type RBRACE
+    { (Parr_implicit $2, None,
+       mkpat(Ppat_constraint(mkpat(Ppat_var (mkrhs $2 2)), $4))) }
   | simple_pattern
       { (Parr_simple, None, $1) }
 ;
@@ -1518,8 +1511,12 @@ label_expr:
       { (Papp_labelled $1, $2) }
   | TILDE label_ident
       { (Papp_labelled (fst $2), snd $2) }
-  | LPAREN IMPLICIT mod_ext_longident RPAREN
-      { let md = mkmod(Pmod_ident (mkrhs $3 3)) in
+  | LBRACE mod_longident RBRACE
+      { let md = mkmod(Pmod_ident (mkrhs $2 2)) in
+        (Papp_implicit, mkexp (Pexp_pack md)) }
+  | LBRACE mod_longident mod_ext_parameters RBRACE
+      { (* FIXME: Identifier location should include parameters *)
+        let md = mkmod(Pmod_ident (mkrhs (mod_ext_apply $2 $3) 2)) in
         (Papp_implicit, mkexp (Pexp_pack md)) }
   | QUESTION label_ident
       { (Papp_optional (fst $2), snd $2) }
@@ -1803,9 +1800,11 @@ type_kind:
       { (Ptype_variant(List.rev $3), Private, None) }
   | EQUAL DOTDOT
       { (Ptype_open, Public, None) }
-  | EQUAL private_flag LBRACE label_declarations RBRACE
+  | EQUAL LBRACE label_declarations RBRACE
+      { (Ptype_record $3, Public, None) }
+  | EQUAL PRIVATE LBRACE label_declarations RBRACE
       { (Ptype_record $4, $2, None) }
-  | EQUAL core_type EQUAL private_flag constructor_declarations
+  | EQUAL core_type EQUAL PRIVATE constructor_declarations
       { (Ptype_variant(List.rev $5), $4, Some $2) }
   | EQUAL core_type EQUAL DOTDOT
       { (Ptype_open, Public, Some $2) }
@@ -2052,8 +2051,8 @@ core_type2:
       { mktyp(Ptyp_arrow(Parr_optional $1 , mkoption $2, $4)) }
   | LIDENT COLON core_type2 MINUSGREATER core_type2
       { mktyp(Ptyp_arrow(Parr_labelled $1, $3, $5)) }
-  | LPAREN IMPLICIT UIDENT COLON implicit_module_type RPAREN MINUSGREATER core_type2
-      { mktyp(Ptyp_arrow(Parr_implicit $3, $5, $8)) }
+  | LBRACE UIDENT COLON implicit_module_type RBRACE MINUSGREATER core_type2
+      { mktyp(Ptyp_arrow(Parr_implicit $2, $4, $7)) }
   | core_type2 MINUSGREATER core_type2
       { mktyp(Ptyp_arrow(Parr_simple, $1, $3)) }
 ;
@@ -2288,6 +2287,10 @@ mod_ext_longident:
     UIDENT                                      { Lident $1 }
   | mod_ext_longident DOT UIDENT                { Ldot($1, $3) }
   | mod_ext_longident LPAREN mod_ext_longident RPAREN { lapply $1 $3 }
+;
+mod_ext_parameters:
+  | LPAREN mod_ext_longident RPAREN { [$2] }
+  | mod_ext_parameters LPAREN mod_ext_longident RPAREN { $3 :: $1 }
 ;
 mty_longident:
     ident                                       { Lident $1 }

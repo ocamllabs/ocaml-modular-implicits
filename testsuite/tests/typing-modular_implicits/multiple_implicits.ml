@@ -2,6 +2,6 @@
 module type T = sig type a end
 ;;
 
-let f : (implicit A: T) -> (implicit B: T) -> A.a * B.a -> unit =
-  fun (implicit A : T) (implicit B : T) (x : A.a * B.a) -> ()
+let f : {A: T} -> {B: T} -> A.a * B.a -> unit =
+  fun {A : T} {B : T} (x : A.a * B.a) -> ()
 ;;

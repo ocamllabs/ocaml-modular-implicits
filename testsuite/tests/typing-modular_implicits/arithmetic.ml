@@ -1,22 +1,31 @@
 type z = Z
 type 'n s = S of 'n
 
-module type N = sig type n val n : n end
-implicit module Z : N with type n = z = struct type n = z let n = Z end
-implicit functor S(N:N) : N with type n = N.n s = struct type n = N.n
-s let n = S N.n end
+module type N = sig
+  type n
+  val n : n
+end
 
-module type ADD =
-sig
+implicit module Z : N with type n = z = struct
+  type n = z
+  let n = Z
+end
+
+implicit module S {N : N} : N with type n = N.n s = struct
+  type n = N.n s
+  let n = S N.n
+end
+
+module type ADD = sig
   type a and b and c
   val a : a
   val b : b
   val c : c
 end
 
-let add (implicit Add: ADD) (a: Add.a) (b : Add.b) : Add.c = Add.c
+let add {Add : ADD} (a: Add.a) (b : Add.b) : Add.c = Add.c
 
-implicit functor AddZ (B: N) : ADD with type a = z
+implicit module AddZ {B : N} : ADD with type a = z
                                     and type b = B.n
                                     and type c = B.n =
 struct
@@ -24,8 +33,8 @@ struct
   let  a = Z and b = B.n and c = B.n
 end
 
-implicit functor AddS (A: N) (B: N) (Add : ADD with type a = A.n and
-type b = B.n)
+implicit module AddS {A: N} {B: N} {Add : ADD with type a = A.n and
+type b = B.n}
        : ADD with type a = A.n s
               and type b = B.n
               and type c = Add.c s =
