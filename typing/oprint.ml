@@ -180,8 +180,7 @@ and print_out_type_1 ppf =
       pp_close_box ppf ()
   | Otyp_implicit_arrow (lab, ty1, ty2) ->
       pp_open_box ppf 0;
-      pp_print_string ppf "(implicit";
-      pp_print_space ppf ();
+      pp_print_string ppf "{";
       pp_print_string ppf lab;
       pp_print_space ppf ();
       pp_print_string ppf ":";
@@ -199,7 +198,7 @@ and print_out_type_1 ppf =
         fprintf ppf "@]"
       | ty1 -> print_out_type_2 ppf ty1;
       end;
-      pp_print_string ppf ") ->";
+      pp_print_string ppf "} ->";
       pp_print_space ppf ();
       print_out_type_1 ppf ty2;
       pp_close_box ppf ()
@@ -380,7 +379,7 @@ let rec print_out_functor ppf =
 and print_out_implicit_functor n ppf =
   function
   | Omty_functor (name , Some mty_arg, mty_res) when n > 0 ->
-      fprintf ppf "(%s : %a) %a" name
+      fprintf ppf "{%s : %a} %a" name
         print_out_module_type mty_arg
         (print_out_implicit_functor (n - 1)) mty_res
     (* The implicit declares 'n' parameters, but when printing module_type
@@ -460,11 +459,10 @@ and print_out_sig_item ppf =
                      | Orec_next -> "and")
         name !out_module_type mty
   | Osig_module (name, mty, rs, Asttypes.Implicit n) ->
-      fprintf ppf "@[<2>%s %s %s %a@]"
+      fprintf ppf "@[<2>%s module %s %a@]"
         (match rs with Orec_not -> "implicit"
                      | Orec_first -> "implicit rec"
                      | Orec_next -> "and")
-        (if n = 0 then "module" else "functor")
         name
         (print_out_implicit_functor n) mty
   | Osig_type(td, rs) ->

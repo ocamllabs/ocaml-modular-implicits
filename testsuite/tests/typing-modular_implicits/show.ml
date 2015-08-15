@@ -3,9 +3,9 @@ module type Show = sig
   val show : t -> string
 end;;
 
-let show (implicit S : Show) x = S.show x;;
+let show {S : Show} x = S.show x;;
 
-let print (implicit S : Show) (x : S.t) =
+let print {S : Show} (x : S.t) =
   print_endline (show x);;
 
 implicit module ShowString = struct
@@ -23,12 +23,12 @@ print_endline (show "4");;
 print 5;;
 
 
-implicit functor StringifyPair (A : Show) (B : Show) = struct
+implicit module StringifyPair {A : Show} {B : Show} = struct
   type t = A.t * B.t
   let show (a,b) = "(" ^ A.show a ^ "," ^ B.show b ^ ")"
 end;;
 
-implicit functor StringifyList (X : Show) = struct
+implicit module StringifyList {X : Show} = struct
   type t = X.t list
   let show xs = "[" ^ String.concat "; " (List.map X.show xs) ^ "]"
 end
