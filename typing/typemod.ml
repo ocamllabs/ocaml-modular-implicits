@@ -1130,7 +1130,7 @@ let rec type_module ?(implicit_arity=0) ?(alias=false) sttn funct_body anchor en
             id, env, true
       in
       let implicit_arity = pred implicit_arity in
-      let body = type_module ~implicit_arity sttn true None newenv sbody in
+      let body = type_module ~implicit_arity sttn funct_body None newenv sbody in
       rm { mod_desc = Tmod_functor(id, name, mty, body);
            mod_type = Mty_functor(id, ty_arg, body.mod_type);
            mod_env = env;
