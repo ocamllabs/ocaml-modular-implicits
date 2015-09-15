@@ -238,7 +238,7 @@ class printer  ()= object(self:'self)
     | Parr_labelled s ->
         pp f "%s:%a" s self#core_type1 c
     | Parr_implicit s ->
-        pp f "(implicit %s : %a)" s self#under_implicit#core_type1 c
+        pp f "{%s : %a}" s self#under_implicit#core_type1 c
 
   method core_type f x =
     if x.ptyp_attributes <> [] then begin
@@ -439,7 +439,7 @@ class printer  ()= object(self:'self)
           | _ ->  pp f "~%s:%a@;" s self#simple_pattern p
         end
     | Parr_implicit s ->
-        pp f "(implicit %s : %a)@;" s self#under_implicit#simple_pattern p
+        pp f "{%s : %a}@;" s self#under_implicit#simple_pattern p
 
   method sugar_expr f e =
     if e.pexp_attributes <> [] then false
@@ -1010,8 +1010,7 @@ class printer  ()= object(self:'self)
           self#module_type pmd.pmd_type
           self#item_attributes pmd.pmd_attributes
     | Psig_module ({pmd_implicit = Implicit arity} as pmd) ->
-        pp f "@[<hov>implicit %s@ %s@ :@ %a@]%a"
-          (if arity = 0 then "module" else "functor")
+        pp f "@[<hov>implicit module@ %s@ %a@]%a"
           pmd.pmd_name.txt
           (self#implicit_declaration arity) pmd.pmd_type
           self#item_attributes pmd.pmd_attributes
@@ -1088,7 +1087,7 @@ class printer  ()= object(self:'self)
   method implicit_binding n f me =
     match me.pmod_desc with
     | Pmod_functor (s, Some mt, me') when n > 0 ->
-        pp f "(%s@ :@ %a)@;%a"
+        pp f "{%s@ :@ %a}@;%a"
           s.txt
           self#module_type mt
           (self#implicit_binding (n - 1)) me'
@@ -1103,13 +1102,14 @@ class printer  ()= object(self:'self)
   method implicit_declaration n f mt =
     match mt.pmty_desc with
     | Pmty_functor (s, Some mt, mt') when n > 0 ->
-        pp f "(%s@ :@ %a)@;%a"
+        pp f "{%s@ :@ %a}@;%a"
           s.txt
           self#module_type mt
           (self#implicit_declaration (n - 1)) mt'
     | _ ->
         assert (n = 0);
-        self#module_type f mt
+        pp f ":@;%a"
+          self#module_type mt
 
   method payload f = function
     | PStr [{pstr_desc = Pstr_eval (e, attrs)}] ->
@@ -1182,8 +1182,7 @@ class printer  ()= object(self:'self)
     | Pstr_module ({pmb_implicit = Nonimplicit} as x) ->
         pp f "@[<hov2>module@ %a@]" self#module_binding x
     | Pstr_module {pmb_implicit = Implicit arity; pmb_name; pmb_expr} ->
-        pp f "@[<hov2>implicit %s@ %s@ %a@]"
-          (if arity = 0 then "module" else "functor")
+        pp f "@[<hov2>implicit module@ %s@ %a@]"
           pmb_name.txt
           (self#implicit_binding arity) pmb_expr
     | Pstr_open od ->
@@ -1412,7 +1411,7 @@ class printer  ()= object(self:'self)
         else
           pp f "~%s:%a" s self#simple_expr e
     | Papp_implicit ->
-        pp f "(implicit %a)" self#under_implicit#simple_expr e
+        pp f "{%a}" self#under_implicit#simple_expr e
 
   method directive_argument f x =
     (match x with
