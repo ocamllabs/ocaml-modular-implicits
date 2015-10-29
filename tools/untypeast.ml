@@ -40,8 +40,8 @@ let rec lident_of_path path =
   match path with
       Path.Pident id -> Longident.Lident (Ident.name id)
     | Path.Pdot (p, s, _) -> Longident.Ldot (lident_of_path p, s)
-    | Path.Papply (p1, p2) ->
-        Longident.Lapply (lident_of_path p1, lident_of_path p2)
+    | Path.Papply (p1, p2, i) ->
+        Longident.Lapply (lident_of_path p1, lident_of_path p2, i)
 
 let rec untype_structure str =
   List.map untype_structure_item str.str_items
@@ -465,9 +465,9 @@ and untype_module_type mty =
       Tmty_ident (_path, lid) -> Pmty_ident (lid)
     | Tmty_alias (_path, lid) -> Pmty_alias (lid)
     | Tmty_signature sg -> Pmty_signature (untype_signature sg)
-    | Tmty_functor (_id, name, mtype1, mtype2) ->
-        Pmty_functor (name, Misc.may_map untype_module_type mtype1,
-          untype_module_type mtype2)
+    | Tmty_functor (mparam, mtype) ->
+        Pmty_functor (untype_module_parameter mparam,
+          untype_module_type mtype)
     | Tmty_with (mtype, list) ->
         Pmty_with (untype_module_type mtype,
           List.map (fun (_path, lid, withc) ->
@@ -494,11 +494,12 @@ and untype_module_expr mexpr =
       let desc = match mexpr.mod_desc with
           Tmod_ident (_p, lid) -> Pmod_ident (lid)
         | Tmod_structure st -> Pmod_structure (untype_structure st)
-        | Tmod_functor (_id, name, mtype, mexpr) ->
-            Pmod_functor (name, Misc.may_map untype_module_type mtype,
+        | Tmod_functor (mparam, mexpr) ->
+            Pmod_functor (untype_module_parameter mparam,
               untype_module_expr mexpr)
-        | Tmod_apply (mexp1, mexp2, _) ->
-            Pmod_apply (untype_module_expr mexp1, untype_module_expr mexp2)
+        | Tmod_apply (mexp, marg) ->
+            Pmod_apply (untype_module_expr mexp,
+              untype_module_argument marg)
         | Tmod_constraint (mexpr, _, Tmodtype_explicit mtype, _) ->
             Pmod_constraint (untype_module_expr mexpr,
               untype_module_type mtype)
@@ -510,6 +511,20 @@ and untype_module_expr mexpr =
 
   in
   Mod.mk ~loc:mexpr.mod_loc desc
+
+and untype_module_parameter = function
+  | Tmpar_generative -> Pmpar_generative
+  | Tmpar_applicative(_id, name, mty) ->
+      Pmpar_applicative(name, untype_module_type mty)
+  | Tmpar_implicit(_id, name, mty) ->
+      Pmpar_implicit(name, untype_module_type mty)
+
+and untype_module_argument = function
+  | Tmarg_generative -> Pmarg_generative
+  | Tmarg_applicative(mexpr, _) ->
+      Pmarg_applicative(untype_module_expr mexpr)
+  | Tmarg_implicit(mexpr, _) ->
+      Pmarg_implicit(untype_module_expr mexpr)
 
 and untype_class_expr cexpr =
   let desc = match cexpr.cl_desc with

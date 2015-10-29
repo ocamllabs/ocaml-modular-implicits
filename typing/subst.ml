@@ -66,8 +66,8 @@ let rec module_path s = function
       begin try Tbl.find id s.modules with Not_found -> p end
   | Pdot(p, n, pos) ->
       Pdot(module_path s p, n, pos)
-  | Papply(p1, p2) ->
-      Papply(module_path s p1, module_path s p2)
+  | Papply(p1, p2, i) ->
+      Papply(module_path s p1, module_path s p2, i)
 
 let modtype_path s = function
     Pident id as p ->
@@ -78,7 +78,7 @@ let modtype_path s = function
       with Not_found -> p end
   | Pdot(p, n, pos) ->
       Pdot(module_path s p, n, pos)
-  | Papply(p1, p2) ->
+  | Papply(p1, p2, i) ->
       fatal_error "Subst.modtype_path"
 
 let type_path s = function
@@ -86,7 +86,7 @@ let type_path s = function
       begin try Tbl.find id s.types with Not_found -> p end
   | Pdot(p, n, pos) ->
       Pdot(module_path s p, n, pos)
-  | Papply(p1, p2) ->
+  | Papply(p1, p2, i) ->
       fatal_error "Subst.type_path"
 
 (* Special type ids for saved signatures *)
@@ -351,15 +351,24 @@ let rec modtype s = function
           begin try Tbl.find id s.modtypes with Not_found -> mty end
       | Pdot(p, n, pos) ->
           Mty_ident(Pdot(module_path s p, n, pos))
-      | Papply(p1, p2) ->
+      | Papply(p1, p2, i) ->
           fatal_error "Subst.modtype"
       end
   | Mty_signature sg ->
       Mty_signature(signature s sg)
-  | Mty_functor(id, arg, res) ->
-      let id' = Ident.rename id in
-      Mty_functor(id', may_map (modtype s) arg,
-                       modtype (add_module id (Pident id') s) res)
+  | Mty_functor(param, res) -> begin
+      match param with
+      | Mpar_generative ->
+          Mty_functor(Mpar_generative, modtype s res)
+      | Mpar_applicative(id, mty) ->
+          let id' = Ident.rename id in
+            Mty_functor(Mpar_applicative(id', modtype s mty),
+                        modtype (add_module id (Pident id') s) res)
+      | Mpar_implicit(id, mty) ->
+          let id' = Ident.rename id in
+            Mty_functor(Mpar_implicit(id', modtype s mty),
+                        modtype (add_module id (Pident id') s) res)
+    end
   | Mty_alias p ->
       Mty_alias(module_path s p)
 

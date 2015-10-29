@@ -20,7 +20,7 @@
       [Toploop.print_out_phrase] *)
 
 type out_ident =
-  | Oide_apply of out_ident * out_ident
+  | Oide_apply of out_ident * out_ident * Asttypes.implicit_flag
   | Oide_dot of out_ident * string
   | Oide_ident of string
 
@@ -77,10 +77,14 @@ and out_class_sig_item =
 
 type out_module_type =
   | Omty_abstract
-  | Omty_functor of string * out_module_type option * out_module_type
+  | Omty_functor of out_module_parameter * out_module_type
   | Omty_ident of out_ident
   | Omty_signature of out_sig_item list
   | Omty_alias of out_ident
+and out_module_parameter =
+  | Ompar_generative
+  | Ompar_applicative of string * out_module_type
+  | Ompar_implicit of string * out_module_type
 and out_sig_item =
   | Osig_class of
       bool * string * (string * (bool * bool)) list * out_class_type *

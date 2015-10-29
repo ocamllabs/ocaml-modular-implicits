@@ -47,17 +47,27 @@ and module_alias = {
 
 and module_parameter = {
     mp_name : string ; (** the name *)
-    mp_type : Types.module_type option ; (** the type *)
+    mp_type : module_parameter_type ; (** the type *)
     mp_type_code : string ; (** the original code *)
     mp_kind : module_type_kind ; (** the way the parameter was built *)
   }
+
+and module_parameter_type =
+  | Mp_generative
+  | Mp_applicative of Types.module_type
+  | Mp_implicit of Types.module_type
+
+and module_argument =
+  | Ma_generative
+  | Ma_applicative of module_kind
+  | Ma_implicit of module_kind
 
 (** Different kinds of module. *)
 and module_kind =
   | Module_struct of module_element list
   | Module_alias of module_alias (** complete name and corresponding module if we found it *)
   | Module_functor of module_parameter * module_kind
-  | Module_apply of module_kind * module_kind
+  | Module_apply of module_kind * module_argument
   | Module_with of module_type_kind * string
   | Module_constraint of module_kind * module_type_kind
   | Module_typeof of string (** by now only the code of the module expression *)

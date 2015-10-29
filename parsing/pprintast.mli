@@ -50,8 +50,6 @@ class printer :
     method expression2 : Format.formatter -> Parsetree.expression -> unit
     method extension_constructor :
       Format.formatter -> Parsetree.extension_constructor -> unit
-    method implicit_binding : int -> Format.formatter -> Parsetree.module_expr -> unit
-    method implicit_declaration : int -> Format.formatter -> Parsetree.module_type -> unit
     method label_exp :
       Format.formatter ->
       Parsetree.arrow_flag * Parsetree.expression option * Parsetree.pattern ->
@@ -66,9 +64,13 @@ class printer :
     method longident : Format.formatter -> Longident.t -> unit
     method longident_loc :
       Format.formatter -> Longident.t Asttypes.loc -> unit
+    method module_argument :
+      Format.formatter -> Parsetree.module_argument -> unit
     method module_binding : Format.formatter -> Parsetree.module_binding -> unit
     method module_expr : Format.formatter -> Parsetree.module_expr -> unit
     method module_type : Format.formatter -> Parsetree.module_type -> unit
+    method module_parameter :
+      Format.formatter -> Parsetree.module_parameter -> unit
     method mutable_flag : Format.formatter -> Asttypes.mutable_flag -> unit
     method option :
       ?first:space_formatter ->

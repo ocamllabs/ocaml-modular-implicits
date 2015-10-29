@@ -188,7 +188,8 @@ type t = {
   classes: (Path.t * class_declaration) EnvTbl.t;
   cltypes: (Path.t * class_type_declaration) EnvTbl.t;
   functor_args: unit Ident.tbl;
-  implicit_instances: (Path.t * module_declaration) list;
+  implicit_instances:
+    (Path.t * (Ident.t * module_type) list * module_type) list;
   summary: summary;
   local_constraints: bool;
   gadt_instances: (int * TypeSet.t ref) list;
@@ -218,9 +219,8 @@ and structure_components = {
 }
 
 and functor_components = {
-  fcomp_param: Ident.t;                 (* Formal parameter *)
-  fcomp_arg: module_type option;        (* Argument signature *)
-  fcomp_res: module_type;               (* Result signature *)
+  fcomp_param: module_parameter;                   (* Formal parameter *)
+  fcomp_res: module_type;                 (* Result signature *)
   fcomp_env: t;     (* Environment in which the result signature makes sense *)
   fcomp_subst: Subst.t;  (* Prefixing substitution for the result signature *)
   fcomp_cache: (Path.t, module_components) Hashtbl.t;  (* For memoization *)
@@ -284,8 +284,9 @@ let components_of_module_maker' =
   ref ((fun (env, sub, path, mty) -> assert false) :
           t * Subst.t * Path.t * module_type -> module_components_repr)
 let components_of_functor_appl' =
-  ref ((fun f p1 p2 -> assert false) :
-          functor_components -> Path.t -> Path.t -> module_components)
+  ref ((fun f p1 p2 i -> assert false) :
+          functor_components -> Path.t -> Path.t ->
+            Asttypes.implicit_flag -> module_components)
 let check_modtype_inclusion =
   (* to be filled with Includemod.check_modtype_inclusion *)
   ref ((fun env mty1 path1 mty2 -> assert false) :
@@ -297,13 +298,6 @@ let strengthen =
 
 let md ?(implicit_ = Asttypes.Nonimplicit) md_type =
   {md_type; md_attributes=[]; md_loc=Location.none; md_implicit = implicit_}
-
-let register_if_implicit path md env =
-  match md.md_implicit with
-  | Asttypes.Nonimplicit -> env
-  | Asttypes.Implicit _ ->
-      let md = {md with md_type = !strengthen env md.md_type path} in
-      {env with implicit_instances = (path, md) :: env.implicit_instances}
 
 (* The name of the compilation unit currently compiled.
    "" if outside a compilation unit. *)
@@ -471,12 +465,12 @@ let rec find_module_descr path env =
       | Functor_comps f ->
          raise Not_found
       end
-  | Papply(p1, p2) ->
+  | Papply(p1, p2, i) ->
       begin match
         EnvLazy.force !components_of_module_maker' (find_module_descr p1 env)
       with
         Functor_comps f ->
-          !components_of_functor_appl' f p1 p2
+          !components_of_functor_appl' f p1 p2 i
       | Structure_comps c ->
           raise Not_found
       end
@@ -495,7 +489,7 @@ let find proj1 proj2 path env =
       | Functor_comps f ->
           raise Not_found
       end
-  | Papply(p1, p2) ->
+  | Papply(p1, p2, i) ->
       raise Not_found
 
 let find_value =
@@ -536,7 +530,7 @@ let find_module ~alias path env =
       | Functor_comps f ->
           raise Not_found
       end
-  | Papply(p1, p2) ->
+  | Papply(p1, p2, i) ->
       let desc1 = find_module_descr p1 env in
       begin match EnvLazy.force !components_of_module_maker' desc1 with
         Functor_comps f ->
@@ -548,9 +542,14 @@ let find_module ~alias path env =
               try
                 Hashtbl.find f.fcomp_subst_cache p2
               with Not_found ->
+                let param_id =
+                  match f.fcomp_param with
+                  | Mpar_generative -> assert false
+                  | Mpar_applicative(id, _) | Mpar_implicit(id, _) -> id
+                in
                 let mty =
                   Subst.modtype
-                    (Subst.add_module f.fcomp_param p2 f.fcomp_subst)
+                    (Subst.add_module param_id p2 f.fcomp_subst)
                     f.fcomp_res in
                 Hashtbl.add f.fcomp_subst_cache p2 mty;
                 mty
@@ -572,8 +571,8 @@ let rec normalize_path lax env path =
     match path with
       Pdot(p, s, pos) ->
         Pdot(normalize_path lax env p, s, pos)
-    | Papply(p1, p2) ->
-        Papply(normalize_path lax env p1, normalize_path true env p2)
+    | Papply(p1, p2, i) ->
+        Papply(normalize_path lax env p1, normalize_path true env p2, i)
     | _ -> path
   in
   try match find_module ~alias:true path env with
@@ -676,12 +675,6 @@ let rec implicit_cannot_occur path env =
 
 let implicit_instances env = env.implicit_instances
 
-let register_as_implicit path arity env =
-  let md = find_module path env in
-  let md = {md with md_implicit = Implicit arity} in
-  (* FIXME: Check arity *)
-  register_if_implicit path md env
-
 (* Lookup by name *)
 
 exception Recmodule
@@ -705,14 +698,20 @@ let rec lookup_module_descr lid env =
       | Functor_comps f ->
           raise Not_found
       end
-  | Lapply(l1, l2) ->
+  | Lapply(l1, l2, i) ->
       let (p1, desc1) = lookup_module_descr l1 env in
       let p2 = lookup_module true l2 env in
       let {md_type=mty2} = find_module p2 env in
       begin match EnvLazy.force !components_of_module_maker' desc1 with
-        Functor_comps f ->
-          Misc.may (!check_modtype_inclusion env mty2 p2) f.fcomp_arg;
-          (Papply(p1, p2), !components_of_functor_appl' f p1 p2)
+      | Functor_comps f -> begin
+          match f.fcomp_param, i with
+          | Mpar_generative, _ -> raise Not_found
+          | Mpar_applicative _, Implicit -> raise Not_found
+          | Mpar_implicit _, Nonimplicit -> raise Not_found
+          | (Mpar_applicative(_, param) | Mpar_implicit(_, param)), _ ->
+              !check_modtype_inclusion env mty2 p2 param;
+              (Papply(p1, p2, i), !components_of_functor_appl' f p1 p2 i)
+        end
       | Structure_comps c ->
           raise Not_found
       end
@@ -747,15 +746,21 @@ and lookup_module ~load lid env : Path.t =
       | Functor_comps f ->
           raise Not_found
       end
-  | Lapply(l1, l2) ->
+  | Lapply(l1, l2, i) ->
       let (p1, desc1) = lookup_module_descr l1 env in
       let p2 = lookup_module true l2 env in
       let {md_type=mty2} = find_module p2 env in
-      let p = Papply(p1, p2) in
+      let p = Papply(p1, p2, i) in
       begin match EnvLazy.force !components_of_module_maker' desc1 with
-        Functor_comps f ->
-          Misc.may (!check_modtype_inclusion env mty2 p2) f.fcomp_arg;
-          p
+      | Functor_comps f -> begin
+          match f.fcomp_param, i with
+          | Mpar_generative, _ -> raise Not_found
+          | Mpar_applicative _, Implicit -> raise Not_found
+          | Mpar_implicit _, Nonimplicit -> raise Not_found
+          | (Mpar_applicative(_, param) | Mpar_implicit(_, param)), _ ->
+              !check_modtype_inclusion env mty2 p2 param;
+              p
+        end
       | Structure_comps c ->
           raise Not_found
       end
@@ -773,7 +778,7 @@ let lookup proj1 proj2 lid env =
       | Functor_comps f ->
           raise Not_found
       end
-  | Lapply(l1, l2) ->
+  | Lapply(l1, l2, i) ->
       raise Not_found
 
 let lookup_simple proj1 proj2 lid env =
@@ -789,7 +794,7 @@ let lookup_simple proj1 proj2 lid env =
       | Functor_comps f ->
           raise Not_found
       end
-  | Lapply(l1, l2) ->
+  | Lapply(l1, l2, i) ->
       raise Not_found
 
 let lookup_all_simple proj1 proj2 shadow lid env =
@@ -817,7 +822,7 @@ let lookup_all_simple proj1 proj2 shadow lid env =
       | Functor_comps f ->
           raise Not_found
       end
-  | Lapply(l1, l2) ->
+  | Lapply(l1, l2, i) ->
       raise Not_found
 
 let has_local_constraints env = env.local_constraints
@@ -904,7 +909,7 @@ let path_subst_last path id =
   match path with
     Pident _ -> Pident id
   | Pdot (p, name, pos) -> Pdot(p, Ident.name id, pos)
-  | Papply (p1, p2) -> assert false
+  | Papply (p1, p2, i) -> assert false
 
 let mark_type_path env path =
   try
@@ -1266,6 +1271,22 @@ let prefix_idents_and_subst root sub sg =
   else
     prefix_idents_and_subst root sub sg
 
+let register_if_implicit path md env =
+  match md.md_implicit with
+  | Asttypes.Nonimplicit -> env
+  | Asttypes.Implicit ->
+      let mty = !strengthen env md.md_type path in
+      let rec add acc params mty =
+        let acc = ((path, List.rev params, mty) :: acc) in
+        match scrape_alias env mty with
+        | Mty_functor (Mpar_implicit(id, param), res) ->
+            let params = (id, param) :: params in
+              add acc params res
+        | _ -> acc
+      in
+      let implicit_instances = add env.implicit_instances [] mty in
+        {env with implicit_instances}
+
 (* Compute structure descriptions *)
 
 let add_to_tbl id decl tbl =
@@ -1349,12 +1370,19 @@ and components_of_module_maker (env, sub, path, mty) =
               Tbl.add (Ident.name id) (decl', !pos) c.comp_cltypes)
         sg pl;
         Structure_comps c
-  | Mty_functor(param, ty_arg, ty_res) ->
+  | Mty_functor(param, ty_res) ->
+      (* fcomp_arg must be prefixed eagerly, because it is interpreted
+         in the outer environment, not in env *)
+      let param =
+        match param with
+        | Mpar_generative -> Mpar_generative
+        | Mpar_applicative(id, mty) ->
+            Mpar_applicative(id, Subst.modtype sub mty)
+        | Mpar_implicit(id, mty) ->
+            Mpar_implicit(id, Subst.modtype sub mty)
+      in
         Functor_comps {
           fcomp_param = param;
-          (* fcomp_arg must be prefixed eagerly, because it is interpreted
-             in the outer environment, not in env *)
-          fcomp_arg = may_map (Subst.modtype sub) ty_arg;
           (* fcomp_res is prefixed lazily, because it is interpreted in env *)
           fcomp_res = ty_res;
           fcomp_env = env;
@@ -1522,13 +1550,18 @@ and store_cltype slot id path desc env renv =
 
 (* Compute the components of a functor application in a path. *)
 
-let components_of_functor_appl f p1 p2 =
+let components_of_functor_appl f p1 p2 i =
   try
     Hashtbl.find f.fcomp_cache p2
   with Not_found ->
-    let p = Papply(p1, p2) in
+    let p = Papply(p1, p2, i) in
+    let param_id =
+      match f.fcomp_param with
+      | Mpar_generative -> assert false
+      | Mpar_applicative(id, _) | Mpar_implicit(id, _) -> id
+    in
     let mty =
-      Subst.modtype (Subst.add_module f.fcomp_param p2 Subst.identity)
+      Subst.modtype (Subst.add_module param_id p2 Subst.identity)
                     f.fcomp_res in
     let comps = components_of_module f.fcomp_env f.fcomp_subst p mty in
     Hashtbl.add f.fcomp_cache p2 comps;

@@ -188,7 +188,7 @@ let _ = Hashtbl.add directive_table "mod_use"
 let filter_arrow ty =
   let ty = Ctype.expand_head !toplevel_env ty in
   match ty.desc with
-  | Tarrow (lbl, l, r, _) when not (Btype.is_optional lbl) -> Some (l, r)
+  | Tarrow (flg, l, r, _) when not (Btype.arrow_is_optional flg) -> Some (l, r)
   | _ -> None
 
 let rec extract_last_arrow desc =
@@ -236,7 +236,7 @@ let match_generic_printer_type ppf desc path args printer_type =
     List.map (fun ty_var -> Ctype.newconstr printer_type [ty_var]) args in
   let ty_expected =
     List.fold_right
-      (fun ty_arg ty -> Ctype.newty (Tarrow ("", ty_arg, ty, Cunknown)))
+      (fun ty_arg ty -> Ctype.newty (Tarrow (Tarr_simple, ty_arg, ty, Cunknown)))
       ty_args (Ctype.newconstr printer_type [ty_target]) in
   Ctype.unify !toplevel_env
     ty_expected
@@ -399,8 +399,8 @@ let parse_warnings ppf iserr s =
 
 let rec trim_modtype = function
     Mty_signature _ -> Mty_signature []
-  | Mty_functor (id, mty, mty') ->
-      Mty_functor (id, mty, trim_modtype mty')
+  | Mty_functor (mp, mty) ->
+      Mty_functor (mp, trim_modtype mty)
   | Mty_ident _ | Mty_alias _ as mty -> mty
 
 let trim_signature = function

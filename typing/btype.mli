@@ -44,7 +44,6 @@ val newmarkedgenvar: unit -> type_expr
 val is_Tvar: type_expr -> bool
 val is_Tunivar: type_expr -> bool
 val dummy_method: label
-val default_mty: module_type option -> module_type
 
 val repr: type_expr -> type_expr
         (* Return the canonical representative of a type. *)
@@ -101,6 +100,7 @@ type type_iterators =
     it_class_declaration: type_iterators -> class_declaration -> unit;
     it_class_type_declaration: type_iterators -> class_type_declaration -> unit;
     it_module_type: type_iterators -> module_type -> unit;
+    it_module_parameter : type_iterators -> Types.module_parameter -> unit;
     it_class_type: type_iterators -> class_type -> unit;
     it_type_kind: type_iterators -> type_kind -> unit;
     it_do_type_expr: type_iterators -> type_expr -> unit;
@@ -165,6 +165,7 @@ val forget_abbrev:
 val arrow_is_simple : arrow_flag -> bool
 val arrow_is_optional : arrow_flag -> bool
 
+val is_optional: label -> bool
 val label_name : arrow_flag -> label
 val label_raw : arrow_flag -> label
 

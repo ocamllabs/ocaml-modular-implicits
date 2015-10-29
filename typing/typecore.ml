@@ -78,9 +78,8 @@ exception Error_forward of Location.error
 (* Forward declaration, to be filled in by Typemod.type_module *)
 
 let type_module =
-  ref ((fun ?implicit_arity env md -> assert false) :
-       ?implicit_arity:int -> Env.t -> Parsetree.module_expr ->
-       Typedtree.module_expr)
+  ref ((fun env md -> assert false) :
+       Env.t -> Parsetree.module_expr -> Typedtree.module_expr)
 
 (* Forward declaration, to be filled in by Typemod.type_open *)
 
@@ -177,10 +176,14 @@ let iter_expression f e =
     | Pmod_ident _ -> ()
     | Pmod_structure str -> List.iter structure_item str
     | Pmod_constraint (me, _)
-    | Pmod_functor (_, _, me) -> module_expr me
-    | Pmod_apply (me1, me2) -> module_expr me1; module_expr me2
+    | Pmod_functor (_, me) -> module_expr me
+    | Pmod_apply (me, ma) -> module_expr me; module_argument ma
     | Pmod_unpack e -> expr e
 
+  and module_argument = function
+    | Pmarg_generative -> ()
+    | Pmarg_applicative me -> module_expr me
+    | Pmarg_implicit me -> module_expr me
 
   and structure_item str =
     match str.pstr_desc with
@@ -1525,7 +1528,7 @@ let rec approx_type env sty =
       let tl = List.map (fun cty -> cty.ctyp_type) tl in
       let mty = !Ctype.modtype_of_package env loc p nl tl in
       let id, env =
-        Env.enter_module ~arg:true ~implicit_:(Implicit 0) s mty env in
+        Env.enter_module ~arg:true ~implicit_:(Implicit) s mty env in
       newty (Tarrow(Tarr_implicit id, pkg_ty,
                     approx_type env sty, Cok))*)
   | Ptyp_arrow (p, _, sty) ->
@@ -1567,7 +1570,7 @@ let rec type_approx env sexp =
       let tl = List.map (fun cty -> cty.ctyp_type) tl in
       let mty = !Ctype.modtype_of_package env loc p nl tl in
       let id, env =
-        Env.enter_module ~arg:true ~implicit_:(Implicit 0) s mty env in
+        Env.enter_module ~arg:true ~implicit_:(Implicit) s mty env in
       newty (Tarrow(Tarr_implicit id, pkg_ty,
                     type_approx env e, Cok))
      FIXME *)
@@ -2587,11 +2590,7 @@ and type_expect_ ?in_function env sexp ty_expected =
       begin_def ();
       Ident.set_current_time ty.level;
       let context = Typetexp.narrow () in
-      let implicit_arity = match pmb_implicit with
-        | Nonimplicit -> 0 
-        | Implicit ar -> ar
-      in
-      let modl = !type_module ~implicit_arity env smodl in
+      let modl = !type_module env smodl in
       let (id, new_env) =
         Env.enter_module ~implicit_:pmb_implicit name.txt modl.mod_type env in
       Ctype.init_def(Ident.current_time());
@@ -3776,7 +3775,7 @@ and type_implicit_function ?in_function loc env ty_expected name spat sbody =
   in
   let modl = !type_module pat_env smodl in
   let (id, body_env) =
-    Env.enter_module ~arg:true ~implicit_:(Implicit 0)
+    Env.enter_module ~arg:true ~implicit_:Implicit
       name modl.mod_type pat_env
   in
   let body_env = Env.set_implicit_level id level body_env in
@@ -3792,7 +3791,7 @@ and type_implicit_function ?in_function loc env ty_expected name spat sbody =
     | None -> type_exp body_env sbody
   in
   let mb = { mb_id = id; mb_name = mknoloc name; mb_expr = modl;
-             mb_implicit = Implicit 0;
+             mb_implicit = Implicit;
              mb_attributes = []; mb_loc = sbody.pexp_loc }
   in
   let body' =

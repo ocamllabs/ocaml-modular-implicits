@@ -196,7 +196,7 @@ let rec narrow_unbound_lid_error : 'a. _ -> _ -> _ -> _ -> 'a =
           raise (Error (loc, env, Access_functor_as_structure mlid))
       | _ -> ()
       end
-  | Longident.Lapply (flid, mlid) ->
+  | Longident.Lapply (flid, mlid, _) ->
       check_module flid;
       check_module mlid;
       raise (Error (loc, env, Ill_typed_functor_application lid))
@@ -508,7 +508,7 @@ let rec transl_type env policy styp =
             match lid.txt with
               Longident.Lident s     -> Longident.Lident ("#" ^ s)
             | Longident.Ldot(r, s)   -> Longident.Ldot (r, "#" ^ s)
-            | Longident.Lapply(_, _) -> fatal_error "Typetexp.transl_type"
+            | Longident.Lapply(_, _, _) -> fatal_error "Typetexp.transl_type"
           in
           let (path, decl) = Env.lookup_type lid2 env in
           (path, decl, false)

@@ -427,8 +427,8 @@ module MakeIterator(Iter : IteratorArgument) : sig
           Tmty_ident (path, _) -> ()
         | Tmty_alias (path, _) -> ()
         | Tmty_signature sg -> iter_signature sg
-        | Tmty_functor (id, _, mtype1, mtype2) ->
-            Misc.may iter_module_type mtype1; iter_module_type mtype2
+        | Tmty_functor (mparam, mtype) ->
+            iter_module_parameter mparam; iter_module_type mtype
         | Tmty_with (mtype, list) ->
             iter_module_type mtype;
             List.iter (fun (path, _, withc) ->
@@ -456,12 +456,12 @@ module MakeIterator(Iter : IteratorArgument) : sig
         match mexpr.mod_desc with
           Tmod_ident (p, _) -> ()
         | Tmod_structure st -> iter_structure st
-        | Tmod_functor (id, _, mtype, mexpr) ->
-            Misc.may iter_module_type mtype;
+        | Tmod_functor (mparam, mexpr) ->
+            iter_module_parameter mparam;
             iter_module_expr mexpr
-        | Tmod_apply (mexp1, mexp2, _) ->
-            iter_module_expr mexp1;
-            iter_module_expr mexp2
+        | Tmod_apply (mexp, marg) ->
+            iter_module_expr mexp;
+            iter_module_argument marg
         | Tmod_constraint (mexpr, _, Tmodtype_implicit, _ ) ->
             iter_module_expr mexpr
         | Tmod_constraint (mexpr, _, Tmodtype_explicit mtype, _) ->
@@ -472,6 +472,18 @@ module MakeIterator(Iter : IteratorArgument) : sig
 (*          iter_module_type mty *)
       end;
       Iter.leave_module_expr mexpr;
+
+    and iter_module_parameter mparam =
+      match mparam with
+      | Tmpar_generative -> ()
+      | Tmpar_applicative(_, _, mtype) -> iter_module_type mtype
+      | Tmpar_implicit(_, _, mtype) -> iter_module_type mtype
+
+    and iter_module_argument marg =
+      match marg with
+      | Tmarg_generative -> ()
+      | Tmarg_applicative(mexp, _) -> iter_module_expr mexp
+      | Tmarg_implicit(mexp, _) -> iter_module_expr mexp
 
     and iter_class_expr cexpr =
       Iter.enter_class_expr cexpr;

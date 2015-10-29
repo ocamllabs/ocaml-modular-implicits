@@ -194,7 +194,7 @@ module Mty:
     val alias: ?loc:loc -> ?attrs:attrs -> lid -> module_type
     val signature: ?loc:loc -> ?attrs:attrs -> signature -> module_type
     val functor_: ?loc:loc -> ?attrs:attrs ->
-      str -> module_type option -> module_type -> module_type
+      module_parameter -> module_type -> module_type
     val with_: ?loc:loc -> ?attrs:attrs -> module_type -> with_constraint list -> module_type
     val typeof_: ?loc:loc -> ?attrs:attrs -> module_expr -> module_type
     val extension: ?loc:loc -> ?attrs:attrs -> extension -> module_type
@@ -209,8 +209,9 @@ module Mod:
     val ident: ?loc:loc -> ?attrs:attrs -> lid -> module_expr
     val structure: ?loc:loc -> ?attrs:attrs -> structure -> module_expr
     val functor_: ?loc:loc -> ?attrs:attrs ->
-      str -> module_type option -> module_expr -> module_expr
-    val apply: ?loc:loc -> ?attrs:attrs -> module_expr -> module_expr -> module_expr
+      module_parameter -> module_expr -> module_expr
+    val apply: ?loc:loc -> ?attrs:attrs -> module_expr ->
+      module_argument -> module_expr
     val constraint_: ?loc:loc -> ?attrs:attrs -> module_expr -> module_type -> module_expr
     val unpack: ?loc:loc -> ?attrs:attrs -> expression -> module_expr
     val extension: ?loc:loc -> ?attrs:attrs -> extension -> module_expr
@@ -265,7 +266,6 @@ module Md:
   sig
     val mk: ?loc:loc -> ?attrs:attrs -> ?docs:docs -> ?text:text -> ?implicit_:implicit_flag ->
       str -> module_type -> module_declaration
-    val implicit_: ?loc:loc -> ?attrs:attrs -> str -> (str * module_type) list -> module_type -> module_declaration
   end
 
 (** Module type declarations *)
@@ -280,14 +280,13 @@ module Mb:
   sig
     val mk: ?loc:loc -> ?attrs:attrs -> ?docs:docs -> ?text:text -> ?implicit_:implicit_flag ->
       str -> module_expr -> module_binding
-    val implicit_: ?loc:loc -> ?attrs:attrs -> str -> (str * module_type) list -> module_expr -> module_binding
   end
 
 (* Opens *)
 module Opn:
   sig
     val mk: ?loc: loc -> ?attrs:attrs -> ?docs:docs ->
-      ?override:override_flag -> lid -> open_description
+      ?flag:open_flag -> lid -> open_description
   end
 
 (* Includes *)

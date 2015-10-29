@@ -489,10 +489,20 @@ module Module :
 
     and module_parameter = Odoc_module.module_parameter = {
         mp_name : string ; (** the name *)
-        mp_type : Types.module_type option ; (** the type *)
+        mp_type : module_parameter_type ; (** the type *)
         mp_type_code : string ; (** the original code *)
         mp_kind : module_type_kind ; (** the way the parameter was built *)
       }
+
+    and module_parameter_type = Odoc_module.module_parameter_type =
+      | Mp_generative
+      | Mp_applicative of Types.module_type
+      | Mp_implicit of Types.module_type
+
+    and module_argument = Odoc_module.module_argument =
+      | Ma_generative
+      | Ma_applicative of module_kind
+      | Ma_implicit of module_kind
 
     (** Different kinds of a module. *)
     and module_kind = Odoc_module.module_kind =
@@ -500,7 +510,7 @@ module Module :
       | Module_alias of module_alias (** Complete name and corresponding module if we found it *)
       | Module_functor of module_parameter * module_kind
                      (** A functor, with its parameter and the rest of its definition *)
-      | Module_apply of module_kind * module_kind
+      | Module_apply of module_kind * module_argument
                      (** A module defined by application of a functor. *)
       | Module_with of module_type_kind * string
                      (** A module whose type is a with ... constraint.

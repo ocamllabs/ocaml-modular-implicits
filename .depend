@@ -31,7 +31,7 @@ parsing/asttypes.cmi : parsing/location.cmi
 parsing/docstrings.cmi : parsing/parsetree.cmi parsing/location.cmi
 parsing/lexer.cmi : parsing/parser.cmi parsing/location.cmi
 parsing/location.cmi : utils/warnings.cmi
-parsing/longident.cmi :
+parsing/longident.cmi : parsing/asttypes.cmi
 parsing/parse.cmi : parsing/parsetree.cmi
 parsing/parser.cmi : parsing/parsetree.cmi parsing/location.cmi \
     parsing/docstrings.cmi
@@ -67,7 +67,8 @@ parsing/location.cmo : utils/warnings.cmi utils/terminfo.cmi \
     parsing/location.cmi
 parsing/location.cmx : utils/warnings.cmx utils/terminfo.cmx \
     parsing/location.cmi
-parsing/longident.cmo : utils/misc.cmi parsing/longident.cmi
+parsing/longident.cmo : utils/misc.cmi parsing/asttypes.cmi \
+    parsing/longident.cmi
 parsing/longident.cmx : utils/misc.cmx parsing/longident.cmi
 parsing/parse.cmo : parsing/syntaxerr.cmi parsing/parser.cmi \
     parsing/location.cmi parsing/lexer.cmi parsing/docstrings.cmi \

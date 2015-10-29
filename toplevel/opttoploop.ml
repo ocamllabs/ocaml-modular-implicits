@@ -71,7 +71,7 @@ let rec eval_path = function
       else toplevel_value id
   | Pdot(p, s, pos) ->
       Obj.field (eval_path p) pos
-  | Papply(p1, p2) ->
+  | Papply(p1, p2, i) ->
       fatal_error "Toploop.eval_path"
 
 (* To print values *)

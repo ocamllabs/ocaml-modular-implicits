@@ -24,8 +24,10 @@ let rec print_ident ppf =
     Oide_ident s -> pp_print_string ppf s
   | Oide_dot (id, s) ->
       print_ident ppf id; pp_print_char ppf '.'; pp_print_string ppf s
-  | Oide_apply (id1, id2) ->
+  | Oide_apply (id1, id2, Asttypes.Nonimplicit) ->
       fprintf ppf "%a(%a)" print_ident id1 print_ident id2
+  | Oide_apply (id1, id2, Asttypes.Implicit) ->
+      fprintf ppf "%a{%a}" print_ident id1 print_ident id2
 
 let parenthesized_ident name =
   (List.mem name ["or"; "mod"; "land"; "lor"; "lxor"; "lsl"; "lsr"; "asr"])
@@ -370,27 +372,19 @@ let out_type_extension = ref (fun _ -> failwith "Oprint.out_type_extension")
 
 let rec print_out_functor ppf =
   function
-    Omty_functor (_, None, mty_res) ->
-      fprintf ppf "() %a" print_out_functor mty_res
-  | Omty_functor (name , Some mty_arg, mty_res) ->
-      fprintf ppf "(%s : %a) %a" name
-        print_out_module_type mty_arg print_out_functor mty_res
+  | Omty_functor (mparam, mty_res) ->
+      fprintf ppf "%a %a"
+        print_out_module_parameter mparam
+        print_out_functor mty_res
   | m -> fprintf ppf "->@ %a" print_out_module_type m
-and print_out_implicit_functor n ppf =
+and print_out_module_parameter ppf =
   function
-  | Omty_functor (name , Some mty_arg, mty_res) when n > 0 ->
-      fprintf ppf "{%s : %a} %a" name
-        print_out_module_type mty_arg
-        (print_out_implicit_functor (n - 1)) mty_res
-    (* The implicit declares 'n' parameters, but when printing module_type
-            we leave the implicit parameters side. If the state is consistent,
-            n should be 0 now. *)
-  | Omty_alias id ->
-      assert (n = 0);
-      fprintf ppf "=@ %a" print_ident id
-  | m ->
-      assert (n = 0);
-      fprintf ppf ":@ %a" print_out_module_type m
+  | Ompar_generative ->
+      fprintf ppf "()"
+  | Ompar_applicative(name, mty) ->
+      fprintf ppf "(%s : %a)" name print_out_module_type mty
+  | Ompar_implicit(name, mty) ->
+      fprintf ppf "{%s : %a}" name print_out_module_type mty
 
 and print_out_module_type ppf =
   function
@@ -452,19 +446,14 @@ and print_out_sig_item ppf =
       fprintf ppf "@[<2>module type %s =@ %a@]" name !out_module_type mty
   | Osig_module (name, Omty_alias id, _, _) ->
       fprintf ppf "@[<2>module %s =@ %a@]" name print_ident id
-  | Osig_module (name, mty, rs, Asttypes.Nonimplicit) ->
-      fprintf ppf "@[<2>%s %s :@ %a@]"
+  | Osig_module (name, mty, rs, i) ->
+      fprintf ppf "@[<2>%s%s %s :@ %a@]"
+        (match i with Asttypes.Nonimplicit -> ""
+                     | Asttypes.Implicit -> "implicit ")
         (match rs with Orec_not -> "module"
                      | Orec_first -> "module rec"
                      | Orec_next -> "and")
         name !out_module_type mty
-  | Osig_module (name, mty, rs, Asttypes.Implicit n) ->
-      fprintf ppf "@[<2>%s module %s %a@]"
-        (match rs with Orec_not -> "implicit"
-                     | Orec_first -> "implicit rec"
-                     | Orec_next -> "and")
-        name
-        (print_out_implicit_functor n) mty
   | Osig_type(td, rs) ->
         print_out_type_decl
           (match rs with

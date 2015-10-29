@@ -16,8 +16,7 @@ open Types
 open Format
 
 val type_module:
-  ?implicit_arity:int -> Env.t -> Parsetree.module_expr ->
-  Typedtree.module_expr
+  Env.t -> Parsetree.module_expr -> Typedtree.module_expr
 val type_structure:
         Env.t -> Parsetree.structure -> Location.t ->
          Typedtree.structure * Types.signature * Env.t
@@ -40,8 +39,6 @@ val modtype_of_package:
         Env.t -> Location.t ->
         Path.t -> Longident.t list -> type_expr list -> module_type
 val simplify_signature: signature -> signature
-
-val path_of_module : Typedtree.module_expr -> Path.t option
 
 val save_signature:
   string -> Typedtree.signature -> string -> string ->
@@ -70,7 +67,7 @@ type error =
   | Incomplete_packed_module of type_expr
   | Scoping_pack of Longident.t * type_expr
   | Recursive_module_require_explicit_type
-  | Apply_generative
+  | Argument_mismatch of Types.module_parameter * Parsetree.module_argument
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error

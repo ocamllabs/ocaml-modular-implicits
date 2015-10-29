@@ -126,7 +126,7 @@ val report_error: Env.t -> formatter -> error -> unit
 
 (* Forward declaration, to be filled in by Typemod.type_module *)
 val type_module:
-  (?implicit_arity:int -> Env.t -> Parsetree.module_expr ->
+  (Env.t -> Parsetree.module_expr ->
    Typedtree.module_expr) ref
 (* Forward declaration, to be filled in by Typemod.type_open *)
 val type_open:

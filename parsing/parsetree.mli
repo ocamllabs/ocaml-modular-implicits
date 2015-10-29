@@ -631,8 +631,8 @@ and module_type_desc =
         (* S *)
   | Pmty_signature of signature
         (* sig ... end *)
-  | Pmty_functor of string loc * module_type option * module_type
-        (* functor(X : MT1) -> MT2 *)
+  | Pmty_functor of module_parameter * module_type
+        (* functor MP -> MT *)
   | Pmty_with of module_type * with_constraint list
         (* MT with ... *)
   | Pmty_typeof of module_expr
@@ -755,16 +755,29 @@ and module_expr_desc =
         (* X *)
   | Pmod_structure of structure
         (* struct ... end *)
-  | Pmod_functor of string loc * module_type option * module_expr
-        (* functor(X : MT1) -> ME *)
-  | Pmod_apply of module_expr * module_expr
-        (* ME1(ME2) *)
+  | Pmod_functor of module_parameter * module_expr
+        (* functor MP -> ME *)
+  | Pmod_apply of module_expr * module_argument
+        (* ME(MA) *)
   | Pmod_constraint of module_expr * module_type
         (* (ME : MT) *)
   | Pmod_unpack of expression
         (* (val E) *)
   | Pmod_extension of extension
         (* [%id] *)
+
+and module_parameter =
+  | Pmpar_generative
+        (* () *)
+  | Pmpar_applicative of string loc * module_type
+        (* (X : MT) *)
+  | Pmpar_implicit of string loc * module_type
+        (* {X : MT} *)
+
+and module_argument =
+  | Pmarg_generative
+  | Pmarg_applicative of module_expr
+  | Pmarg_implicit of module_expr
 
 and structure = structure_item list
 

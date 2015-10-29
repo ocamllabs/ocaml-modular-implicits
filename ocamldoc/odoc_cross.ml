@@ -375,9 +375,13 @@ let rec associate_in_module module_list (acc_b_modif, acc_incomplete_top_module_
             mt_is_interface = false ; mt_file = ""; mt_kind = Some tk ;
             mt_loc = Odoc_types.dummy_loc }
 
-    | Module_apply (k1, k2) ->
-        let (acc_b2, acc_inc2, acc_names2) = iter_kind (acc_b, acc_inc, acc_names) k1 in
-        iter_kind (acc_b2, acc_inc2, acc_names2) k2
+    | Module_apply (k, a) -> begin
+        let (acc_b2, acc_inc2, acc_names2) = iter_kind (acc_b, acc_inc, acc_names) k in
+          match a with
+          | Ma_generative -> (acc_b2, acc_inc2, acc_names2)
+          | Ma_applicative k | Ma_implicit k ->
+              iter_kind (acc_b2, acc_inc2, acc_names2) k
+      end
 
     | Module_constraint (k, tk) ->
         let (acc_b2, acc_inc2, acc_names2) = iter_kind (acc_b, acc_inc, acc_names) k in
@@ -898,9 +902,9 @@ and assoc_comments_module_kind parent_name module_list mk =
   | Module_alias _
   | Module_functor _ ->
       mk
-  | Module_apply (mk1, mk2) ->
-      Module_apply (assoc_comments_module_kind parent_name module_list mk1,
-                    assoc_comments_module_kind parent_name module_list mk2)
+  | Module_apply (mk, ma) ->
+      Module_apply (assoc_comments_module_kind parent_name module_list mk,
+                    assoc_comments_module_argument parent_name module_list ma)
   | Module_with (mtk, s) ->
       Module_with (assoc_comments_module_type_kind parent_name module_list mtk, s)
   | Module_constraint (mk1, mtk) ->
@@ -909,6 +913,14 @@ and assoc_comments_module_kind parent_name module_list mk =
          assoc_comments_module_type_kind parent_name module_list mtk)
   | Module_typeof _ -> mk
   | Module_unpack _ -> mk
+
+and assoc_comments_module_argument parent_name module_list ma =
+  match ma with
+  | Ma_generative -> ma
+  | Ma_applicative mk ->
+      Ma_applicative (assoc_comments_module_kind parent_name module_list mk)
+ | Ma_implicit mk ->
+      Ma_implicit (assoc_comments_module_kind parent_name module_list mk)
 
 and assoc_comments_module_type_kind parent_name module_list mtk =
   match mtk with

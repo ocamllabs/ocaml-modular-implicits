@@ -321,16 +321,29 @@ and eq_module_expr_desc :
   | (Pmod_ident a0, Pmod_ident b0) ->
       Asttypes.eq_loc Longident.eq_t (a0, b0)
   | (Pmod_structure a0, Pmod_structure b0) -> eq_structure (a0, b0)
-  | (Pmod_functor (a0, a1, a2), Pmod_functor (b0, b1, b2)) ->
-      ((Asttypes.eq_loc eq_string (a0, b0)) &&
-         (eq_module_type (a1, b1)))
-        && (eq_module_expr (a2, b2))
+  | (Pmod_functor (a0, a1), Pmod_functor (b0, b1)) ->
+      ((eq_module_parameter (a0, b0)))
+        && (eq_module_expr (a1, b1))
   | (Pmod_apply (a0, a1), Pmod_apply (b0, b1)) ->
-      (eq_module_expr (a0, b0)) && (eq_module_expr (a1, b1))
+      (eq_module_expr (a0, b0)) && (eq_module_argument (a1, b1))
   | (Pmod_constraint (a0, a1), Pmod_constraint (b0, b1)) ->
       (eq_module_expr (a0, b0)) && (eq_module_type (a1, b1))
   | (Pmod_unpack a0, Pmod_unpack b0) -> eq_expression (a0, b0)
   | (_, _) -> false
+and eq_module_parameter : (module_parameter * module_parameter) -> 'result =
+  function
+  | (Pmpar_generative, Pmpar_generative) -> true
+  | (Pmpar_applicative(a0, a1), Pmpar_applicative(b0, b1)) ->
+      (Asttypes.eq_loc eq_string (a0, b0))
+      && (eq_module_expr (a1, b1))
+  | (Pmpar_implicit(a0, a1), Pmpar_implicit(b0, b1)) ->
+      (Asttypes.eq_loc eq_string (a0, b0))
+      && (eq_module_expr (a1, b1))
+and eq_module_argument : (module_argument * module_argument) -> 'result =
+  function
+  | (Pmarg_generative, Pmarg_generative) -> true
+  | (Pmarg_applicative a0, Pmarg_applicative b0) -> eq_module_type (a0, b0)
+  | (Pmarg_implicit a0, Pmarg_implicit b0) -> eq_module_type (a0, b0)
 and eq_module_expr : (module_expr * module_expr) -> 'result =
   fun
     ({ pmod_desc = a0; pmod_loc = a1 },
@@ -404,10 +417,9 @@ and eq_module_type_desc :
   | (Pmty_ident a0, Pmty_ident b0) ->
       Asttypes.eq_loc Longident.eq_t (a0, b0)
   | (Pmty_signature a0, Pmty_signature b0) -> eq_signature (a0, b0)
-  | (Pmty_functor (a0, a1, a2), Pmty_functor (b0, b1, b2)) ->
-      ((Asttypes.eq_loc eq_string (a0, b0)) &&
-         (eq_module_type (a1, b1)))
-        && (eq_module_type (a2, b2))
+  | (Pmty_functor (a0, a2), Pmty_functor (b0, b2)) ->
+      (eq_module_parameter (a0, a1))
+        && (eq_module_type (a1, b1))
   | (Pmty_with (a0, a1), Pmty_with (b0, b1)) ->
       (eq_module_type (a0, b0)) &&
         (eq_list

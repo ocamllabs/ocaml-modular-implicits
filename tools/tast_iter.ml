@@ -205,13 +205,20 @@ let class_description sub cd =
 let class_type_declaration sub cd =
   sub # class_type cd.ci_expr
 
+let module_parameter sub mparam =
+  match mparam with
+  | Tmpar_generative -> ()
+  | Tmpar_applicative(_, _, mtype) -> sub # module_type mtype
+  | Tmpar_implicit(_, _, mtype) -> sub # module_type mtype
+
 let module_type sub mty =
   match mty.mty_desc with
   | Tmty_ident (_path, _) -> ()
   | Tmty_alias (_path, _) -> ()
   | Tmty_signature sg -> sub # signature sg
-  | Tmty_functor (_id, _, mtype1, mtype2) ->
-      Misc.may (sub # module_type) mtype1; sub # module_type mtype2
+  | Tmty_functor (mparam, mtype) ->
+      module_parameter sub mparam;
+      sub # module_type mtype
   | Tmty_with (mtype, list) ->
       sub # module_type mtype;
       List.iter (fun (_, _, withc) -> sub # with_constraint withc) list
@@ -225,16 +232,22 @@ let with_constraint sub cstr =
   | Twith_typesubst decl -> sub # type_declaration decl
   | Twith_modsubst _ -> ()
 
+let module_argument sub marg =
+  match marg with
+  | Tmarg_generative -> ()
+  | Tmarg_applicative(mexp, _) -> sub # module_expr mexp
+  | Tmarg_implicit(mexp, _) -> sub # module_expr mexp
+
 let module_expr sub mexpr =
   match mexpr.mod_desc with
   | Tmod_ident (_p, _) -> ()
   | Tmod_structure st -> sub # structure st
-  | Tmod_functor (_id, _, mtype, mexpr) ->
-      Misc.may (sub # module_type) mtype;
+  | Tmod_functor (mparam, mexpr) ->
+      module_parameter sub mparam;
       sub # module_expr mexpr
-  | Tmod_apply (mexp1, mexp2, _) ->
-      sub # module_expr mexp1;
-      sub # module_expr mexp2
+  | Tmod_apply (mexp, marg) ->
+      sub # module_expr mexp;
+      module_argument sub marg
   | Tmod_constraint (mexpr, _, Tmodtype_implicit, _ ) ->
       sub # module_expr mexpr
   | Tmod_constraint (mexpr, _, Tmodtype_explicit mtype, _) ->

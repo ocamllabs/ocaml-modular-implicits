@@ -203,7 +203,7 @@ module Make(O : OBJ)(EVP : EVALPATH with type valu = O.t) = struct
              with Not_found -> false
           then Oide_ident name
           else Oide_dot (Printtyp.tree_of_path p, name)
-      | Papply(p1, p2) ->
+      | Papply(p1, p2, i) ->
           Printtyp.tree_of_path ty_path
 
     let tree_of_constr =

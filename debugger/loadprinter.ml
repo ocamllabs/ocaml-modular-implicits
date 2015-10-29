@@ -89,7 +89,7 @@ let loadfile ppf name =
 let rec eval_path = function
     Pident id -> Symtable.get_global_value id
   | Pdot(p, s, pos) -> Obj.field (eval_path p) pos
-  | Papply(p1, p2) -> fatal_error "Loadprinter.eval_path"
+  | Papply(p1, p2, i) -> fatal_error "Loadprinter.eval_path"
 
 (* Install, remove a printer (as in toplevel/topdirs) *)
 

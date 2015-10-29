@@ -19,8 +19,7 @@ open Types
 
 type symptom =
     Missing_field of Ident.t * Location.t * string (* kind *)
-  | Implicit_flags of Ident.t * Asttypes.implicit_flag * Location.t *
-                                Asttypes.implicit_flag * Location.t
+  | Implicit_flags of Ident.t * Location.t * Location.t
   | Value_descriptions of Ident.t * value_description * value_description
   | Type_declarations of Ident.t * type_declaration
         * type_declaration * Includecore.type_mismatch list
@@ -41,7 +40,16 @@ type symptom =
   | Invalid_module_alias of Path.t
 
 type pos =
-    Module of Ident.t | Modtype of Ident.t | Arg of Ident.t | Body of Ident.t
+  | Module of Ident.t
+  | Modtype of Ident.t
+  | Param of pos_param
+  | Body of pos_param
+
+and pos_param =
+  | Generative
+  | Applicative of Ident.t
+  | Implicit of Ident.t
+
 type error = pos list * Env.t * symptom
 
 exception Error of error list
@@ -54,10 +62,10 @@ exception Error of error list
 
 let implicit_flags env cxt id f1 l1 f2 l2 =
   match f1, f2 with
-  | Asttypes.Implicit x , Asttypes.Implicit x' when x = x' -> ()
-  | Asttypes.Implicit _ , Asttypes.Nonimplicit -> ()
+  | Asttypes.Implicit, Asttypes.Implicit -> ()
+  | Asttypes.Implicit, Asttypes.Nonimplicit -> ()
   | Asttypes.Nonimplicit, Asttypes.Nonimplicit -> ()
-  | _ -> raise(Error[cxt, env, Implicit_flags(id, f1, l1, f2, l2)])
+  | _ -> raise(Error[cxt, env, Implicit_flags(id, l1, l2)])
 
 (* Inclusion between value descriptions *)
 
@@ -256,22 +264,41 @@ and try_modtypes env cxt subst mty1 mty2 =
       try_modtypes2 env cxt mty1 (Subst.modtype subst mty2)
   | (Mty_signature sig1, Mty_signature sig2) ->
       signatures env cxt subst sig1 sig2
-  | (Mty_functor(param1, None, res1), Mty_functor(param2, None, res2)) ->
-      begin match modtypes env (Body param1::cxt) subst res1 res2 with
-        Tcoerce_none -> Tcoerce_none
-      | cc -> Tcoerce_functor (Tcoerce_none, cc)
-      end
-  | (Mty_functor(param1, Some arg1, res1),
-     Mty_functor(param2, Some arg2, res2)) ->
-      let arg2' = Subst.modtype subst arg2 in
-      let cc_arg = modtypes env (Arg param1::cxt) Subst.identity arg2' arg1 in
-      let cc_res =
-        modtypes (Env.add_module param1 arg2' env) (Body param1::cxt)
-          (Subst.add_module param2 (Pident param1) subst) res1 res2 in
-      begin match (cc_arg, cc_res) with
-          (Tcoerce_none, Tcoerce_none) -> Tcoerce_none
-        | _ -> Tcoerce_functor(cc_arg, cc_res)
-      end
+  | (Mty_functor(param1, res1), Mty_functor(param2, res2)) -> begin
+      match param1, param2 with
+      | Mpar_generative, Mpar_generative -> begin
+          match modtypes env (Body Generative::cxt) subst res1 res2 with
+          | Tcoerce_none -> Tcoerce_none
+          | cc -> Tcoerce_functor (Tcoerce_none, cc)
+        end
+      | Mpar_applicative(id1, arg1), Mpar_applicative(id2, arg2) -> begin
+          let arg2' = Subst.modtype subst arg2 in
+          let cc_arg =
+            modtypes env (Param (Applicative id1)::cxt) Subst.identity arg2' arg1
+          in
+          let cc_res =
+            modtypes (Env.add_module id1 arg2' env) (Body (Applicative id1)::cxt)
+                     (Subst.add_module id2 (Pident id1) subst) res1 res2
+          in
+            match (cc_arg, cc_res) with
+              (Tcoerce_none, Tcoerce_none) -> Tcoerce_none
+            | _ -> Tcoerce_functor(cc_arg, cc_res)
+        end
+      | Mpar_implicit(id1, arg1), Mpar_implicit(id2, arg2) -> begin
+          let arg2' = Subst.modtype subst arg2 in
+          let cc_arg =
+            modtypes env (Param (Implicit id1)::cxt) Subst.identity arg2' arg1
+          in
+          let cc_res =
+            modtypes (Env.add_module id1 arg2' env) (Body (Implicit id1)::cxt)
+                     (Subst.add_module id2 (Pident id1) subst) res1 res2
+          in
+            match (cc_arg, cc_res) with
+              (Tcoerce_none, Tcoerce_none) -> Tcoerce_none
+            | _ -> Tcoerce_functor(cc_arg, cc_res)
+        end
+      | (_, _) -> raise Dont_match
+    end
   | (_, _) ->
       raise Dont_match
 
@@ -492,19 +519,8 @@ let include_err ppf = function
   | Missing_field (id, loc, kind) ->
       fprintf ppf "The %s `%a' is required but not provided" kind ident id;
       show_loc "Expected declaration" ppf loc
-  | Implicit_flags (id, f1, l1, f2, l2) ->
-      let lhs ppf = function
-        | Asttypes.Nonimplicit -> fprintf ppf "it is non implicit"
-        | Asttypes.Implicit 0 -> fprintf ppf "it is implicit"
-        | Asttypes.Implicit n -> fprintf ppf "it has arity %d" n
-      in
-      let rhs ppf = function
-        | Asttypes.Nonimplicit -> fprintf ppf "be non implicit"
-        | Asttypes.Implicit 0 -> fprintf ppf "be directly implicit"
-        | Asttypes.Implicit n -> fprintf ppf "have arity %d" n
-      in
-      fprintf ppf "Implicit annotation of `%a' is not compatible: %a while it was expected to %a"
-        ident id lhs f1 rhs f2;
+  | Implicit_flags (id, l1, l2) ->
+      fprintf ppf "Implicit annotations of %a do not match" ident id;
       show_locs ppf (l1, l2)
   | Value_descriptions(id, d1, d2) ->
       fprintf ppf
@@ -567,24 +583,50 @@ let include_err ppf = function
 
 let rec context ppf = function
     Module id :: rem ->
-      fprintf ppf "@[<2>module %a%a@]" ident id args rem
+      fprintf ppf "@[<2>module %a%a@]" ident id params rem
   | Modtype id :: rem ->
       fprintf ppf "@[<2>module type %a =@ %a@]" ident id context_mty rem
-  | Body x :: rem ->
-      fprintf ppf "functor (%s) ->@ %a" (argname x) context_mty rem
-  | Arg x :: rem ->
-      fprintf ppf "functor (%a : %a) -> ..." ident x context_mty rem
+  | Body p :: rem -> begin
+      match p with
+      | Generative ->
+          fprintf ppf "functor () ->@ %a" context_mty rem
+      | Applicative x ->
+          fprintf ppf "functor (%a) ->@ %a" ident x context_mty rem
+      | Implicit x ->
+          fprintf ppf "functor {%a} ->@ %a" ident x context_mty rem
+    end
+  | Param p :: rem -> begin
+      match p with
+      | Generative -> assert false
+      | Applicative x ->
+          fprintf ppf "functor (%a : %a) -> ..." ident x context_mty rem
+      | Implicit x ->
+          fprintf ppf "functor {%a : %a} -> ..." ident x context_mty rem
+    end
   | [] ->
       fprintf ppf "<here>"
 and context_mty ppf = function
     (Module _ | Modtype _) :: _ as rem ->
       fprintf ppf "@[<2>sig@ %a@;<1 -2>end@]" context rem
   | cxt -> context ppf cxt
-and args ppf = function
-    Body x :: rem ->
-      fprintf ppf "(%s)%a" (argname x) args rem
-  | Arg x :: rem ->
-      fprintf ppf "(%a :@ %a) : ..." ident x context_mty rem
+and params ppf = function
+    Body p :: rem -> begin
+      match p with
+      | Generative ->
+          fprintf ppf "()%a" params rem
+      | Applicative x ->
+          fprintf ppf "(%a)%a" ident x params rem
+      | Implicit x ->
+          fprintf ppf "{%a}%a" ident x params rem
+    end
+  | Param p :: rem -> begin
+      match p with
+      | Generative -> assert false
+      | Applicative x ->
+          fprintf ppf "(%a :@ %a) : ..." ident x context_mty rem
+      | Implicit x ->
+          fprintf ppf "{%a :@ %a} : ..." ident x context_mty rem
+    end
   | cxt ->
       fprintf ppf " :@ %a" context_mty cxt
 and argname x =

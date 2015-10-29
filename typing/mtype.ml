@@ -34,9 +34,14 @@ let rec strengthen env mty p =
   match scrape env mty with
     Mty_signature sg ->
       Mty_signature(strengthen_sig env sg p)
-  | Mty_functor(param, arg, res)
-    when !Clflags.applicative_functors && Ident.name param <> "*" ->
-      Mty_functor(param, arg, strengthen env res (Papply(p, Pident param)))
+  | Mty_functor(Mpar_applicative(id, _) as param, res)
+    when !Clflags.applicative_functors ->
+      let res' = strengthen env res (Papply(p, Pident id, Nonimplicit)) in
+      Mty_functor(param, res')
+  | Mty_functor(Mpar_implicit(id, _) as param, res)
+    when !Clflags.applicative_functors ->
+      let res' = strengthen env res (Papply(p, Pident id, Implicit)) in
+      Mty_functor(param, res')
   | mty ->
       mty
 
@@ -108,13 +113,27 @@ let nondep_supertype env mid mty =
         else mty
     | Mty_signature sg ->
         Mty_signature(nondep_sig env va sg)
-    | Mty_functor(param, arg, res) ->
+    | Mty_functor(param, res) -> begin
         let var_inv =
-          match va with Co -> Contra | Contra -> Co | Strict -> Strict in
-        Mty_functor(param, Misc.may_map (nondep_mty env var_inv) arg,
-                    nondep_mty
-                      (Env.add_module ~arg:true param
-                         (Btype.default_mty arg) env) va res)
+          match va with
+          | Co -> Contra
+          | Contra -> Co
+          | Strict -> Strict
+        in
+          match param with
+          | Mpar_generative ->
+              Mty_functor(Mpar_generative, nondep_mty env va res)
+          | Mpar_applicative(id, arg) ->
+              Mty_functor(Mpar_applicative(id, nondep_mty env var_inv arg),
+                          nondep_mty
+                            (Env.add_module ~arg:true id arg env)
+                            va res)
+          | Mpar_implicit(id, arg) ->
+              Mty_functor(Mpar_implicit(id, nondep_mty env var_inv arg),
+                          nondep_mty
+                            (Env.add_module ~arg:true id arg env)
+                            va res)
+      end
 
   and nondep_sig env va = function
     [] -> []
@@ -193,7 +212,7 @@ let rec type_paths env p mty =
     Mty_ident p -> []
   | Mty_alias p -> []
   | Mty_signature sg -> type_paths_sig env p 0 sg
-  | Mty_functor(param, arg, res) -> []
+  | Mty_functor(param, res) -> []
 
 and type_paths_sig env p pos sg =
   match sg with
@@ -217,7 +236,7 @@ let rec no_code_needed env mty =
   match scrape env mty with
     Mty_ident p -> false
   | Mty_signature sg -> no_code_needed_sig env sg
-  | Mty_functor(_, _, _) -> false
+  | Mty_functor(_, _) -> false
   | Mty_alias p -> true
 
 and no_code_needed_sig env sg =
@@ -248,7 +267,7 @@ let rec contains_type env = function
       end
   | Mty_signature sg ->
       contains_type_sig env sg
-  | Mty_functor (_, _, body) ->
+  | Mty_functor (_, body) ->
       contains_type env body
   | Mty_alias _ ->
       ()
@@ -287,12 +306,12 @@ module IdentSet = Set.Make (struct type t = Ident.t let compare = compare end)
 let rec get_prefixes = function
     Pident _ -> PathSet.empty
   | Pdot (p, _, _)
-  | Papply (p, _) -> PathSet.add p (get_prefixes p)
+  | Papply (p, _, _) -> PathSet.add p (get_prefixes p)
 
 let rec get_arg_paths = function
     Pident _ -> PathSet.empty
   | Pdot (p, _, _) -> get_arg_paths p
-  | Papply (p1, p2) ->
+  | Papply (p1, p2, _) ->
       PathSet.add p2
         (PathSet.union (get_prefixes p2)
            (PathSet.union (get_arg_paths p1) (get_arg_paths p2)))

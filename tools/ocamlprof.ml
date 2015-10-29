@@ -373,11 +373,19 @@ and rewrite_mod iflag smod =
   match smod.pmod_desc with
     Pmod_ident _ -> ()
   | Pmod_structure sstr -> List.iter (rewrite_str_item iflag) sstr
-  | Pmod_functor(_param, _smty, sbody) -> rewrite_mod iflag sbody
-  | Pmod_apply(smod1, smod2) -> rewrite_mod iflag smod1; rewrite_mod iflag smod2
+  | Pmod_functor(_sparam, sbody) -> rewrite_mod iflag sbody
+  | Pmod_apply(smod, sarg) ->
+      rewrite_mod iflag smod;
+      rewrite_mod_arg iflag sarg
   | Pmod_constraint(smod, _smty) -> rewrite_mod iflag smod
   | Pmod_unpack(sexp) -> rewrite_exp iflag sexp
   | Pmod_extension _ -> ()
+
+and rewrite_mod_arg iflag sarg =
+  match sarg with
+  | Pmarg_generative -> ()
+  | Pmarg_applicative smod | Pmarg_implicit smod ->
+      rewrite_mod iflag smod
 
 and rewrite_str_item iflag item =
   match item.pstr_desc with

@@ -30,7 +30,7 @@ let rec list_filtermap f = function
 let string_of_path path =
   Path.to_longident path |> Longident.flatten |> String.concat "."
 
-let papply path arg = Path.Papply (path, arg)
+let papply path arg = Path.Papply (path, arg, Asttypes.Implicit)
 
 (** [target] is the point from which a search starts *)
 type target = {
@@ -438,28 +438,6 @@ let target_of_pending inst =
   !variables,
   {target_type = mty; target_id = id; target_uid = id; target_hkt = hkt}
 
-let rec extract_implicit_parameters targets n omty nmty =
-  assert (n >= 0);
-  if n = 0 then
-    List.rev targets, nmty
-  else match omty, nmty with
-    | Mty_functor (target_uid, Some _, omty'),
-      Mty_functor (target_id, Some target_type, nmty') ->
-        extract_implicit_parameters
-        ({target_uid; target_id; target_type; target_hkt = []} :: targets) (n - 1) omty' nmty'
-    | _ -> assert false
-
-let find_implicit_parameters {Types. md_type = omty; md_implicit} =
-  match md_implicit with
-  | Asttypes.Nonimplicit -> assert false
-  | Asttypes.Implicit 0 ->
-      (* No copy, so we don't lose equality *)
-      [], omty
-
-  | Asttypes.Implicit arity ->
-      let nmty = Subst.modtype Subst.identity omty in
-      extract_implicit_parameters [] arity omty nmty
-
 (** Termination checking **)
 module Termination : sig
 
@@ -719,7 +697,7 @@ let report_error msg exn =
 
 module Search : sig
 
-  type candidate = Path.t * Types.module_declaration
+  type candidate = Path.t * target list * Types.module_type
 
   type query
   type partial
@@ -742,7 +720,7 @@ module Search : sig
 
 end = struct
 
-  type candidate = Path.t * Types.module_declaration
+  type candidate = Path.t * target list * Types.module_type
 
   type 'a state =
     {
@@ -813,8 +791,31 @@ end = struct
       eq_table = eq_table;
     }
 
+  let make_candidate path params mty =
+    let rec loop path res s acc = function
+      | [] -> path, List.rev acc, Subst.modtype s res
+      | (id, param) :: rest ->
+          let param' = Subst.modtype s param in
+          let id' = Ident.rename id in
+          let s' = Subst.add_module id (Path.Pident id') s in
+          let target =
+            { target_uid = id;
+              target_id = id';
+              target_type = param';
+              target_hkt = []; }
+          in
+          let acc' = target :: acc in
+            loop path res s' acc' rest
+    in
+      loop path mty Subst.identity [] params
+
+  let make_candidate (path, params, mty) =
+    match params with
+    | [] -> (path, [], mty)
+    | params -> make_candidate path params mty
+
   let all_candidates t =
-    Env.implicit_instances t.env
+    List.map make_candidate (Env.implicit_instances t.env)
 
   let cleanup_equations ident eq_table =
     try
@@ -826,7 +827,7 @@ end = struct
 
   exception Invalid_candidate
 
-  let step0 state (path, md) =
+  let step0 state (path, sub_targets, candidate_mty) =
     state.eq_var := state.eq_initial;
     let rec print_paths ppf = function
       | [] -> Format.pp_print_string ppf "_";
@@ -835,7 +836,6 @@ end = struct
     let print_paths ppf ps = print_paths ppf (List.rev ps) in
     printf "%a <- %a\n" print_paths state.debug_path Printtyp.path path;
     let target = state.target in
-    let sub_targets, candidate_mty = find_implicit_parameters md in
     (* Generate coercion. if this succeeds this produce equations in eq_var *)
     let eq_table, env = List.fold_left
         (fun (eq_table, env) sub_target ->
@@ -1037,19 +1037,19 @@ let rec canonical_path env path =
     | Mty_alias path -> canonical_path env path
     | _ -> match path with
       | Path.Pident _ -> path
-      | Path.Pdot (p1,s,i) ->
+      | Path.Pdot (p1,s,pos) ->
           let p1' = canonical_path env p1 in
           if p1 == p1' then
             path
           else
-            Path.Pdot (p1', s, i)
-      | Path.Papply (p1, p2) ->
+            Path.Pdot (p1', s, pos)
+      | Path.Papply (p1, p2, i) ->
           let p1' = canonical_path env p1
           and p2' = canonical_path env p2 in
           if p1' == p1 && p2 == p2' then
             path
           else
-            Path.Papply (p1', p2')
+            Path.Papply (p1', p2', i)
   with Not_found ->
     (*?!*)
     path
@@ -1125,21 +1125,53 @@ let pack_implicit inst path =
           mod_env = env;
           mod_attributes = [];
         }
-    | Path.Papply (p1,p2) ->
+    | Path.Papply (p1, p2, i) ->
         let mfun = translpath p1 and marg = translpath p2 in
-        match mfun.mod_type with
-        | Mty_functor (param, Some mty_param, mty_res) ->
-            let coercion = Includemod.modtypes env marg.mod_type mty_param in
-            let mty_appl = Subst.modtype
-                (Subst.add_module param p2 Subst.identity)  mty_res
-            in
-            { mod_desc = Tmod_apply(mfun, marg, coercion);
-              mod_type = mty_appl;
-              mod_env = env;
-              mod_attributes = [];
-              mod_loc = loc;
-            }
-        | _ -> assert false
+        let rec loop acc mty =
+          match mty with
+          | Mty_functor (param, mty_res) ->
+              let param, mty_param =
+                match param with
+                | Mpar_generative -> assert false
+                | Mpar_applicative(param, mty_param)
+                | Mpar_implicit(param, mty_param) ->
+                    param, mty_param
+              in
+              let coercion = Includemod.modtypes env marg.mod_type mty_param in
+              let mty_appl =
+                Subst.modtype
+                  (Subst.add_module param p2 Subst.identity) mty_res
+              in
+              let marg =
+                match i with
+                | Asttypes.Nonimplicit -> Tmarg_applicative(marg, coercion)
+                | Asttypes.Implicit -> Tmarg_implicit(marg, coercion)
+              in
+              { mod_desc = Tmod_apply(acc, marg);
+                mod_type = mty_appl;
+                mod_env = env;
+                mod_attributes = [];
+                mod_loc = loc;
+              }
+          | Mty_ident path ->
+              let mty = Includemod.expand_module_path env [] path in
+              loop acc mty
+          | Mty_alias path ->
+              let path = Env.normalize_path (Some loc) env path in
+              let mty = Includemod.expand_module_alias env [] path in
+              let acc =
+                { mod_desc = Tmod_constraint (acc, mty, Tmodtype_implicit,
+                                 Tcoerce_alias (path, Tcoerce_none));
+                  mod_type = mty;
+                  mod_env = env;
+                  mod_attributes = [];
+                  mod_loc = loc;
+                }
+              in
+                loop acc mty
+          | _ -> assert false
+        in
+          loop mfun mfun.mod_type
   in
   let modl = translpath path in
   let (modl, tl') = !type_implicit_instance env modl p nl tl in

@@ -346,9 +346,10 @@ and remove_module_elements_between_stop_in_module_kind k =
   | Odoc_module.Module_alias _ -> k
   | Odoc_module.Module_functor (params, k2)  ->
       Odoc_module.Module_functor (params, remove_module_elements_between_stop_in_module_kind k2)
-  | Odoc_module.Module_apply (k1, k2) ->
-      Odoc_module.Module_apply (remove_module_elements_between_stop_in_module_kind k1,
-                    remove_module_elements_between_stop_in_module_kind k2)
+  | Odoc_module.Module_apply (k, a) ->
+      Odoc_module.Module_apply
+        (remove_module_elements_between_stop_in_module_kind k,
+         remove_module_elements_between_stop_in_module_argument a)
   | Odoc_module.Module_with (mtkind, s) ->
       Odoc_module.Module_with (remove_module_elements_between_stop_in_module_type_kind mtkind, s)
   | Odoc_module.Module_constraint (k2, mtkind) ->
@@ -356,6 +357,17 @@ and remove_module_elements_between_stop_in_module_kind k =
                          remove_module_elements_between_stop_in_module_type_kind mtkind)
   | Odoc_module.Module_typeof _ -> k
   | Odoc_module.Module_unpack _ -> k
+
+(** Remove the module elements between the stop special comment, in the given module argument. *)
+and remove_module_elements_between_stop_in_module_argument a =
+  match a with
+  | Odoc_module.Ma_generative -> a
+  | Odoc_module.Ma_applicative k ->
+      Odoc_module.Ma_applicative
+        (remove_module_elements_between_stop_in_module_kind k)
+  | Odoc_module.Ma_implicit k ->
+      Odoc_module.Ma_implicit
+        (remove_module_elements_between_stop_in_module_kind k)
 
 (** Remove the module elements between the stop special comment, in the given module type kind. *)
 and remove_module_elements_between_stop_in_module_type_kind tk =

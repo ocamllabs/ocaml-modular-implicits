@@ -26,7 +26,7 @@ let rec add_path bv = function
       if not (StringSet.mem s bv)
       then free_structure_names := StringSet.add s !free_structure_names
   | Ldot(l, _s) -> add_path bv l
-  | Lapply(l1, l2) -> add_path bv l1; add_path bv l2
+  | Lapply(l1, l2, _) -> add_path bv l1; add_path bv l2
 
 let open_module bv lid = add_path bv lid
 
@@ -215,9 +215,9 @@ and add_modtype bv mty =
     Pmty_ident l -> add bv l
   | Pmty_alias l -> addmodule bv l
   | Pmty_signature s -> add_signature bv s
-  | Pmty_functor(id, mty1, mty2) ->
-      Misc.may (add_modtype bv) mty1;
-      add_modtype (StringSet.add id.txt bv) mty2
+  | Pmty_functor(mparam, mty) ->
+      let bv = add_module_parameter bv mparam in
+      add_modtype bv mty
   | Pmty_with(mty, cstrl) ->
       add_modtype bv mty;
       List.iter
@@ -275,17 +275,31 @@ and add_module bv modl =
   match modl.pmod_desc with
     Pmod_ident l -> addmodule bv l
   | Pmod_structure s -> ignore (add_structure bv s)
-  | Pmod_functor(id, mty, modl) ->
-      Misc.may (add_modtype bv) mty;
-      add_module (StringSet.add id.txt bv) modl
-  | Pmod_apply(mod1, mod2) ->
-      add_module bv mod1; add_module bv mod2
+  | Pmod_functor(mparam, modl) ->
+      let bv = add_module_parameter bv mparam in
+      add_module bv modl
+  | Pmod_apply(modl, marg) ->
+      add_module bv modl; add_module_argument bv marg
   | Pmod_constraint(modl, mty) ->
       add_module bv modl; add_modtype bv mty
   | Pmod_unpack(e) ->
       add_expr bv e
   | Pmod_extension _ ->
       ()
+
+and add_module_parameter bv = function
+  | Pmpar_generative -> bv
+  | Pmpar_applicative(id, mty) ->
+      add_modtype bv mty;
+      StringSet.add id.txt bv
+  | Pmpar_implicit(id, mty) ->
+      add_modtype bv mty;
+      StringSet.add id.txt bv
+
+and add_module_argument bv = function
+  | Pmarg_generative -> ()
+  | Pmarg_applicative modl -> add_module bv modl
+  | Pmarg_implicit modl -> add_module bv modl
 
 and add_structure bv item_list =
   List.fold_left add_struct_item bv item_list
