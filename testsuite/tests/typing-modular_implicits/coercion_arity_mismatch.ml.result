@@ -1,9 +1,0 @@
-
-#   module type S = sig type t end
-# module type T = sig type _ t end
-# Characters 32-58:
-  let f (x : {X : S} -> X.t) () = (x :> {X : T} -> unit X.t);;
-                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
-Error: Type {X : S} -> X.t is not a subtype of {X : T} -> unit X.t 
-       Type (module T) is not a subtype of (module S) 
-# 

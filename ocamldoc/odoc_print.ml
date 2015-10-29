@@ -58,8 +58,13 @@ let simpl_module_type ?code t =
            None -> Types.Mty_signature []
          | Some s -> raise (Use_code s)
         )
-    | Types.Mty_functor (id, mt1, mt2) ->
-        Types.Mty_functor (id, Misc.may_map iter mt1, iter mt2)
+    | Types.Mty_functor (mp, mt) ->
+        Types.Mty_functor (iter_param mp, iter mt)
+  and iter_param p =
+    match p with
+    | Types.Mpar_generative -> Types.Mpar_generative
+    | Types.Mpar_applicative(id, mt) -> Types.Mpar_applicative(id, iter mt)
+    | Types.Mpar_implicit(id, mt) -> Types.Mpar_implicit(id, iter mt)
   in
   iter t
 

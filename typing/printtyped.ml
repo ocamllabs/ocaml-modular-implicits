@@ -33,8 +33,11 @@ let rec fmt_longident_aux f x =
   match x with
   | Longident.Lident (s) -> fprintf f "%s" s;
   | Longident.Ldot (y, s) -> fprintf f "%a.%s" fmt_longident_aux y s;
-  | Longident.Lapply (y, z) ->
+  | Longident.Lapply (y, z, Nonimplicit) ->
       fprintf f "%a(%a)" fmt_longident_aux y fmt_longident_aux z;
+  | Longident.Lapply (y, z, Implicit) ->
+      fprintf f "%a{%a}" fmt_longident_aux y fmt_longident_aux z;
+
 ;;
 
 let fmt_longident_noloc f x = fprintf f "\"%a\"" fmt_longident_aux x;;
@@ -46,8 +49,10 @@ let rec fmt_path_aux f x =
   match x with
   | Path.Pident (s) -> fprintf f "%a" fmt_ident s;
   | Path.Pdot (y, s, _pos) -> fprintf f "%a.%s" fmt_path_aux y s;
-  | Path.Papply (y, z) ->
+  | Path.Papply (y, z, Nonimplicit) ->
       fprintf f "%a(%a)" fmt_path_aux y fmt_path_aux z;
+  | Path.Papply (y, z, Implicit) ->
+      fprintf f "%a{%a}" fmt_path_aux y fmt_path_aux z;
 ;;
 
 let fmt_path f x = fprintf f "\"%a\"" fmt_path_aux x;;
@@ -117,7 +122,7 @@ let fmt_private_flag f x =
 let fmt_implicit_flag f x =
   match x with
   | Nonimplicit -> fprintf f "Nonimplicit";
-  | Implicit n -> fprintf f "Implicit %d" n;
+  | Implicit -> fprintf f "Implicit";
 ;;
 
 let line i f s (*...*) =
@@ -616,10 +621,10 @@ and module_type i ppf x =
   | Tmty_signature (s) ->
       line i ppf "Pmty_signature\n";
       signature i ppf s;
-  | Tmty_functor (s, _, mt1, mt2) ->
-      line i ppf "Pmty_functor \"%a\"\n" fmt_ident s;
-      Misc.may (module_type i ppf) mt1;
-      module_type i ppf mt2;
+  | Tmty_functor (mp, mt) ->
+      line i ppf "Pmty_functor\n";
+      module_parameter i ppf mp;
+      module_type i ppf mt;
   | Tmty_with (mt, l) ->
       line i ppf "Pmty_with\n";
       module_type i ppf mt;
@@ -712,14 +717,14 @@ and module_expr i ppf x =
   | Tmod_structure (s) ->
       line i ppf "Pmod_structure\n";
       structure i ppf s;
-  | Tmod_functor (s, _, mt, me) ->
-      line i ppf "Pmod_functor \"%a\"\n" fmt_ident s;
-      Misc.may (module_type i ppf) mt;
+  | Tmod_functor (mp, me) ->
+      line i ppf "Pmod_functor\n";
+      module_parameter i ppf mp;
       module_expr i ppf me;
-  | Tmod_apply (me1, me2, _) ->
+  | Tmod_apply (me, ma) ->
       line i ppf "Pmod_apply\n";
-      module_expr i ppf me1;
-      module_expr i ppf me2;
+      module_expr i ppf me;
+      module_argument i ppf ma;
   | Tmod_constraint (me, _, Tmodtype_explicit mt, _) ->
       line i ppf "Pmod_constraint\n";
       module_expr i ppf me;
@@ -728,6 +733,28 @@ and module_expr i ppf x =
   | Tmod_unpack (e, _) ->
       line i ppf "Pmod_unpack\n";
       expression i ppf e;
+
+and module_parameter i ppf x =
+  match x with
+  | Tmpar_generative ->
+      line i ppf "Pmpar_generative\n"
+  | Tmpar_applicative(s, _, mty) ->
+      line i ppf "Pmarg_applicative \"%a\"\n" fmt_ident s;
+      module_type i ppf mty
+  | Tmpar_implicit(s, _, mty) ->
+      line i ppf "Pmarg_implicit \"%a\"\n" fmt_ident s;
+      module_type i ppf mty
+
+and module_argument i ppf x =
+  match x with
+  | Tmarg_generative ->
+      line i ppf "Pmarg_generative\n"
+  | Tmarg_applicative(me, _) ->
+      line i ppf "Pmarg_applicative\n";
+      module_expr i ppf me
+  | Tmarg_implicit(me, _) ->
+      line i ppf "Pmarg_implicit\n";
+      module_expr i ppf me
 
 and structure i ppf x = list i structure_item ppf x.str_items
 

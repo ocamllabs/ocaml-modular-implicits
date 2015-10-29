@@ -13,19 +13,19 @@
 type t =
     Lident of string
   | Ldot of t * string
-  | Lapply of t * t
+  | Lapply of t * t * Asttypes.implicit_flag
 
 let rec flat accu = function
     Lident s -> s :: accu
   | Ldot(lid, s) -> flat (s :: accu) lid
-  | Lapply(_, _) -> Misc.fatal_error "Longident.flat"
+  | Lapply(_, _, _) -> Misc.fatal_error "Longident.flat"
 
 let flatten lid = flat [] lid
 
 let last = function
     Lident s -> s
   | Ldot(_, s) -> s
-  | Lapply(_, _) -> Misc.fatal_error "Longident.last"
+  | Lapply(_, _, _) -> Misc.fatal_error "Longident.last"
 
 let rec split_at_dots s pos =
   try

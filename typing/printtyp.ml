@@ -27,7 +27,10 @@ open Outcometree
 let rec longident ppf = function
   | Lident s -> pp_print_string ppf s
   | Ldot(p, s) -> fprintf ppf "%a.%s" longident p s
-  | Lapply(p1, p2) -> fprintf ppf "%a(%a)" longident p1 longident p2
+  | Lapply(p1, p2, Nonimplicit) ->
+      fprintf ppf "%a(%a)" longident p1 longident p2
+  | Lapply(p1, p2, Implicit) ->
+      fprintf ppf "%a{%a}" longident p1 longident p2
 
 (* Print an identifier *)
 
@@ -63,8 +66,8 @@ let rec tree_of_path = function
       Oide_ident s
   | Pdot(p, s, pos) ->
       Oide_dot (tree_of_path p, s)
-  | Papply(p1, p2) ->
-      Oide_apply (tree_of_path p1, tree_of_path p2)
+  | Papply(p1, p2, i) ->
+      Oide_apply (tree_of_path p1, tree_of_path p2, i)
 
 let rec path ident ppf = function
   | Pident id ->
@@ -75,8 +78,10 @@ let rec path ident ppf = function
       path ident ppf p;
       pp_print_char ppf '.';
       pp_print_string ppf s
-  | Papply(p1, p2) ->
+  | Papply(p1, p2, Nonimplicit) ->
       fprintf ppf "%a(%a)" (path ident) p1 (path ident) p2
+  | Papply(p1, p2, Implicit) ->
+      fprintf ppf "%a{%a}" (path ident) p1 (path ident) p2
 
 let stamped_path ppf =
   path (fun ppf id -> fprintf ppf "%a/%d" ident id id.Ident.stamp) ppf
@@ -86,9 +91,12 @@ let path ppf = path ident ppf
 let rec string_of_out_ident = function
   | Oide_ident s -> s
   | Oide_dot (id, s) -> String.concat "." [string_of_out_ident id; s]
-  | Oide_apply (id1, id2) ->
+  | Oide_apply (id1, id2, Nonimplicit) ->
       String.concat ""
         [string_of_out_ident id1; "("; string_of_out_ident id2; ")"]
+  | Oide_apply (id1, id2, Implicit) ->
+      String.concat ""
+        [string_of_out_ident id1; "{"; string_of_out_ident id2; "}"]
 
 let string_of_path p = string_of_out_ident (tree_of_path p)
 
@@ -248,7 +256,7 @@ module Path2 = struct
       (Pdot(p1, s1, pos1), Pdot(p2, s2, pos2)) ->
         let c = compare p1 p2 in
         if c <> 0 then c else String.compare s1 s2
-    | (Papply(fun1, arg1), Papply(fun2, arg2)) ->
+    | (Papply(fun1, arg1, i1), Papply(fun2, arg2, i2)) ->
         let c = compare fun1 fun2 in
         if c <> 0 then c else compare arg1 arg2
     | _ -> Pervasives.compare p1 p2
@@ -294,7 +302,7 @@ let rec path_size = function
       -Ident.binding_time id
   | Pdot (p, _, _) ->
       let (l, b) = path_size p in (1+l, b)
-  | Papply (p1, p2) ->
+  | Papply (p1, p2, _) ->
       let (l, b) = path_size p1 in
       (l + fst (path_size p2), b)
 
@@ -1195,13 +1203,23 @@ let rec tree_of_modtype = function
       Omty_ident (tree_of_path p)
   | Mty_signature sg ->
       Omty_signature (tree_of_signature sg)
-  | Mty_functor(param, ty_arg, ty_res) ->
-      let res =
-        match ty_arg with None -> tree_of_modtype ty_res
-        | Some mty ->
-            wrap_env (Env.add_module ~arg:true param mty) tree_of_modtype ty_res
-      in
-      Omty_functor (Ident.name param, may_map tree_of_modtype ty_arg, res)
+  | Mty_functor(mparam, ty_res) -> begin
+      match mparam with
+      | Mpar_generative ->
+          Omty_functor(Ompar_generative, tree_of_modtype ty_res)
+      | Mpar_applicative(id, mty) ->
+          let res =
+            wrap_env (Env.add_module ~arg:true id mty) tree_of_modtype ty_res
+          in
+            Omty_functor
+              (Ompar_applicative(Ident.name id, tree_of_modtype mty), res)
+      | Mpar_implicit(id, mty) ->
+          let res =
+            wrap_env (Env.add_module ~arg:true id mty) tree_of_modtype ty_res
+          in
+            Omty_functor
+              (Ompar_implicit(Ident.name id, tree_of_modtype mty), res)
+    end
   | Mty_alias p ->
       Omty_alias (tree_of_path p)
 
@@ -1440,7 +1458,7 @@ let rec path_same_name p1 p2 =
   match p1, p2 with
     Pident id1, Pident id2 -> ident_same_name id1 id2
   | Pdot (p1, s1, _), Pdot (p2, s2, _) when s1 = s2 -> path_same_name p1 p2
-  | Papply (p1, p1'), Papply (p2, p2') ->
+  | Papply (p1, p1', _), Papply (p2, p2', _) ->
       path_same_name p1 p2; path_same_name p1' p2'
   | _ -> ()
 

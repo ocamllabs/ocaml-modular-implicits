@@ -205,6 +205,13 @@ end
 module MT = struct
   (* Type expressions for the module language *)
 
+  let parameter sub = function
+    | Pmpar_generative -> Pmpar_generative
+    | Pmpar_applicative(s, mty) ->
+        Pmpar_applicative(map_loc sub s, sub.module_type sub mty)
+    | Pmpar_implicit(s, mty) ->
+        Pmpar_implicit(map_loc sub s, sub.module_type sub mty)
+
   let map sub {pmty_desc = desc; pmty_loc = loc; pmty_attributes = attrs} =
     let open Mty in
     let loc = sub.location sub loc in
@@ -213,10 +220,10 @@ module MT = struct
     | Pmty_ident s -> ident ~loc ~attrs (map_loc sub s)
     | Pmty_alias s -> alias ~loc ~attrs (map_loc sub s)
     | Pmty_signature sg -> signature ~loc ~attrs (sub.signature sub sg)
-    | Pmty_functor (s, mt1, mt2) ->
-        functor_ ~loc ~attrs (map_loc sub s)
-          (Misc.may_map (sub.module_type sub) mt1)
-          (sub.module_type sub mt2)
+    | Pmty_functor (mp, mt) ->
+        functor_ ~loc ~attrs
+          (parameter sub mp)
+          (sub.module_type sub mt)
     | Pmty_with (mt, l) ->
         with_ ~loc ~attrs (sub.module_type sub mt)
           (List.map (sub.with_constraint sub) l)
@@ -258,6 +265,13 @@ end
 module M = struct
   (* Value expressions for the module language *)
 
+  let parameter = MT.parameter
+
+  let argument sub = function
+    | Pmarg_generative -> Pmarg_generative
+    | Pmarg_applicative me -> Pmarg_applicative (sub.module_expr sub me)
+    | Pmarg_implicit me -> Pmarg_implicit (sub.module_expr sub me)
+
   let map sub {pmod_loc = loc; pmod_desc = desc; pmod_attributes = attrs} =
     let open Mod in
     let loc = sub.location sub loc in
@@ -265,12 +279,14 @@ module M = struct
     match desc with
     | Pmod_ident x -> ident ~loc ~attrs (map_loc sub x)
     | Pmod_structure str -> structure ~loc ~attrs (sub.structure sub str)
-    | Pmod_functor (arg, arg_ty, body) ->
-        functor_ ~loc ~attrs (map_loc sub arg)
-          (Misc.may_map (sub.module_type sub) arg_ty)
+    | Pmod_functor (param, body) ->
+        functor_ ~loc ~attrs
+          (parameter sub param)
           (sub.module_expr sub body)
-    | Pmod_apply (m1, m2) ->
-        apply ~loc ~attrs (sub.module_expr sub m1) (sub.module_expr sub m2)
+    | Pmod_apply (m, a) ->
+        apply ~loc ~attrs
+          (sub.module_expr sub m)
+          (argument sub a)
     | Pmod_constraint (m, mty) ->
         constraint_ ~loc ~attrs (sub.module_expr sub m)
                     (sub.module_type sub mty)

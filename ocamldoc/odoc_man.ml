@@ -721,8 +721,15 @@ class man =
           List.iter
             (fun (p, desc_opt) ->
               bs b ".sp\n";
-              bs b ("\""^p.mp_name^"\"\n");
-              Misc.may (self#man_of_module_type b m_name) p.mp_type;
+              (match p.mp_type with
+               | Mp_generative ->
+                   bs b ("\"()\"\n");
+               | Mp_applicative mty ->
+                   bs b ("\""^p.mp_name^"\"\n");
+                   self#man_of_module_type b m_name mty
+               | Mp_implicit mty ->
+                   bs b ("\""^p.mp_name^"\"\n");
+                   self#man_of_module_type b m_name mty);
               bs b "\n";
               (
                match desc_opt with

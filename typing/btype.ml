@@ -57,9 +57,6 @@ let is_Tvar = function {desc=Tvar _} -> true | _ -> false
 let is_Tunivar = function {desc=Tunivar _} -> true | _ -> false
 
 let dummy_method = "*dummy method*"
-let default_mty = function
-    Some mty -> mty
-  | None -> Mty_signature []
 
 (**** Representative of a type ****)
 
@@ -247,6 +244,7 @@ type type_iterators =
     it_class_declaration: type_iterators -> class_declaration -> unit;
     it_class_type_declaration: type_iterators -> class_type_declaration -> unit;
     it_module_type: type_iterators -> module_type -> unit;
+    it_module_parameter: type_iterators -> module_parameter -> unit;
     it_class_type: type_iterators -> class_type -> unit;
     it_type_kind: type_iterators -> type_kind -> unit;
     it_do_type_expr: type_iterators -> type_expr -> unit;
@@ -292,9 +290,13 @@ let type_iterators =
       Mty_ident p
     | Mty_alias p -> it.it_path p
     | Mty_signature sg -> it.it_signature it sg
-    | Mty_functor (_, mto, mt) ->
-        may (it.it_module_type it) mto;
+    | Mty_functor (mp, mt) ->
+        it.it_module_parameter it mp;
         it.it_module_type it mt
+  and it_module_parameter it = function
+    | Mpar_generative -> ()
+    | Mpar_applicative(_, mt) -> it.it_module_type it mt
+    | Mpar_implicit(_, mt) -> it.it_module_type it mt
   and it_class_type it = function
       Cty_constr (p, tyl, cty) ->
         it.it_path p;
@@ -332,7 +334,7 @@ let type_iterators =
   and it_path p = ()
   in
   { it_path; it_type_expr = it_do_type_expr; it_do_type_expr;
-    it_type_kind; it_class_type; it_module_type;
+    it_type_kind; it_class_type; it_module_type; it_module_parameter;
     it_signature; it_class_type_declaration; it_class_declaration;
     it_modtype_declaration; it_module_declaration; it_extension_constructor;
     it_type_declaration; it_value_description; it_signature_item; }

@@ -1296,13 +1296,20 @@ class html =
           self#html_of_module_kind b father ?modu k;
           if not !html_short_functors then
             bs b "</div>"
-      | Module_apply (k1, k2) ->
+      | Module_apply (k, a) ->
           (* TODO: l'application n'est pas correcte dans un .mli.
              Que faire ? -> afficher le module_type du typedtree  *)
-          self#html_of_module_kind b father k1;
-          self#html_of_text b [Code "("];
-          self#html_of_module_kind b father k2;
-          self#html_of_text b [Code ")"]
+          self#html_of_module_kind b father k;
+          (match a with
+           | Ma_generative -> self#html_of_text b [Code "()"]
+           | Ma_applicative k ->
+               self#html_of_text b [Code "("];
+               self#html_of_module_kind b father k;
+               self#html_of_text b [Code ")"]
+           | Ma_implicit k ->
+               self#html_of_text b [Code "{"];
+               self#html_of_module_kind b father k;
+               self#html_of_text b [Code "}"])
       | Module_with (k, s) ->
           (* TODO: modify when Module_with will be more detailed *)
           self#html_of_module_type_kind b father ?modu k;
@@ -1336,14 +1343,28 @@ class html =
         else
           "functor ", "-> "
       in
-      self#html_of_text b
-        [
-          Code (s_functor^"(");
-          Code p.mp_name ;
-          Code " : ";
-        ] ;
-      self#html_of_module_type_kind b father p.mp_kind;
-      self#html_of_text b [ Code (") "^s_arrow)]
+      self#html_of_text b [Code s_functor];
+      (match p.mp_type with
+       | Mp_generative -> self#html_of_text b [Code "()"]
+       | Mp_applicative _ ->
+           self#html_of_text b
+           [
+             Code "(";
+             Code p.mp_name ;
+             Code " : ";
+           ] ;
+           self#html_of_module_type_kind b father p.mp_kind;
+           self#html_of_text b [ Code (") ")]
+       | Mp_implicit _ ->
+           self#html_of_text b
+           [
+             Code "{";
+             Code p.mp_name ;
+             Code " : ";
+           ] ;
+           self#html_of_module_type_kind b father p.mp_kind;
+           self#html_of_text b [ Code ("} ")]);
+      self#html_of_text b [Code s_arrow];
 
     method html_of_module_element b m_name ele =
       match ele with
@@ -1410,8 +1431,10 @@ class html =
 
     (** Print html code to display the type of a module parameter.. *)
     method html_of_module_parameter_type b m_name p =
-      match p.mp_type with None -> bs b "<code>()</code>"
-      | Some mty -> self#html_of_module_type b m_name ~code: p.mp_type_code mty
+      match p.mp_type with
+      | Mp_generative -> bs b "<code>()</code>"
+      | Mp_applicative mty | Mp_implicit mty ->
+          self#html_of_module_type b m_name ~code: p.mp_type_code mty
 
     (** Generate a file containing the module type in the given file name. *)
     method output_module_type in_title file mtyp =

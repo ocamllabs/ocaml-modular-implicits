@@ -1228,39 +1228,23 @@ module Analyser =
                raise (Failure "Parsetree.Pmty_signature signature but not Types.Mty_signature signat")
           )
 
-      | Parsetree.Pmty_functor (_, pmodule_type2, module_type2) ->
+      | Parsetree.Pmty_functor (pmodule_param, pmodule_type) ->
           (
-           let loc = match pmodule_type2 with None -> Location.none
-                     | Some pmty -> pmty.Parsetree.pmty_loc in
-           let loc_start = loc.Location.loc_start.Lexing.pos_cnum in
-           let loc_end = loc.Location.loc_end.Lexing.pos_cnum in
-           let mp_type_code = get_string_of_file loc_start loc_end in
-           print_DEBUG (Printf.sprintf "mp_type_code=%s" mp_type_code);
-           match sig_module_type with
-             Types.Mty_functor (ident, param_module_type, body_module_type) ->
-               let mp_kind =
-                 match pmodule_type2, param_module_type with
-                   Some pmty, Some mty ->
-                     analyse_module_type_kind env current_module_name pmty mty
-                 | _ -> Module_type_struct []
-               in
-               let param =
-                 {
-                   mp_name = Name.from_ident ident ;
-                   mp_type =
-                    Misc.may_map (Odoc_env.subst_module_type env)
-                      param_module_type;
-                   mp_type_code = mp_type_code ;
-                   mp_kind = mp_kind ;
-                 }
-               in
-               let k = analyse_module_type_kind ~erased env
-                   current_module_name
-                   module_type2
-                   body_module_type
-               in
-               Module_type_functor (param, k)
-
+            match sig_module_type with
+            | Types.Mty_functor (module_param, module_type) ->
+                let param =
+                  analyse_module_param env
+                    current_module_name
+                    pmodule_param
+                    module_param
+                in
+                let k =
+                  analyse_module_type_kind ~erased env
+                    current_module_name
+                    pmodule_type
+                    module_type
+                in
+                  Module_type_functor (param, k)
            | _ ->
                (* if we're here something's wrong *)
                raise (Failure "Parsetree.Pmty_functor _ but not Types.Mty_functor _")
@@ -1321,35 +1305,20 @@ module Analyser =
                (* if we're here something's wrong *)
                raise (Failure "Parsetree.Pmty_signature signature but not Types.Mty_signature signat")
           )
-      | Parsetree.Pmty_functor (_, pmodule_type2,module_type2) (* of string * module_type * module_type *) ->
+      | Parsetree.Pmty_functor (pmodule_param, pmodule_type) (* of string * module_type * module_type *) ->
           (
            match sig_module_type with
-             Types.Mty_functor (ident, param_module_type, body_module_type) ->
-               let loc = match pmodule_type2 with None -> Location.none
-                     | Some pmty -> pmty.Parsetree.pmty_loc in
-               let loc_start = loc.Location.loc_start.Lexing.pos_cnum in
-               let loc_end = loc.Location.loc_end.Lexing.pos_cnum in
-               let mp_type_code = get_string_of_file loc_start loc_end in
-               print_DEBUG (Printf.sprintf "mp_type_code=%s" mp_type_code);
-               let mp_kind =
-                 match pmodule_type2, param_module_type with
-                   Some pmty, Some mty ->
-                     analyse_module_type_kind env current_module_name pmty mty
-                 | _ -> Module_type_struct []
-               in
+             Types.Mty_functor (module_param, module_type) ->
                let param =
-                 {
-                   mp_name = Name.from_ident ident ;
-                   mp_type = Misc.may_map
-                    (Odoc_env.subst_module_type env) param_module_type ;
-                   mp_type_code = mp_type_code ;
-                   mp_kind = mp_kind ;
-                 }
+                 analyse_module_param env
+                   current_module_name
+                   pmodule_param
+                   module_param
                in
                let k = analyse_module_kind ~erased env
                    current_module_name
-                   module_type2
-                   body_module_type
+                   pmodule_type
+                   module_type
                in
                Module_functor (param, k)
 
@@ -1375,6 +1344,53 @@ module Analyser =
 
       | Parsetree.Pmty_extension _ -> assert false
 
+    (** Analyse a Parsetree.module_parameter and a Types.module_parameter to
+        return a module_parameter. *)
+   and analyse_module_param env current_module_name parse_module_param sig_module_param =
+     let loc =
+       match parse_module_param with
+       | Parsetree.Pmpar_generative -> Location.none
+       | Parsetree.Pmpar_applicative(_, pmty)
+       | Parsetree.Pmpar_implicit(_, pmty) ->
+           pmty.Parsetree.pmty_loc
+     in
+     let loc_start = loc.Location.loc_start.Lexing.pos_cnum in
+     let loc_end = loc.Location.loc_end.Lexing.pos_cnum in
+     let mp_type_code = get_string_of_file loc_start loc_end in
+     print_DEBUG (Printf.sprintf "mp_type_code=%s" mp_type_code);
+     let mp_name =
+       match sig_module_param with
+       | Mpar_generative -> "()"
+       | Mpar_applicative(ident, _) | Mpar_implicit(ident, _) ->
+           Name.from_ident ident
+     in
+     let mp_kind =
+       match parse_module_param, sig_module_param with
+       | Parsetree.Pmpar_generative, Mpar_generative ->
+           Module_type_struct []
+       | Parsetree.Pmpar_applicative(_, pmty), Mpar_applicative(_, mty)
+       | Parsetree.Pmpar_implicit(_, pmty), Mpar_implicit(_, mty) ->
+           analyse_module_type_kind env current_module_name
+                                    pmty mty
+       | _, _ ->
+           (* if we're here something's wrong *)
+           raise (Failure "analyse_module_param mismatch")
+
+     in
+     let mp_type =
+       match sig_module_param with
+       | Mpar_generative -> Mp_generative
+       | Mpar_applicative(_, mty) ->
+           Mp_applicative (Odoc_env.subst_module_type env mty)
+       | Mpar_implicit(_, mty) ->
+           Mp_implicit (Odoc_env.subst_module_type env mty)
+     in
+       {
+         mp_name = mp_name ;
+         mp_type = mp_type ;
+         mp_type_code = mp_type_code ;
+         mp_kind = mp_kind ;
+       }
 
     (** Analyse of a Parsetree.class_type and a Types.class_type to return a couple
        (class parameters, class_kind).*)
