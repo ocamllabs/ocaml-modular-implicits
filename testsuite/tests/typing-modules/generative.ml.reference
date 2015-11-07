@@ -14,7 +14,10 @@ Error: This expression creates fresh types.
        It is not allowed inside applicative functors.
 # module H : functor () -> S
 #     module U : sig  end
-# module M : S
+# Characters 11-12:
+  module M = F(struct end);; (* fail *)
+             ^
+Error: This is a generative functor. It can only be applied to ()
 # Characters 11-12:
   module M = F(U);; (* fail *)
              ^
