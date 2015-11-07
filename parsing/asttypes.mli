@@ -37,7 +37,7 @@ type open_flag = Open_all of override_flag | Open_implicit
 
 type closed_flag = Closed | Open
 
-type implicit_flag = Nonimplicit | Implicit of int (*arity*)
+type implicit_flag = Nonimplicit | Implicit
 
 type label = string
 

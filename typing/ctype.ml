@@ -2297,7 +2297,7 @@ let rec concat_longident lid1 =
   function
     Lident s -> Ldot (lid1, s)
   | Ldot (lid2, s) -> Ldot (concat_longident lid1 lid2, s)
-  | Lapply (lid2, lid) -> Lapply (concat_longident lid1 lid2, lid)
+  | Lapply (lid2, lid, i) -> Lapply (concat_longident lid1 lid2, lid, i)
 
 let nondep_instance env level id ty =
   let ty = !nondep_type' env id ty in
@@ -3881,8 +3881,8 @@ let rec lid_of_path ?(sharp="") = function
       Longident.Lident (sharp ^ Ident.name id)
   | Path.Pdot (p1, s, _) ->
       Longident.Ldot (lid_of_path p1, sharp ^ s)
-  | Path.Papply (p1, p2) ->
-      Longident.Lapply (lid_of_path ~sharp p1, lid_of_path p2)
+  | Path.Papply (p1, p2, i) ->
+      Longident.Lapply (lid_of_path ~sharp p1, lid_of_path p2, i)
 
 let find_cltype_for_path env p =
   let path, cl_abbr = Env.lookup_type (lid_of_path ~sharp:"#" p) env in

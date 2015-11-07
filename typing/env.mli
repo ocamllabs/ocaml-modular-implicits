@@ -83,7 +83,8 @@ val gadt_instance_level: t -> type_expr -> int option
 val add_gadt_instances: t -> int -> type_expr list -> unit
 val add_gadt_instance_chain: t -> int -> type_expr -> unit
 
-val implicit_instances: t -> (Path.t * module_declaration) list
+val implicit_instances:
+  t -> (Path.t * (Ident.t * Types.module_type) list * Types.module_type) list
 
 (* Lookup by long identifiers *)
 
@@ -132,9 +133,6 @@ val open_signature:
 val open_pers_signature: string -> t -> t
 
 val open_implicit: Path.t -> signature -> t -> t
-
-(* Mark one path as implicit *)
-val register_as_implicit: Path.t -> int -> t -> t
 
 (* Insertion by name *)
 

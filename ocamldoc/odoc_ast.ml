@@ -1721,69 +1721,76 @@ module Analyser =
           let elements2 = replace_dummy_included_modules elements included_modules_from_tt in
           { m_base with m_kind = Module_struct elements2 }
 
-      | (Parsetree.Pmod_functor (_, pmodule_type, p_module_expr2),
-         Typedtree.Tmod_functor (ident, _, mtyp, tt_module_expr2)) ->
-           let loc = match pmodule_type with None -> Location.none
-                     | Some pmty -> pmty.Parsetree.pmty_loc in
-           let loc_start = loc.Location.loc_start.Lexing.pos_cnum in
-           let loc_end = loc.Location.loc_end.Lexing.pos_cnum in
-           let mp_type_code = get_string_of_file loc_start loc_end in
-           print_DEBUG (Printf.sprintf "mp_type_code=%s" mp_type_code);
-           let mp_name = Name.from_ident ident in
-           let mp_kind =
-             match pmodule_type, mtyp with
-               Some pmty, Some mty ->
-                 Sig.analyse_module_type_kind env current_module_name pmty
-                   mty.mty_type
-             | _ -> Module_type_struct []
-           in
+      | (Parsetree.Pmod_functor (p_module_param, p_module_expr),
+         Typedtree.Tmod_functor (tt_module_param, tt_module_expr)) ->
            let param =
-             {
-               mp_name = mp_name ;
-               mp_type = Misc.may_map
-                (fun m -> Odoc_env.subst_module_type env m.mty_type) mtyp ;
-               mp_type_code = mp_type_code ;
-               mp_kind = mp_kind ;
-             }
+             analyse_module_param
+               env
+               current_module_name
+               p_module_param
+               tt_module_param
            in
            let dummy_complete_name = (*Name.concat "__"*) param.mp_name in
            (* TODO: A VOIR CE __ *)
            let new_env = Odoc_env.add_module env dummy_complete_name in
-           let m_base2 = analyse_module
+           let m_base = analyse_module
                new_env
                current_module_name
                module_name
                None
-               p_module_expr2
-               tt_module_expr2
+               p_module_expr
+               tt_module_expr
            in
-           let kind = m_base2.m_kind in
+           let kind = m_base.m_kind in
            { m_base with m_kind = Module_functor (param, kind) }
 
-      | (Parsetree.Pmod_apply (p_module_expr1, p_module_expr2),
-         Typedtree.Tmod_apply (tt_module_expr1, tt_module_expr2, _))
-      | (Parsetree.Pmod_apply (p_module_expr1, p_module_expr2),
+      | (Parsetree.Pmod_apply (p_module_expr, p_module_arg),
+         Typedtree.Tmod_apply (tt_module_expr, tt_module_arg))
+      | (Parsetree.Pmod_apply (p_module_expr, p_module_arg),
          Typedtree.Tmod_constraint
-           ({ Typedtree.mod_desc = Typedtree.Tmod_apply (tt_module_expr1, tt_module_expr2, _)}, _,
+           ({ Typedtree.mod_desc = Typedtree.Tmod_apply (tt_module_expr, tt_module_arg)}, _,
             _, _)
         ) ->
-          let m1 = analyse_module
+          let m = analyse_module
               env
               current_module_name
               module_name
               None
-              p_module_expr1
-              tt_module_expr1
+              p_module_expr
+              tt_module_expr
           in
-          let m2 = analyse_module
-              env
-              current_module_name
-              module_name
-              None
-              p_module_expr2
-              tt_module_expr2
+          let ma =
+            match p_module_arg, tt_module_arg with
+            | Parsetree.Pmarg_generative, Tmarg_generative ->
+                Ma_generative
+            | Parsetree.Pmarg_applicative p_module_expr,
+              Tmarg_applicative(tt_module_expr, _) ->
+                let m =
+                  analyse_module
+                    env
+                    current_module_name
+                    module_name
+                    None
+                    p_module_expr
+                    tt_module_expr
+                in
+                  Ma_applicative m.m_kind
+            | Parsetree.Pmarg_implicit p_module_expr,
+              Tmarg_implicit(tt_module_expr, _) ->
+                let m =
+                  analyse_module
+                    env
+                    current_module_name
+                    module_name
+                    None
+                    p_module_expr
+                    tt_module_expr
+                in
+                  Ma_implicit m.m_kind
+            | _, _ ->
+                raise (Failure "analyse_module: Parsetree and typedtree don't match.")
           in
-          { m_base with m_kind = Module_apply (m1.m_kind, m2.m_kind) }
+          { m_base with m_kind = Module_apply (m.m_kind, ma) }
 
       | (Parsetree.Pmod_constraint (p_module_expr2, p_modtype),
          Typedtree.Tmod_constraint (tt_module_expr2, tt_modtype, _, _)) ->
@@ -1873,6 +1880,54 @@ module Analyser =
           print_DEBUG (Printf.sprintf "code=%s\ns_parse=%s\ns_typed=%s\n" code s_parse s_typed);
 
           raise (Failure "analyse_module: parsetree and typedtree don't match.")
+
+    (** Analyse a Parsetree.module_parameter and a Types.module_parameter to
+        return a module_parameter. *)
+   and analyse_module_param env current_module_name p_module_param tt_module_param =
+     let loc =
+       match p_module_param with
+       | Parsetree.Pmpar_generative -> Location.none
+       | Parsetree.Pmpar_applicative(_, pmty)
+       | Parsetree.Pmpar_implicit(_, pmty) ->
+           pmty.Parsetree.pmty_loc
+     in
+     let loc_start = loc.Location.loc_start.Lexing.pos_cnum in
+     let loc_end = loc.Location.loc_end.Lexing.pos_cnum in
+     let mp_type_code = get_string_of_file loc_start loc_end in
+     print_DEBUG (Printf.sprintf "mp_type_code=%s" mp_type_code);
+     let mp_name =
+       match tt_module_param with
+       | Typedtree.Tmpar_generative -> "()"
+       | Typedtree.Tmpar_applicative(ident,_, _)
+       | Typedtree.Tmpar_implicit(ident, _, _) ->
+           Name.from_ident ident
+     in
+     let mp_kind =
+       match p_module_param, tt_module_param with
+       | Parsetree.Pmpar_generative, Tmpar_generative ->
+           Module_type_struct []
+       | Parsetree.Pmpar_applicative(_, pmty), Tmpar_applicative(_, _, mty)
+       | Parsetree.Pmpar_implicit(_, pmty), Tmpar_implicit(_, _, mty) ->
+           Sig.analyse_module_type_kind env current_module_name
+                                        pmty mty.mty_type
+       | _, _ ->
+          raise (Failure "analyse_module_param: parsetree and typedtree don't match.")
+     in
+     let mp_type =
+       match tt_module_param with
+       | Tmpar_generative -> Mp_generative
+       | Tmpar_applicative(_, _, mty) ->
+           Mp_applicative (Odoc_env.subst_module_type env mty.mty_type)
+       | Tmpar_implicit(_, _, mty) ->
+           Mp_implicit (Odoc_env.subst_module_type env mty.mty_type)
+     in
+       {
+         mp_name = mp_name ;
+         mp_type = mp_type ;
+         mp_type_code = mp_type_code ;
+         mp_kind = mp_kind ;
+       }
+
 
      let analyse_typed_tree source_file input_file
          (parsetree : Parsetree.structure) (typedtree : typedtree) =

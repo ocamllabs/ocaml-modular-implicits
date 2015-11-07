@@ -90,6 +90,10 @@ let open_flag = function
   | Open_all x -> override x
   | Open_implicit -> " implicit"
 
+let implicit_flag = function
+  | Nonimplicit -> ""
+  | Implicit -> " implicit"
+
 (* variance encoding: need to sync up with the [parser.mly] *)
 let type_variance = function
   | Invariant -> ""
@@ -180,8 +184,10 @@ class printer  ()= object(self:'self)
   method longident f = function
     | Lident s -> protect_ident f s
     | Ldot(y,s) -> protect_longident f self#longident y s
-    | Lapply (y,s) ->
+    | Lapply (y, s, Nonimplicit) ->
         pp f "%a(%a)" self#longident y self#longident s
+    | Lapply (y, s, Implicit) ->
+        pp f "%a{%a}" self#longident y self#longident s
   method longident_loc f x = pp f "%a" self#longident x.txt
   method constant f  = function
     | Const_char i -> pp f "%C"  i
@@ -904,11 +910,11 @@ class printer  ()= object(self:'self)
 
   method module_binding f x =
     let rec module_helper me = match me.pmod_desc with
-      | Pmod_functor(s,mt,me) ->
-          if mt = None then pp f "()"
-          else Misc.may (pp f "(%s:%a)" s.txt self#module_type) mt;
+      | Pmod_functor(mp,me) ->
+          self#module_parameter f mp;
           module_helper me
-      | _ -> me in
+      | _ -> me
+    in
     pp f "%s%a"
       x.pmb_name.txt
       (fun f me ->
@@ -923,6 +929,20 @@ class printer  ()= object(self:'self)
               pp f " =@ %a" self#module_expr me
          )) x.pmb_expr
 
+  method module_parameter f x =
+    match x with
+    | Pmpar_generative -> pp f "()"
+    | Pmpar_applicative(s, mty) ->
+        pp f "(%s:%a)" s.txt self#module_type mty
+    | Pmpar_implicit(s, mty) ->
+        pp f "{%s:%a}" s.txt self#module_type mty
+
+  method module_argument f x =
+    match x with
+    | Pmarg_generative -> pp f "()"
+    | Pmarg_applicative me -> pp f "(%a)" self#module_expr me
+    | Pmarg_implicit me -> pp f "{%a}" self#module_expr me
+
   method module_type f x =
     if x.pmty_attributes <> [] then begin
       pp f "((%a)%a)" self#module_type {x with pmty_attributes=[]}
@@ -936,11 +956,10 @@ class printer  ()= object(self:'self)
     | Pmty_signature (s) ->
         pp f "@[<hv0>@[<hv2>sig@ %a@]@ end@]" (* "@[<hov>sig@ %a@ end@]" *)
           (self#list self#signature_item  ) s (* FIXME wrong indentation*)
-    | Pmty_functor (_, None, mt2) ->
-        pp f "@[<hov2>functor () ->@ %a@]" self#module_type mt2
-    | Pmty_functor (s, Some mt1, mt2) ->
-        pp f "@[<hov2>functor@ (%s@ :@ %a)@ ->@ %a@]" s.txt
-          self#module_type mt1  self#module_type mt2
+    | Pmty_functor (mp, mt) ->
+        pp f "@[<hov2>functor %a@ ->@ %a@]"
+           self#module_parameter mp
+           self#module_type mt
     | Pmty_with (mt, l) ->
         let with_constraint f = function
           | Pwith_type (li, ({ptype_params= ls ;_} as td)) ->
@@ -999,20 +1018,17 @@ class printer  ()= object(self:'self)
                  (class_description "class") x
                  (self#list ~sep:"@," (class_description "and")) xs
         end
-    | Psig_module ({pmd_type={pmty_desc=Pmty_alias alias}; pmd_implicit = Nonimplicit} as pmd) ->
-        pp f "@[<hov>module@ %s@ =@ %a@]%a"
+    | Psig_module ({pmd_type={pmty_desc=Pmty_alias alias}} as pmd) ->
+        pp f "@[<hov>%smodule@ %s@ =@ %a@]%a"
+          (implicit_flag pmd.pmd_implicit)
           pmd.pmd_name.txt
           self#longident_loc alias
           self#item_attributes pmd.pmd_attributes
-    | Psig_module ({pmd_implicit = Nonimplicit} as pmd) ->
-        pp f "@[<hov>module@ %s@ :@ %a@]%a"
+    | Psig_module pmd ->
+        pp f "@[<hov>%smodule@ %s@ :@ %a@]%a"
+           (implicit_flag pmd.pmd_implicit)
           pmd.pmd_name.txt
           self#module_type pmd.pmd_type
-          self#item_attributes pmd.pmd_attributes
-    | Psig_module ({pmd_implicit = Implicit arity} as pmd) ->
-        pp f "@[<hov>implicit module@ %s@ %a@]%a"
-          pmd.pmd_name.txt
-          (self#implicit_declaration arity) pmd.pmd_type
           self#item_attributes pmd.pmd_attributes
     | Psig_open od ->
         pp f "@[<hov2>open%s@ %a@]%a"
@@ -1071,45 +1087,16 @@ class printer  ()= object(self:'self)
           self#module_type mt
     | Pmod_ident (li) ->
         pp f "%a" self#longident_loc li;
-    | Pmod_functor (_, None, me) ->
-        pp f "functor ()@;->@;%a" self#module_expr me
-    | Pmod_functor (s, Some mt, me) ->
-        pp f "functor@ (%s@ :@ %a)@;->@;%a"
-          s.txt  self#module_type mt  self#module_expr me
-    | Pmod_apply (me1, me2) ->
-        pp f "%a(%a)" self#module_expr me1  self#module_expr  me2
+    | Pmod_functor (mp, me) ->
+        pp f "functor@ %a@;->@;%a"
+          self#module_parameter mp self#module_expr me
+    | Pmod_apply (me, ma) ->
+        pp f "%a%a" self#module_expr me self#module_argument ma
     | Pmod_unpack e ->
         pp f "(val@ %a)"  self#expression  e
     | Pmod_extension e -> self#extension f e
 
   method structure f x = self#list ~sep:"@\n" self#structure_item f x
-
-  method implicit_binding n f me =
-    match me.pmod_desc with
-    | Pmod_functor (s, Some mt, me') when n > 0 ->
-        pp f "{%s@ :@ %a}@;%a"
-          s.txt
-          self#module_type mt
-          (self#implicit_binding (n - 1)) me'
-    | Pmod_constraint (me, ({pmty_desc = ( Pmty_ident _
-                                         | Pmty_signature _ ); _} as mt)) ->
-        assert (n = 0);
-        pp f " :@;%a@;=@;%a@;" self#module_type mt self#module_expr me
-    | _ ->
-        assert (n = 0);
-        pp f " =@;%a@;"  self#module_expr me
-
-  method implicit_declaration n f mt =
-    match mt.pmty_desc with
-    | Pmty_functor (s, Some mt, mt') when n > 0 ->
-        pp f "{%s@ :@ %a}@;%a"
-          s.txt
-          self#module_type mt
-          (self#implicit_declaration (n - 1)) mt'
-    | _ ->
-        assert (n = 0);
-        pp f ":@;%a"
-          self#module_type mt
 
   method payload f = function
     | PStr [{pstr_desc = Pstr_eval (e, attrs)}] ->
@@ -1181,10 +1168,8 @@ class printer  ()= object(self:'self)
     | Pstr_exception ed -> self#exception_declaration f ed
     | Pstr_module ({pmb_implicit = Nonimplicit} as x) ->
         pp f "@[<hov2>module@ %a@]" self#module_binding x
-    | Pstr_module {pmb_implicit = Implicit arity; pmb_name; pmb_expr} ->
-        pp f "@[<hov2>implicit module@ %s@ %a@]"
-          pmb_name.txt
-          (self#implicit_binding arity) pmb_expr
+    | Pstr_module ({pmb_implicit = Implicit} as x) ->
+        pp f "@[<hov2>implicit module@ %a@]" self#module_binding x
     | Pstr_open od ->
         pp f "@[<2>open%s@;%a@]%a"
            (open_flag od.popen_flag)

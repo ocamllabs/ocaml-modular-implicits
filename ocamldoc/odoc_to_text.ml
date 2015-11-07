@@ -435,8 +435,12 @@ class virtual to_text =
             List
               (List.map
                  (fun (p, desc_opt) ->
-                   begin match p.mp_type with None -> [Raw ""]
-                   | Some mty ->
+                   begin match p.mp_type with
+                   | Mp_generative -> [Raw ""]
+                   | Mp_applicative mty ->
+                       [Code (p.mp_name^" : ")] @
+                       (self#text_of_module_type mty)
+                   | Mp_implicit mty ->
                        [Code (p.mp_name^" : ")] @
                        (self#text_of_module_type mty)
                    end @
@@ -534,13 +538,19 @@ class virtual to_text =
           | Some (Modtype mt) ->
               [Code ((if with_def_syntax then " = " else "")^mt.mt_name)]
           )
-      | Module_apply (k1, k2) ->
+      | Module_apply (k, a) ->
           (if with_def_syntax then [Code " = "] else []) @
-          (self#text_of_module_kind ~with_def_syntax: false k1) @
-          [Code " ( "] @
-          (self#text_of_module_kind ~with_def_syntax: false k2) @
-          [Code " ) "]
-
+          (self#text_of_module_kind ~with_def_syntax: false k) @
+          (match a with
+           | Ma_generative -> [Code " () "]
+           | Ma_applicative k ->
+               [Code " ( "] @
+               (self#text_of_module_kind ~with_def_syntax: false k) @
+               [Code " ) "]
+           | Ma_implicit k ->
+               [Code " { "] @
+               (self#text_of_module_kind ~with_def_syntax: false k) @
+               [Code " } "])
       | Module_with (tk, code) ->
           (if with_def_syntax then [Code " : "] else []) @
           (self#text_of_module_type_kind ~with_def_syntax: false tk) @

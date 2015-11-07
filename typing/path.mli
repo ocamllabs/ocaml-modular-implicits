@@ -15,7 +15,7 @@
 type t =
     Pident of Ident.t
   | Pdot of t * string * int
-  | Papply of t * t
+  | Papply of t * t * Asttypes.implicit_flag
 
 val same: t -> t -> bool
 val isfree: Ident.t -> t -> bool

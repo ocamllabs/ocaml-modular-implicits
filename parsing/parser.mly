@@ -208,12 +208,12 @@ let bigarray_set arr arg newval =
 
 let lapply p1 p2 =
   if !Clflags.applicative_functors
-  then Lapply(p1, p2)
+  then Lapply(p1, p2, Nonimplicit)
   else raise (Syntaxerr.Error(Syntaxerr.Applicative_path (symbol_rloc())))
 
 let rec mod_ext_apply p1 = function
   | [] -> p1
-  | p2 :: rest -> Lapply(mod_ext_apply p1 rest, p2)
+  | (p2, i) :: rest -> Lapply(mod_ext_apply p1 rest, p2, i)
 
 let exp_of_label lbl pos =
   mkexp (Pexp_ident(mkrhs (Lident(Longident.last lbl)) pos))
@@ -550,22 +550,24 @@ parse_pattern:
 
 /* Module expressions */
 
-functor_arg:
+functor_param:
     LPAREN RPAREN
-      { mkrhs "()" 2, None }
-  | LPAREN functor_arg_name COLON module_type RPAREN
-      { mkrhs $2 2, Some $4 }
+      { Pmpar_generative }
+  | LPAREN functor_param_name COLON module_type RPAREN
+      { Pmpar_applicative(mkrhs $2 2, $4) }
+  | LBRACE functor_param_name COLON module_type RBRACE
+      { Pmpar_implicit(mkrhs $2 2, $4) }
 ;
 
-functor_arg_name:
+functor_param_name:
     UIDENT     { $1 }
   | UNDERSCORE { "_" }
 ;
 
-functor_args:
-    functor_args functor_arg
+functor_params:
+    functor_params functor_param
       { $2 :: $1 }
-  | functor_arg
+  | functor_param
       { [ $1 ] }
 ;
 
@@ -576,15 +578,19 @@ module_expr:
       { mkmod(Pmod_structure($2)) }
   | STRUCT structure error
       { unclosed "struct" 1 "end" 3 }
-  | FUNCTOR functor_args MINUSGREATER module_expr
-      { List.fold_left (fun acc (n, t) -> mkmod(Pmod_functor(n, t, acc)))
+  | FUNCTOR functor_params MINUSGREATER module_expr
+      { List.fold_left (fun acc p -> mkmod(Pmod_functor(p, acc)))
                        $4 $2 }
   | module_expr LPAREN module_expr RPAREN
-      { mkmod(Pmod_apply($1, $3)) }
+      { mkmod(Pmod_apply($1, Pmarg_applicative $3)) }
   | module_expr LPAREN RPAREN
-      { mkmod(Pmod_apply($1, mkmod (Pmod_structure []))) }
+      { mkmod(Pmod_apply($1, Pmarg_generative)) }
   | module_expr LPAREN module_expr error
       { unclosed "(" 2 ")" 4 }
+  | module_expr LBRACE module_expr RBRACE
+      { mkmod(Pmod_apply($1, Pmarg_implicit $3)) }
+  | module_expr LBRACE module_expr error
+      { unclosed "{" 2 "}" 4 }
   | LPAREN module_expr COLON module_type RPAREN
       { mkmod(Pmod_constraint($2, $4)) }
   | LPAREN module_expr COLON module_type error
@@ -653,9 +659,9 @@ structure_item:
       { mkstr(Pstr_typext $2) }
   | EXCEPTION str_exception_declaration
       { mkstr(Pstr_exception $2) }
-  | MODULE module_binding
-      { mkstr(Pstr_module $2) }
-  | MODULE REC module_bindings
+  | module_binding
+      { mkstr(Pstr_module $1) }
+  | MODULE REC module_rec_bindings
       { mkstr(Pstr_recmodule(List.rev $3)) }
   | MODULE TYPE ident post_item_attributes
       { mkstr(Pstr_modtype (Mtd.mk (mkrhs $3 3)
@@ -664,8 +670,6 @@ structure_item:
       { mkstr(Pstr_modtype (Mtd.mk (mkrhs $3 3)
                               ~typ:$5 ~attrs:$6 ~loc:(symbol_rloc()))) }
   | open_statement { mkstr(Pstr_open $1) }
-  | IMPLICIT implicit_binding
-      { mkstr(Pstr_module $2) }
   | CLASS class_declarations
       { mkstr(Pstr_class (List.rev $2)) }
   | CLASS TYPE class_type_declarations
@@ -682,44 +686,24 @@ module_binding_body:
       { $2 }
   | COLON module_type EQUAL module_expr
       { mkmod(Pmod_constraint($4, $2)) }
-  | functor_arg module_binding_body
-      { mkmod(Pmod_functor(fst $1, snd $1, $2)) }
+  | functor_param module_binding_body
+      { mkmod(Pmod_functor($1, $2)) }
 ;
-module_bindings:
-    module_binding                        { [$1] }
-  | module_bindings AND module_binding    { $3 :: $1 }
+module_rec_bindings:
+    module_rec_binding                            { [$1] }
+  | module_rec_bindings AND module_rec_binding    { $3 :: $1 }
+;
+module_rec_binding:
+    UIDENT COLON module_type EQUAL module_expr post_item_attributes
+      { Mb.mk (mkrhs $1 1) (mkmod(Pmod_constraint($5, $3)))
+              ~attrs:$6 ~loc:(symbol_rloc ()) }
 ;
 module_binding:
-    UIDENT module_binding_body post_item_attributes
-    { Mb.mk (mkrhs $1 1) $2 ~attrs:$3 ~loc:(symbol_rloc ()) }
-;
-
-
-implicit_parameters:
-    /* empty */
-      { [] }
-  | implicit_parameters LBRACE functor_arg_name COLON module_type RBRACE
-      { (mkrhs $3 3, $5) :: $1 }
-;
-implicit_binding:
-    MODULE UIDENT implicit_parameters implicit_binding_body post_item_attributes
-    { Mb.implicit_ (mkrhs $2 2) (List.rev $3) $4 ~loc:(symbol_rloc ()) ~attrs:$5 }
-;
-implicit_binding_body:
-    EQUAL module_expr
-    { $2 }
-  | COLON module_type EQUAL module_expr
-    { mkmod(Pmod_constraint($4, $2)) }
-;
-implicit_declaration:
-    MODULE UIDENT implicit_parameters implicit_declaration_body post_item_attributes
-    { Md.implicit_ (mkrhs $2 2) (List.rev $3) $4 ~attrs:$5 ~loc:(symbol_rloc()) }
-;
-implicit_declaration_body:
-  | COLON module_type
-    { $2 }
-  | EQUAL mod_longident
-    { (Mty.alias ~loc:(rhs_loc 2) (mkrhs $2 2)) }
+    MODULE UIDENT module_binding_body post_item_attributes
+      { Mb.mk (mkrhs $2 2) $3 ~attrs:$4 ~loc:(symbol_rloc ()) }
+  | IMPLICIT MODULE UIDENT module_binding_body post_item_attributes
+      { Mb.mk (mkrhs $3 3) $4 ~implicit_:Implicit
+          ~attrs:$5 ~loc:(symbol_rloc ()) }
 ;
 
 /* Module types */
@@ -731,9 +715,9 @@ module_type:
       { mkmty(Pmty_signature $2) }
   | SIG signature error
       { unclosed "sig" 1 "end" 3 }
-  | FUNCTOR functor_args MINUSGREATER module_type
+  | FUNCTOR functor_params MINUSGREATER module_type
       %prec below_WITH
-      { List.fold_left (fun acc (n, t) -> mkmty(Pmty_functor(n, t, acc)))
+      { List.fold_left (fun acc p -> mkmty(Pmty_functor(p, acc)))
                        $4 $2 }
   | module_type WITH with_constraints
       { mkmty(Pmty_with($1, List.rev $3)) }
@@ -779,8 +763,15 @@ signature_item:
                              ~attrs:$5
                              ~loc:(symbol_rloc())
                           )) }
-  | IMPLICIT implicit_declaration
-      { mksig(Psig_module $2) }
+  | IMPLICIT MODULE UIDENT module_declaration post_item_attributes
+      { mksig(Psig_module (Md.mk (mkrhs $3 3) $4 ~implicit_:Implicit
+                             ~attrs:$5 ~loc:(symbol_rloc()))) }
+  | IMPLICIT MODULE UIDENT EQUAL mod_longident post_item_attributes
+      { mksig(Psig_module (Md.mk (mkrhs $3 3)
+                             (Mty.alias ~loc:(rhs_loc 5) (mkrhs $5 5))
+                             ~implicit_:Implicit ~attrs:$6
+                             ~loc:(symbol_rloc())
+                          )) }
   | MODULE REC module_rec_declarations
       { mksig(Psig_recmodule (List.rev $3)) }
   | MODULE TYPE ident post_item_attributes
@@ -810,10 +801,8 @@ open_statement:
 module_declaration:
     COLON module_type
       { $2 }
-  | LPAREN UIDENT COLON module_type RPAREN module_declaration
-      { mkmty(Pmty_functor(mkrhs $2 2, Some $4, $6)) }
-  | LPAREN RPAREN module_declaration
-      { mkmty(Pmty_functor(mkrhs "()" 1, None, $3)) }
+  | functor_params COLON module_type
+      { List.fold_left (fun acc p -> mkmty(Pmty_functor(p, acc))) $3 $1 }
 ;
 module_rec_declarations:
     module_rec_declaration                              { [$1] }
@@ -1127,10 +1116,8 @@ expr:
       { mkexp(Pexp_apply($1, List.rev $2)) }
   | LET ext_attributes rec_flag let_bindings_no_attrs IN seq_expr
       { mkexp_attrs (Pexp_let($3, List.rev $4, $6)) $2 }
-  | LET MODULE ext_attributes module_binding IN seq_expr
-      { mkexp_attrs (Pexp_letmodule($4, $6)) $3 }
-  | LET IMPLICIT ext_attributes implicit_binding IN seq_expr
-      { mkexp_attrs (Pexp_letmodule($4, $6)) $3 }
+  | LET module_binding IN seq_expr
+      { mkexp (Pexp_letmodule($2, $4)) (* FIXME: no attributes *) }
   | LET OPEN open_flag ext_attributes mod_longident IN seq_expr
       { mkexp_attrs (Pexp_open($3, mkrhs $5 5, $7)) $4 }
   | FUNCTION ext_attributes opt_bar match_cases
@@ -2071,10 +2058,18 @@ mod_ext_longident:
     UIDENT                                      { Lident $1 }
   | mod_ext_longident DOT UIDENT                { Ldot($1, $3) }
   | mod_ext_longident LPAREN mod_ext_longident RPAREN { lapply $1 $3 }
+  | mod_ext_longident LBRACE mod_ext_longident RBRACE
+      { Lapply($1, $3, Implicit) }
 ;
 mod_ext_parameters:
-  | LPAREN mod_ext_longident RPAREN { [$2] }
-  | mod_ext_parameters LPAREN mod_ext_longident RPAREN { $3 :: $1 }
+  | LPAREN mod_ext_longident RPAREN
+      { [$2, Nonimplicit] }
+  | LBRACE mod_ext_longident RBRACE
+      { [$2, Implicit] }
+  | mod_ext_parameters LPAREN mod_ext_longident RPAREN
+      { ($3, Nonimplicit) :: $1 }
+  | mod_ext_parameters LBRACE mod_ext_longident RBRACE
+      { ($3, Implicit) :: $1 }
 ;
 mty_longident:
     ident                                       { Lident $1 }

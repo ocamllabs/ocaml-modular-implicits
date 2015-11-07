@@ -59,7 +59,7 @@ let rec eval_path = function
       end
   | Pdot(p, s, pos) ->
       Obj.field (eval_path p) pos
-  | Papply(p1, p2) ->
+  | Papply(p1, p2, i) ->
       fatal_error "Toploop.eval_path"
 
 let eval_path env path =

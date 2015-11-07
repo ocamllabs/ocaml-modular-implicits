@@ -16,7 +16,7 @@ module H() = F();; (* ok *)
 
 (* Alias *)
 module U = struct end;;
-module M = F(struct end);; (* ok *)
+module M = F(struct end);; (* fail *)
 module M = F(U);; (* fail *)
 
 (* Cannot coerce between applicative and generative *)

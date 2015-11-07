@@ -35,8 +35,10 @@ let rec fmt_longident_aux f x =
   match x with
   | Longident.Lident (s) -> fprintf f "%s" s;
   | Longident.Ldot (y, s) -> fprintf f "%a.%s" fmt_longident_aux y s;
-  | Longident.Lapply (y, z) ->
+  | Longident.Lapply (y, z, Nonimplicit) ->
       fprintf f "%a(%a)" fmt_longident_aux y fmt_longident_aux z;
+  | Longident.Lapply (y, z, Implicit) ->
+      fprintf f "%a{%a}" fmt_longident_aux y fmt_longident_aux z;
 ;;
 
 let fmt_longident f x = fprintf f "\"%a\"" fmt_longident_aux x;;
@@ -112,7 +114,7 @@ let fmt_private_flag f x =
 let fmt_implicit_flag f x =
   match x with
   | Nonimplicit -> fprintf f "Nonimplicit";
-  | Implicit n -> fprintf f "Implicit %d" n;
+  | Implicit -> fprintf f "Implicit";
 ;;
 
 let line i f s (*...*) =
@@ -641,10 +643,10 @@ and module_type i ppf x =
   | Pmty_signature (s) ->
       line i ppf "Pmty_signature\n";
       signature i ppf s;
-  | Pmty_functor (s, mt1, mt2) ->
-      line i ppf "Pmty_functor %a\n" fmt_string_loc s;
-      Misc.may (module_type i ppf) mt1;
-      module_type i ppf mt2;
+  | Pmty_functor (mp, mt) ->
+      line i ppf "Pmty_functor\n";
+      module_parameter i ppf mp;
+      module_type i ppf mt;
   | Pmty_with (mt, l) ->
       line i ppf "Pmty_with\n";
       module_type i ppf mt;
@@ -738,14 +740,14 @@ and module_expr i ppf x =
   | Pmod_structure (s) ->
       line i ppf "Pmod_structure\n";
       structure i ppf s;
-  | Pmod_functor (s, mt, me) ->
-      line i ppf "Pmod_functor %a\n" fmt_string_loc s;
-      Misc.may (module_type i ppf) mt;
+  | Pmod_functor (mp, me) ->
+      line i ppf "Pmod_functor\n";
+      module_parameter i ppf mp;
       module_expr i ppf me;
-  | Pmod_apply (me1, me2) ->
+  | Pmod_apply (me, ma) ->
       line i ppf "Pmod_apply\n";
-      module_expr i ppf me1;
-      module_expr i ppf me2;
+      module_expr i ppf me;
+      module_argument i ppf ma;
   | Pmod_constraint (me, mt) ->
       line i ppf "Pmod_constraint\n";
       module_expr i ppf me;
@@ -756,6 +758,28 @@ and module_expr i ppf x =
   | Pmod_extension (s, arg) ->
       line i ppf "Pmod_extension \"%s\"\n" s.txt;
       payload i ppf arg
+
+and module_parameter i ppf x =
+  match x with
+  | Pmpar_generative ->
+      line i ppf "Pmod_generative\n"
+  | Pmpar_applicative(s, mty) ->
+      line i ppf "Pmarg_applicative %a\n" fmt_string_loc s;
+      module_type i ppf mty
+  | Pmpar_implicit(s, mty) ->
+      line i ppf "Pmarg_implicit %a\n" fmt_string_loc s;
+      module_type i ppf mty
+
+and module_argument i ppf x =
+  match x with
+  | Pmarg_generative ->
+      line i ppf "Pmarg_generative\n"
+  | Pmarg_applicative me ->
+      line i ppf "Pmarg_applicative\n";
+      module_expr i ppf me
+  | Pmarg_implicit me ->
+      line i ppf "Pmarg_implicit\n";
+      module_expr i ppf me
 
 and structure i ppf x = list i structure_item ppf x
 

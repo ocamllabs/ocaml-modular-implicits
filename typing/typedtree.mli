@@ -192,11 +192,21 @@ and module_type_constraint =
 and module_expr_desc =
     Tmod_ident of Path.t * Longident.t loc
   | Tmod_structure of structure
-  | Tmod_functor of Ident.t * string loc * module_type option * module_expr
-  | Tmod_apply of module_expr * module_expr * module_coercion
+  | Tmod_functor of module_parameter * module_expr
+  | Tmod_apply of module_expr * module_argument
   | Tmod_constraint of
       module_expr * Types.module_type * module_type_constraint * module_coercion
   | Tmod_unpack of expression * Types.module_type
+
+and module_parameter =
+  | Tmpar_generative
+  | Tmpar_applicative of Ident.t * string loc * module_type
+  | Tmpar_implicit of Ident.t * string loc * module_type
+
+and module_argument =
+  | Tmarg_generative
+  | Tmarg_applicative of module_expr * module_coercion
+  | Tmarg_implicit of module_expr * module_coercion
 
 and structure = {
   str_items : structure_item list;
@@ -263,7 +273,7 @@ and module_type =
 and module_type_desc =
     Tmty_ident of Path.t * Longident.t loc
   | Tmty_signature of signature
-  | Tmty_functor of Ident.t * string loc * module_type option * module_type
+  | Tmty_functor of module_parameter * module_type
   | Tmty_with of module_type * (Path.t * Longident.t loc * with_constraint) list
   | Tmty_typeof of module_expr
   | Tmty_alias of Path.t * Longident.t loc

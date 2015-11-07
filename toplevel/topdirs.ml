@@ -327,8 +327,8 @@ let parse_warnings ppf iserr s =
 
 let rec trim_modtype = function
     Mty_signature _ -> Mty_signature []
-  | Mty_functor (id, mty, mty') ->
-      Mty_functor (id, mty, trim_modtype mty')
+  | Mty_functor (mp, mty) ->
+      Mty_functor (mp, trim_modtype mty)
   | Mty_ident _ | Mty_alias _ as mty -> mty
 
 let trim_signature = function

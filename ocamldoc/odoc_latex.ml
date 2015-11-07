@@ -751,14 +751,28 @@ class latex =
          (to_text#text_of_exception e))
 
     method latex_of_module_parameter fmt m_name p =
-      self#latex_of_text fmt
-        [
-          Code "functor (";
-          Code p.mp_name ;
-          Code " : ";
-        ] ;
-      self#latex_of_module_type_kind fmt m_name p.mp_kind;
-      self#latex_of_text fmt [ Code ") -> "]
+      self#latex_of_text fmt [Code "functor "];
+      (match p.mp_type with
+       | Mp_generative -> self#latex_of_text fmt [Code "()"]
+       | Mp_applicative _ ->
+           self#latex_of_text fmt
+             [
+               Code "functor (";
+               Code p.mp_name ;
+               Code " : ";
+             ] ;
+           self#latex_of_module_type_kind fmt m_name p.mp_kind;
+           self#latex_of_text fmt [Code ")"]
+       | Mp_implicit _ ->
+           self#latex_of_text fmt
+             [
+               Code "functor {";
+               Code p.mp_name ;
+               Code " : ";
+             ] ;
+           self#latex_of_module_type_kind fmt m_name p.mp_kind;
+           self#latex_of_text fmt [Code "}"]);
+      self#latex_of_text fmt [ Code " -> "]
 
 
     method latex_of_module_type_kind fmt father kind =
@@ -797,13 +811,20 @@ class latex =
       | Module_functor (p, k) ->
           self#latex_of_module_parameter fmt father p;
           self#latex_of_module_kind fmt father k
-      | Module_apply (k1, k2) ->
+      | Module_apply (k, a) ->
           (* TODO: l'application n'est pas correcte dans un .mli.
              Que faire ? -> afficher le module_type du typedtree  *)
-          self#latex_of_module_kind fmt father k1;
-          self#latex_of_text fmt [Code "("];
-          self#latex_of_module_kind fmt father k2;
-          self#latex_of_text fmt [Code ")"]
+          self#latex_of_module_kind fmt father k;
+          (match a with
+           | Ma_generative -> self#latex_of_text fmt [Code "()"]
+           | Ma_applicative k ->
+               self#latex_of_text fmt [Code "("];
+               self#latex_of_module_kind fmt father k;
+               self#latex_of_text fmt [Code ")"]
+           | Ma_implicit k ->
+               self#latex_of_text fmt [Code "{"];
+               self#latex_of_module_kind fmt father k;
+               self#latex_of_text fmt [Code "}"])
       | Module_with (k, s) ->
           (* TODO: a modifier quand Module_with sera plus detaille *)
           self#latex_of_module_type_kind fmt father k;

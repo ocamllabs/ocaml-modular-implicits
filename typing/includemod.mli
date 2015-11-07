@@ -26,8 +26,7 @@ val print_coercion: formatter -> module_coercion -> unit
 
 type symptom =
     Missing_field of Ident.t * Location.t * string (* kind *)
-  | Implicit_flags of Ident.t * Asttypes.implicit_flag * Location.t *
-                                Asttypes.implicit_flag * Location.t
+  | Implicit_flags of Ident.t * Location.t * Location.t
   | Value_descriptions of Ident.t * value_description * value_description
   | Type_declarations of Ident.t * type_declaration
         * type_declaration * Includecore.type_mismatch list
@@ -48,10 +47,20 @@ type symptom =
   | Invalid_module_alias of Path.t
 
 type pos =
-    Module of Ident.t | Modtype of Ident.t | Arg of Ident.t | Body of Ident.t
+  | Module of Ident.t
+  | Modtype of Ident.t
+  | Param of pos_param
+  | Body of pos_param
+
+and pos_param =
+  | Generative
+  | Applicative of Ident.t
+  | Implicit of Ident.t
+
 type error = pos list * Env.t * symptom
 
 exception Error of error list
 
 val report_error: formatter -> error list -> unit
+val expand_module_path: Env.t -> pos list -> Path.t -> Types.module_type
 val expand_module_alias: Env.t -> pos list -> Path.t -> Types.module_type

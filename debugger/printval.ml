@@ -59,7 +59,7 @@ module EvalPath =
         if not (Debugcom.Remote_value.is_block v)
         then raise Error
         else Debugcom.Remote_value.field v pos
-    | Papply(p1, p2) ->
+    | Papply(p1, p2, i) ->
         raise Error
     let same_value = Debugcom.Remote_value.same
   end

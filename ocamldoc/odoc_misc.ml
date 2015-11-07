@@ -73,8 +73,10 @@ let rec string_of_longident li =
   match li with
   | Longident.Lident s -> s
   | Longident.Ldot(li, s) -> string_of_longident li ^ "." ^ s
-  | Longident.Lapply(l1, l2) ->
+  | Longident.Lapply(l1, l2, Asttypes.Nonimplicit) ->
       string_of_longident l1 ^ "(" ^ string_of_longident l2 ^ ")"
+  | Longident.Lapply(l1, l2, Asttypes.Implicit) ->
+      string_of_longident l1 ^ "{" ^ string_of_longident l2 ^ "}"
 
 let get_fields type_expr =
   let (fields, _) = Ctype.flatten_fields (Ctype.object_fields type_expr) in

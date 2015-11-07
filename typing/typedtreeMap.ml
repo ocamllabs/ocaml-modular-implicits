@@ -460,9 +460,8 @@ module MakeMap(Map : MapArgument) = struct
           Tmty_ident _ -> mty.mty_desc
         | Tmty_alias _ -> mty.mty_desc
         | Tmty_signature sg -> Tmty_signature (map_signature sg)
-        | Tmty_functor (id, name, mtype1, mtype2) ->
-          Tmty_functor (id, name, Misc.may_map map_module_type mtype1,
-                        map_module_type mtype2)
+        | Tmty_functor (mparam, mtype) ->
+          Tmty_functor (map_module_parameter mparam, map_module_type mtype)
         | Tmty_with (mtype, list) ->
           Tmty_with (map_module_type mtype,
                      List.map (fun (path, lid, withc) ->
@@ -490,11 +489,10 @@ module MakeMap(Map : MapArgument) = struct
       match mexpr.mod_desc with
           Tmod_ident (p, lid) -> mexpr.mod_desc
         | Tmod_structure st -> Tmod_structure (map_structure st)
-        | Tmod_functor (id, name, mtype, mexpr) ->
-          Tmod_functor (id, name, Misc.may_map map_module_type mtype,
-                        map_module_expr mexpr)
-        | Tmod_apply (mexp1, mexp2, coercion) ->
-          Tmod_apply (map_module_expr mexp1, map_module_expr mexp2, coercion)
+        | Tmod_functor (mparam, mexpr) ->
+          Tmod_functor (map_module_parameter mparam, map_module_expr mexpr)
+        | Tmod_apply (mexp, marg) ->
+          Tmod_apply (map_module_expr mexp, map_module_argument marg)
         | Tmod_constraint (mexpr, mod_type, Tmodtype_implicit, coercion ) ->
           Tmod_constraint (map_module_expr mexpr, mod_type,
                            Tmodtype_implicit, coercion)
@@ -507,6 +505,22 @@ module MakeMap(Map : MapArgument) = struct
           Tmod_unpack (map_expression exp, mod_type)
     in
     Map.leave_module_expr { mexpr with mod_desc = mod_desc }
+
+  and map_module_parameter mparam =
+    match mparam with
+    | Tmpar_generative -> Tmpar_generative
+    | Tmpar_applicative(id, name, mtype) ->
+        Tmpar_applicative(id, name, map_module_type mtype)
+    | Tmpar_implicit(id, name, mtype) ->
+        Tmpar_implicit(id, name, map_module_type mtype)
+
+  and map_module_argument marg =
+    match marg with
+    | Tmarg_generative -> Tmarg_generative
+    | Tmarg_applicative(mexp, coercion) ->
+        Tmarg_applicative(map_module_expr mexp, coercion)
+    | Tmarg_implicit(mexp, coercion) ->
+        Tmarg_implicit(map_module_expr mexp, coercion)
 
   and map_class_expr cexpr =
     let cexpr = Map.enter_class_expr cexpr in

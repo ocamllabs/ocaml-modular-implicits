@@ -38,7 +38,7 @@ type error =
   | Incomplete_packed_module of type_expr
   | Scoping_pack of Longident.t * type_expr
   | Recursive_module_require_explicit_type
-  | Apply_generative
+  | Argument_mismatch of module_parameter * module_argument
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -324,14 +324,27 @@ let rec approx_modtype env smty =
       Mty_alias path
   | Pmty_signature ssg ->
       Mty_signature(approx_sig env ssg)
-  | Pmty_functor(param, sarg, sres) ->
-      let arg = may_map (approx_modtype env) sarg in
-      let (id, newenv) =
-        Env.enter_module ~arg:true ~implicit_:Nonimplicit
-          param.txt (Btype.default_mty arg) env
+  | Pmty_functor(sparam, sres) ->
+      let param, newenv =
+        match sparam with
+        | Pmpar_generative -> Mpar_generative, env
+        | Pmpar_applicative(name, sarg) ->
+            let arg = approx_modtype env sarg in
+            let (id, newenv) =
+              Env.enter_module ~arg:true ~implicit_:Nonimplicit
+                name.txt arg env
+            in
+              Mpar_applicative(id, arg), newenv
+        | Pmpar_implicit(name, sarg) ->
+            let arg = approx_modtype env sarg in
+            let (id, newenv) =
+              Env.enter_module ~arg:true ~implicit_:Implicit
+                name.txt arg env
+            in
+              Mpar_implicit(id, arg), newenv
       in
       let res = approx_modtype newenv sres in
-      Mty_functor(id, arg, res)
+      Mty_functor(param, res)
   | Pmty_with(sbody, constraints) ->
       approx_modtype env sbody
   | Pmty_typeof smod ->
@@ -516,16 +529,35 @@ let rec transl_modtype env smty =
       let sg = transl_signature env ssg in
       mkmty (Tmty_signature sg) (Mty_signature sg.sig_type) env loc
         smty.pmty_attributes
-  | Pmty_functor(param, sarg, sres) ->
-      let arg = Misc.may_map (transl_modtype env) sarg in
-      let ty_arg = Misc.may_map (fun m -> m.mty_type) arg in
-      let (id, newenv) =
-        Env.enter_module ~arg:true ~implicit_:Nonimplicit param.txt
-          (Btype.default_mty ty_arg) env in
+  | Pmty_functor(sparam, sres) ->
+      let tparam, param, newenv =
+        match sparam with
+        | Pmpar_generative -> Tmpar_generative, Mpar_generative, env
+        | Pmpar_applicative(name, sarg) ->
+            let arg = transl_modtype env sarg in
+            let ty_arg = arg.mty_type in
+            let (id, newenv) =
+              Env.enter_module ~arg:true ~implicit_:Nonimplicit name.txt
+                ty_arg env
+            in
+            let tparam = Tmpar_applicative(id, name, arg) in
+            let param = Mpar_applicative(id, ty_arg) in
+              tparam, param, newenv
+        | Pmpar_implicit(name, sarg) ->
+            let arg = transl_modtype env sarg in
+            let ty_arg = arg.mty_type in
+            let (id, newenv) =
+              Env.enter_module ~arg:true ~implicit_:Implicit name.txt
+                ty_arg env
+            in
+            let tparam = Tmpar_implicit(id, name, arg) in
+            let param = Mpar_implicit(id, ty_arg) in
+              tparam, param, newenv
+      in
       Ctype.init_def(Ident.current_time()); (* PR#6513 *)
       let res = transl_modtype newenv sres in
-      mkmty (Tmty_functor (id, param, arg, res))
-      (Mty_functor(id, ty_arg, res.mty_type)) env loc
+      mkmty (Tmty_functor (tparam, res))
+      (Mty_functor(param, res.mty_type)) env loc
         smty.pmty_attributes
   | Pmty_with(sbody, constraints) ->
       let body = transl_modtype env sbody in
@@ -850,16 +882,33 @@ let simplify_signature sg =
 
 (* Try to convert a module expression to a module path. *)
 
-exception Not_a_path
+let rec is_pathable smexp =
+  match smexp.pmod_desc with
+  | Pmod_ident _ -> true
+  | Pmod_apply(sfunct, sarg) when !Clflags.applicative_functors -> begin
+      match sarg with
+      | Pmarg_generative -> false
+      | Pmarg_applicative sarg | Pmarg_implicit sarg ->
+          is_pathable sarg && is_pathable sfunct
+    end
+  | Pmod_constraint (mexp, _) ->
+      is_pathable mexp
+  | _ -> false
 
 let rec path_of_module mexp =
   match mexp.mod_desc with
     Tmod_ident (p,_) -> p
-  | Tmod_apply(funct, arg, coercion) when !Clflags.applicative_functors ->
-      Papply(path_of_module funct, path_of_module arg)
+  | Tmod_apply(funct, arg) when !Clflags.applicative_functors -> begin
+      match arg with
+      | Tmarg_generative -> assert false
+      | Tmarg_applicative(arg, _) ->
+          Papply(path_of_module funct, path_of_module arg, Nonimplicit)
+      | Tmarg_implicit(arg, _) ->
+          Papply(path_of_module funct, path_of_module arg, Implicit)
+    end
   | Tmod_constraint (mexp, _, _, _) ->
       path_of_module mexp
-  | _ -> raise Not_a_path
+  | _ -> assert false
 
 (* Check that all core type schemes in a structure are closed *)
 
@@ -867,7 +916,7 @@ let rec closed_modtype = function
     Mty_ident p -> true
   | Mty_alias p -> true
   | Mty_signature sg -> List.for_all closed_signature_item sg
-  | Mty_functor(id, param, body) -> closed_modtype body
+  | Mty_functor(param, body) -> closed_modtype body
 
 and closed_signature_item = function
     Sig_value(id, desc) -> Ctype.closed_schema desc.val_type
@@ -1073,7 +1122,7 @@ let wrap_constraint env arg mty explicit =
 
 (* Type a module value expression *)
 
-let rec type_module ?(implicit_arity=0) ?(alias=false) sttn funct_body anchor env smod =
+let rec type_module ?(alias=false) sttn funct_body anchor env smod =
   match smod.pmod_desc with
     Pmod_ident lid ->
       let path =
@@ -1113,65 +1162,101 @@ let rec type_module ?(implicit_arity=0) ?(alias=false) sttn funct_body anchor en
       if List.length sg' = List.length sg then md else
       wrap_constraint (Env.implicit_coercion env) md (Mty_signature sg')
         Tmodtype_implicit
-  | Pmod_functor(name, smty, sbody) ->
-      let mty = may_map (transl_modtype env) smty in
-      let ty_arg = may_map (fun m -> m.mty_type) mty in
-      let id, newenv, funct_body =
-        match ty_arg with
-        | None -> Ident.create "*", env, false
-        | Some mty ->
-            let id, env =
-              Env.enter_module ~arg:true ~implicit_:Nonimplicit name.txt mty env
+  | Pmod_functor(sparam, sbody) ->
+      let tparam, param, newenv, funct_body =
+        match sparam with
+        | Pmpar_generative ->
+            Tmpar_generative, Mpar_generative, env, false
+        | Pmpar_applicative(name, smty) ->
+            let mty = transl_modtype env smty in
+            let ty_arg = mty.mty_type in
+            let id, newenv =
+              Env.enter_module ~arg:true ~implicit_:Nonimplicit
+                               name.txt ty_arg env
             in
-            let env = if implicit_arity > 0
-              then Env.register_as_implicit (Pident id) 0 env
-              else env
+            let tparam = Tmpar_applicative(id, name, mty) in
+            let param = Mpar_applicative(id, ty_arg) in
+              tparam, param, newenv, true
+        | Pmpar_implicit(name, smty) ->
+            let mty = transl_modtype env smty in
+            let ty_arg = mty.mty_type in
+            let id, newenv =
+              Env.enter_module ~arg:true ~implicit_:Implicit
+                               name.txt ty_arg env
             in
-            id, env, true
+            let tparam = Tmpar_implicit(id, name, mty) in
+            let param = Mpar_implicit(id, ty_arg) in
+              tparam, param, newenv, true
       in
-      let implicit_arity = pred implicit_arity in
-      let body = type_module ~implicit_arity sttn funct_body None newenv sbody in
-      rm { mod_desc = Tmod_functor(id, name, mty, body);
-           mod_type = Mty_functor(id, ty_arg, body.mod_type);
+      let body = type_module sttn funct_body None newenv sbody in
+      rm { mod_desc = Tmod_functor(tparam, body);
+           mod_type = Mty_functor(param, body.mod_type);
            mod_env = env;
            mod_attributes = smod.pmod_attributes;
            mod_loc = smod.pmod_loc }
   | Pmod_apply(sfunct, sarg) ->
-      let arg = type_module true funct_body None env sarg in
-      let path = try Some (path_of_module arg) with Not_a_path -> None in
+      let pathable =
+        match sarg with
+        | Pmarg_generative -> false
+        | Pmarg_applicative sarg -> is_pathable sarg
+        | Pmarg_implicit sarg -> is_pathable sarg
+      in
       let funct =
-        type_module (sttn && path <> None) funct_body None env sfunct in
+        type_module (sttn && pathable) funct_body None env sfunct
+      in
       begin match Env.scrape_alias env funct.mod_type with
-        Mty_functor(param, mty_param, mty_res) as mty_functor ->
-          let generative, mty_param =
-            (mty_param = None, Btype.default_mty mty_param) in
-          if generative then begin
-            if sarg.pmod_desc <> Pmod_structure [] then
-              raise (Error (sfunct.pmod_loc, env, Apply_generative));
-            if funct_body && Mtype.contains_type env funct.mod_type then
-              raise (Error (smod.pmod_loc, env, Not_allowed_in_functor_body));
-          end;
-          let coercion =
-            try
-              Includemod.modtypes env arg.mod_type mty_param
-            with Includemod.Error msg ->
-              raise(Error(sarg.pmod_loc, env, Not_included msg)) in
-          let mty_appl =
-            match path with
-              Some path ->
-                Subst.modtype (Subst.add_module param path Subst.identity)
-                              mty_res
-            | None ->
-                if generative then mty_res else
-                try
-                  Mtype.nondep_supertype
-                    (Env.add_module ~arg:true param arg.mod_type env)
-                    param mty_res
-                with Not_found ->
-                  raise(Error(smod.pmod_loc, env,
-                              Cannot_eliminate_dependency mty_functor))
+      | Mty_functor(mty_param, mty_res) as mty_functor ->
+          let arg =
+            match mty_param, sarg with
+            | Mpar_generative, Pmarg_generative ->
+                if funct_body && Mtype.contains_type env funct.mod_type then
+                  raise (Error(smod.pmod_loc, env,
+                               Not_allowed_in_functor_body));
+                Tmarg_generative
+            | Mpar_applicative(param, mty_param), Pmarg_applicative sarg ->
+                let arg = type_module true funct_body None env sarg in
+                let coercion =
+                  try
+                    Includemod.modtypes env arg.mod_type mty_param
+                  with Includemod.Error msg ->
+                    raise(Error(sarg.pmod_loc, env, Not_included msg))
+                in
+                  Tmarg_applicative(arg, coercion)
+            | Mpar_implicit(param, mty_param), Pmarg_implicit sarg ->
+                let arg = type_module true funct_body None env sarg in
+                let coercion =
+                  try
+                    Includemod.modtypes env arg.mod_type mty_param
+                  with Includemod.Error msg ->
+                    raise(Error(sarg.pmod_loc, env, Not_included msg))
+                in
+                  Tmarg_implicit(arg, coercion)
+            | _, _ ->
+                raise (Error (sfunct.pmod_loc, env,
+                              Argument_mismatch(mty_param, sarg)))
           in
-          rm { mod_desc = Tmod_apply(funct, arg, coercion);
+          let mty_appl =
+            match arg, mty_param with
+            | Tmarg_generative, _ -> mty_res
+            | (Tmarg_applicative(arg, _) | Tmarg_implicit(arg, _)),
+              (Mpar_applicative(param, _) | Mpar_implicit(param, _)) ->
+                if pathable then
+                  Subst.modtype
+                    (Subst.add_module param
+                       (path_of_module arg) Subst.identity)
+                    mty_res
+                else begin
+                  try
+                    Mtype.nondep_supertype
+                      (Env.add_module ~arg:true param arg.mod_type env)
+                      param mty_res
+                  with Not_found ->
+                    raise(Error(smod.pmod_loc, env,
+                                Cannot_eliminate_dependency mty_functor))
+                end
+            | _, _ -> assert false
+          in
+          rm { mod_desc = Tmod_apply(funct, arg);
                mod_type = mty_appl;
                mod_env = env;
                mod_attributes = smod.pmod_attributes;
@@ -1284,12 +1369,8 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
                    pmb_loc; pmb_implicit
                   } ->
         check_name "module" module_names name;
-        let implicit_arity = match pmb_implicit with
-          | Nonimplicit -> 0 
-          | Implicit ar -> ar
-        in
         let modl =
-          type_module ~implicit_arity ~alias:true true funct_body
+          type_module ~alias:true true funct_body
             (anchor_submodule name.txt anchor) env smodl in
         let md =
           { md_type = enrich_module_type anchor name.txt modl.mod_type env;
@@ -1301,7 +1382,7 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
         let (id, newenv) = Env.enter_module_declaration name.txt md env in
         begin match pmb_implicit with
         | Nonimplicit -> ()
-        | Implicit _ ->
+        | Implicit ->
             if not (closed_modtype modl.mod_type) then
               raise(Error(modl.mod_loc, env,
                           Non_generalizable_module modl.mod_type))
@@ -1512,7 +1593,7 @@ let type_toplevel_phrase env s =
   Env.reset_required_globals ();
   type_structure ~toplevel:true false None env s Location.none
 (*let type_module_alias = type_module ~alias:true true false None*)
-let type_module ?implicit_arity = type_module ?implicit_arity true false None
+let type_module = type_module true false None
 let type_structure = type_structure false None
 
 (* Normalize types in a signature *)
@@ -1521,7 +1602,7 @@ let rec normalize_modtype env = function
     Mty_ident p -> ()
   | Mty_alias p -> ()
   | Mty_signature sg -> normalize_signature env sg
-  | Mty_functor(id, param, body) -> normalize_modtype env body
+  | Mty_functor(param, body) -> normalize_modtype env body
 
 and normalize_signature env = List.iter (normalize_signature_item env)
 
@@ -1870,8 +1951,22 @@ let report_error ppf = function
         "Its type contains local dependencies:@ %a" type_expr ty
   | Recursive_module_require_explicit_type ->
       fprintf ppf "Recursive modules require an explicit module type."
-  | Apply_generative ->
-      fprintf ppf "This is a generative functor. It can only be applied to ()"
+  | Argument_mismatch(param, arg) -> begin
+      match param, arg with
+      | Mpar_generative, (Pmarg_applicative _ | Pmarg_implicit _) ->
+          fprintf ppf
+            "This is a generative functor. It can only be applied to ()"
+      | Mpar_implicit _, (Pmarg_generative | Pmarg_applicative _) ->
+          fprintf ppf "This is an implicit functor."
+      | Mpar_applicative _, Pmarg_generative ->
+          fprintf ppf "This is not a generative functor."
+      | Mpar_applicative _, Pmarg_implicit _ ->
+          fprintf ppf "This is not an implicit functor."
+      | Mpar_generative, Pmarg_generative -> assert false
+      | Mpar_applicative _, Pmarg_applicative _ -> assert false
+      | Mpar_implicit _, Pmarg_implicit _ -> assert false
+    end
+
 
 let report_error env ppf err =
   Printtyp.wrap_printing_env env (fun () -> report_error ppf err)

@@ -34,10 +34,16 @@ exception Error of Location.t * error
    currently compiled module expression).  Useful for naming extensions. *)
 
 let global_path glob = Some(Pident glob)
+
 let functor_path path param =
-  match path with
-    None -> None
-  | Some p -> Some(Papply(p, Pident param))
+  match path, param with
+  | None, _ -> None
+  | Some p, Tmpar_generative -> Some p
+  | Some p, Tmpar_applicative(id, _, _) ->
+      Some(Papply(p, Pident id, Nonimplicit))
+  | Some p, Tmpar_implicit(id, _, _) ->
+      Some(Papply(p, Pident id, Implicit))
+
 let field_path path field =
   match path with
     None -> None
@@ -192,7 +198,7 @@ let init_shape modl =
         Const_block (1, [Const_pointer 0])
     | Mty_signature sg ->
         Const_block(0, [Const_block(0, init_shape_struct env sg)])
-    | Mty_functor(id, arg, res) ->
+    | Mty_functor _ ->
         raise Not_found (* can we do better? *)
   and init_shape_struct env sg =
     match sg with
@@ -326,8 +332,14 @@ let rec transl_module cc rootpath mexp =
         (transl_path ~loc:mexp.mod_loc mexp.mod_env path)
   | Tmod_structure str ->
       transl_struct [] cc rootpath str
-  | Tmod_functor( param, _, mty, body) ->
+  | Tmod_functor(param, body) ->
       let bodypath = functor_path rootpath param in
+      let param =
+        match param with
+        | Tmpar_generative -> Ident.create "()"
+        | Tmpar_applicative(id, _, _) -> id
+        | Tmpar_implicit(id, _, _) -> id
+      in
       oo_wrap mexp.mod_env true
         (function
         | Tcoerce_none ->
@@ -342,11 +354,17 @@ let rec transl_module cc rootpath mexp =
         | _ ->
             fatal_error "Translmod.transl_module")
         cc
-  | Tmod_apply(funct, arg, ccarg) ->
-      oo_wrap mexp.mod_env true
-        (apply_coercion Strict cc)
-        (Lapply(transl_module Tcoerce_none None funct,
-                [transl_module ccarg None arg], mexp.mod_loc))
+  | Tmod_apply(funct, arg) ->
+      let arg =
+        match arg with
+        | Tmarg_generative -> lambda_unit
+        | Tmarg_applicative(arg, ccarg) | Tmarg_implicit(arg, ccarg) ->
+            transl_module ccarg None arg
+      in
+        oo_wrap mexp.mod_env true
+          (apply_coercion Strict cc)
+          (Lapply(transl_module Tcoerce_none None funct,
+                  [arg], mexp.mod_loc))
   | Tmod_constraint(arg, mty, _, ccarg) ->
       transl_module (compose_coercions cc ccarg) rootpath arg
   | Tmod_unpack(arg, _) ->
