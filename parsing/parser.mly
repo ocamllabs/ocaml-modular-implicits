@@ -661,7 +661,7 @@ structure_item:
       { mkstr(Pstr_exception $2) }
   | module_binding
       { mkstr(Pstr_module $1) }
-  | MODULE REC module_bindings
+  | MODULE REC module_rec_bindings
       { mkstr(Pstr_recmodule(List.rev $3)) }
   | MODULE TYPE ident post_item_attributes
       { mkstr(Pstr_modtype (Mtd.mk (mkrhs $3 3)
@@ -689,9 +689,14 @@ module_binding_body:
   | functor_param module_binding_body
       { mkmod(Pmod_functor($1, $2)) }
 ;
-module_bindings:
-    module_binding                        { [$1] }
-  | module_bindings AND module_binding    { $3 :: $1 }
+module_rec_bindings:
+    module_rec_binding                            { [$1] }
+  | module_rec_bindings AND module_rec_binding    { $3 :: $1 }
+;
+module_rec_binding:
+    UIDENT COLON module_type EQUAL module_expr post_item_attributes
+      { Mb.mk (mkrhs $1 1) (mkmod(Pmod_constraint($5, $3)))
+              ~attrs:$6 ~loc:(symbol_rloc ()) }
 ;
 module_binding:
     MODULE UIDENT module_binding_body post_item_attributes
