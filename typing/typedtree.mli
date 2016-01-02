@@ -337,10 +337,14 @@ and implicit_description =
     {
      imp_path: Path.t;
      imp_txt: Longident.t loc;
-     imp_arity: int;
+     imp_kind: implicit_kind;
      imp_loc: Location.t;
      imp_attributes: attribute list;
     }
+
+and implicit_kind =
+  | Timp_implicit
+  | Timp_explicit
 
 and 'a include_infos =
     {

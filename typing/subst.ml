@@ -316,6 +316,13 @@ let extension_constructor s ext =
     cleanup_types ();
     ext
 
+let implicit_description s imp =
+  { imp_kind = imp.imp_kind;
+    imp_path = module_path s imp.imp_path;
+    imp_loc = loc s imp.imp_loc;
+    imp_attributes = attrs s imp.imp_attributes;
+   }
+
 let rec rename_bound_idents s idents = function
     [] -> (List.rev idents, s)
   | Sig_type(id, d, _) :: sg ->
@@ -332,10 +339,8 @@ let rec rename_bound_idents s idents = function
      Sig_class(id, _, _) | Sig_class_type(id, _, _)) :: sg ->
       let id' = Ident.rename id in
       rename_bound_idents s (id' :: idents) sg
-  | Sig_implicit (path,_) :: sg ->
-      (* Ugly: Put a fake identifier *)
-      let id' = Path.head path in
-      rename_bound_idents s (id' :: idents) sg
+  | Sig_implicit __ :: sg ->
+      rename_bound_idents s (Ident.dummy :: idents) sg
 
 let rec modtype s = function
     Mty_ident p as mty ->
@@ -389,7 +394,8 @@ and signature_component s comp newid =
       Sig_class(newid, class_declaration s d, rs)
   | Sig_class_type(id, d, rs) ->
       Sig_class_type(newid, cltype_declaration s d, rs)
-  | Sig_implicit _ as sgi -> sgi
+  | Sig_implicit imp ->
+      Sig_implicit (implicit_description s imp)
 
 and module_declaration s decl =
   {

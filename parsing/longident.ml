@@ -43,4 +43,7 @@ let parse s =
 let rec to_string = function
   | Lident s -> s
   | Ldot (t,s) -> to_string t ^ "." ^ s
-  | Lapply (t1,t2) -> to_string t1 ^ "(" ^ to_string t2 ^ ")"
+  | Lapply (t1,t2, Asttypes.Nonimplicit) ->
+      to_string t1 ^ "(" ^ to_string t2 ^ ")"
+  | Lapply (t1,t2, Asttypes.Implicit) ->
+      to_string t1 ^ "{" ^ to_string t2 ^ "}"

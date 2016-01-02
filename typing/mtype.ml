@@ -103,16 +103,6 @@ type variance = Co | Contra | Strict
 
 let nondep_supertype env mid mty =
 
-  let nondep_alias env p =
-    if Path.isfree mid p then
-      let p = Env.canonical_path env p in
-      if Path.isfree mid p then
-        (* FIXME: do better *)
-        failwith "Path would escape"
-      else p
-    else p
-  in
-
   let rec nondep_mty env va mty =
     match mty with
       Mty_ident p ->
@@ -180,15 +170,24 @@ let nondep_supertype env mid mty =
       | Sig_class_type(id, d, rs) ->
           Sig_class_type(id, Ctype.nondep_cltype_declaration env mid d, rs)
           :: rem'
-      | Sig_implicit (path, arity) ->
-          Sig_implicit (nondep_alias env path, arity)
+      | Sig_implicit imp ->
+          Sig_implicit (nondep_implicit env imp)
           :: rem'
 
   and nondep_modtype_decl env mtd =
     {mtd with mtd_type = Misc.may_map (nondep_mty env Strict) mtd.mtd_type}
 
+  and nondep_implicit env imp =
+    let path = imp.imp_path in
+    if Path.isfree mid path then
+      let path = Env.normalize_path None env path in
+      if Path.isfree mid path then raise Not_found
+      else { imp with imp_path = path }
+    else imp
+
   in
     nondep_mty env Co mty
+
 
 let enrich_typedecl env p decl =
   match decl.type_manifest with

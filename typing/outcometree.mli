@@ -97,7 +97,7 @@ and out_sig_item =
   | Osig_module of string * out_module_type * out_rec_status * Asttypes.implicit_flag
   | Osig_type of out_type_decl * out_rec_status
   | Osig_value of string * out_type * string list
-  | Osig_implicit of out_ident * int
+  | Osig_implicit of out_implicit_kind * out_ident
 and out_type_decl =
   { otype_name: string;
     otype_params: (string * (bool * bool)) list;
@@ -116,6 +116,9 @@ and out_type_extension =
     otyext_params: string list;
     otyext_constructors: (string * out_type list * out_type option) list;
     otyext_private: Asttypes.private_flag }
+and out_implicit_kind =
+  | Oimp_implicit
+  | Oimp_explicit
 and out_rec_status =
   | Orec_not
   | Orec_first

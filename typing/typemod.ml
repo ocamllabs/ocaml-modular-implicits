@@ -90,19 +90,29 @@ let type_open ?toplevel env sod =
   in
   (path, newenv, od)
 
-let type_implicit env id =
-  let arity = id.pimp_arity in
-  let lid = id.pimp_lid.Location.txt in
-  let path = Env.lookup_module ~load:true lid env in
-  (* FIXME: Check that arity match *)
-  let newenv = Env.register_as_implicit path arity env in
-  let imp = {Typedtree. imp_path = path;
-             imp_txt = id.pimp_lid;
-             imp_loc = id.pimp_loc;
-             imp_attributes = id.pimp_attributes;
-             imp_arity = arity}
+let type_implicit env simp =
+  let tkind, kind =
+    match simp.pimp_kind with
+    | Pimp_implicit -> Timp_implicit, Imp_implicit
+    | Pimp_explicit -> Timp_explicit, Imp_explicit
   in
-  path, arity, newenv, imp
+  let lid = simp.pimp_lid.Location.txt in
+  let path = Typetexp.lookup_module ~load:true env simp.pimp_loc lid in
+  let timp =
+    {Typedtree. imp_path = path;
+     imp_txt = simp.pimp_lid;
+     imp_kind = tkind;
+     imp_loc = simp.pimp_loc;
+     imp_attributes = simp.pimp_attributes;}
+  in
+  let imp =
+    {Types. imp_path = path;
+     imp_kind = kind;
+     imp_loc = simp.pimp_loc;
+     imp_attributes = simp.pimp_attributes;}
+  in
+  let newenv = Env.add_implicit imp env in
+  timp, imp, newenv
 
 (* Bind a module as implicit in current environment *)
 
@@ -712,11 +722,11 @@ and transl_signature env sg =
             let (trem, rem, final_env) = transl_sig newenv srem in
             mksig (Tsig_open od) env loc :: trem,
             rem, final_env
-        | Psig_implicit id ->
-            let (path, arity, newenv, imp) = type_implicit env id in
+        | Psig_implicit simp ->
+            let (timp, imp, newenv) = type_implicit env simp in
             let (trem, rem, final_env) = transl_sig newenv srem in
-            mksig (Tsig_implicit imp) env loc :: trem,
-            Sig_implicit (path, arity) :: rem, final_env
+            mksig (Tsig_implicit timp) env loc :: trem,
+            Sig_implicit imp :: rem, final_env
         | Psig_include sincl ->
             let smty = sincl.pincl_mod in
             let tmty = transl_modtype env smty in
@@ -1137,13 +1147,13 @@ let package_subtype env p1 nl1 tl1 p2 nl2 tl2 =
 let () = Ctype.modtype_of_package := modtype_of_package
 let () = Ctype.package_subtype := package_subtype
 
-let wrap_constraint env arg mty explicit =
+let wrap_constraint env arg mty expl =
   let coercion =
     try
       Includemod.modtypes env arg.mod_type mty
     with Includemod.Error msg ->
       raise(Error(arg.mod_loc, env, Not_included msg)) in
-  { mod_desc = Tmod_constraint(arg, mty, explicit, coercion);
+  { mod_desc = Tmod_constraint(arg, mty, expl, coercion);
     mod_type = mty;
     mod_env = env;
     mod_attributes = [];
@@ -1501,9 +1511,9 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
     | Pstr_open sod ->
         let (path, newenv, od) = type_open ~toplevel env sod in
         Tstr_open od, [], newenv
-    | Pstr_implicit id ->
-        let (path, arity, newenv, imp) = type_implicit env id in
-        Tstr_implicit imp, [], newenv
+    | Pstr_implicit simp ->
+        let (timp, imp, newenv) = type_implicit env simp in
+        Tstr_implicit timp, [Sig_implicit imp], newenv
     | Pstr_class cl ->
         List.iter
           (fun {pci_name = name} -> check_name "type" type_names name)

@@ -321,12 +321,12 @@ module Opn = struct
 end
 
 module Imp = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) ?(arity = 0) lid =
+  let mk ?(loc = !default_loc) ?(attrs = []) kind lid =
     {
       pimp_lid = lid;
+      pimp_kind = kind;
       pimp_loc = loc;
       pimp_attributes = attrs;
-      pimp_arity = arity;
     }
 end
 

@@ -720,10 +720,14 @@ and open_description =
 and implicit_description =
   {
     pimp_lid: Longident.t loc;
+    pimp_kind: implicit_kind;
     pimp_loc: Location.t;
     pimp_attributes: attributes;
-    pimp_arity: int;
   }
+
+and implicit_kind =
+  | Pimp_implicit
+  | Pimp_explicit
 
 and 'a include_infos =
     {

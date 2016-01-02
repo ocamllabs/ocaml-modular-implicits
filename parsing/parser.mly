@@ -326,6 +326,7 @@ let mkctf_attrs d attrs =
 %token EOF
 %token EQUAL
 %token EXCEPTION
+%token EXPLICIT
 %token EXTERNAL
 %token FALSE
 %token <string> FLOAT
@@ -705,14 +706,12 @@ module_binding:
   | IMPLICIT MODULE UIDENT module_binding_body post_item_attributes
       { Mb.mk (mkrhs $3 3) $4 ~implicit_:Implicit
           ~attrs:$5 ~loc:(symbol_rloc ()) }
-
-implicit_statement:
-  | IMPLICIT mod_longident implicit_statement_arity post_item_attributes
-      { Imp.mk (mkrhs $2 2) ~arity:$3 ~attrs:$4 ~loc:(symbol_rloc()) }
 ;
-implicit_statement_arity:
-  | /* empty */ { 0 }
-  | implicit_statement_arity LPAREN UNDERSCORE RPAREN { 1 + $1 }
+implicit_statement:
+  | IMPLICIT mod_longident post_item_attributes
+      { Imp.mk Pimp_implicit (mkrhs $2 2) ~attrs:$3 ~loc:(symbol_rloc()) }
+  | EXPLICIT mod_longident post_item_attributes
+      { Imp.mk Pimp_explicit (mkrhs $2 2) ~attrs:$3 ~loc:(symbol_rloc()) }
 ;
 
 /* Module types */

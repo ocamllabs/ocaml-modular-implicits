@@ -118,6 +118,7 @@ val add_modtype: Ident.t -> modtype_declaration -> t -> t
 val add_class: Ident.t -> class_declaration -> t -> t
 val add_cltype: Ident.t -> class_type_declaration -> t -> t
 val add_local_constraint: Ident.t -> type_declaration -> int -> t -> t
+val add_implicit: implicit_description -> t -> t
 
 (* Insertion of all fields of a signature. *)
 
@@ -133,9 +134,6 @@ val open_signature:
 val open_pers_signature: string -> t -> t
 
 val open_implicit: Path.t -> signature -> t -> t
-
-(* Mark one path as implicit *)
-val register_as_implicit: Path.t -> int -> t -> t
 
 (* Insertion by name *)
 

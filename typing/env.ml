@@ -645,12 +645,6 @@ let rec implicit_cannot_occur path env =
 
 let implicit_instances env = env.implicit_instances
 
-let register_as_implicit path arity env =
-  let md = find_module path env in
-  let md = {md with md_implicit = Implicit arity} in
-  (* FIXME: Check arity *)
-  register_if_implicit path md env
-
 (* Lookup by name *)
 
 exception Recmodule
@@ -1119,7 +1113,7 @@ let scrape_alias env mty = scrape_alias env mty
 
 let rec canonical_path env path =
   try
-    let md = Env.find_module path env in
+    let md = find_module path env in
     match md.Types.md_type with
     | Mty_alias path -> canonical_path env path
     | _ -> match path with
@@ -1226,8 +1220,8 @@ let subst_signature sub sg =
           Sig_class(id, Subst.class_declaration sub decl, x)
       | Sig_class_type(id, decl, x) ->
           Sig_class_type(id, Subst.cltype_declaration sub decl, x)
-      | Sig_implicit(path, arity) ->
-          Sig_implicit(Subst.module_path sub path, arity)
+      | Sig_implicit imp ->
+          Sig_implicit (Subst.implicit_description sub imp)
     )
     sg
 
@@ -1255,21 +1249,41 @@ let prefix_idents_and_subst root sub sg =
   else
     prefix_idents_and_subst root sub sg
 
+let register_as_implicit path md env =
+  let path = canonical_path env path in
+  let mty = !strengthen env md.md_type path in
+  let rec add acc params mty =
+    let acc = ((path, List.rev params, mty) :: acc) in
+    match scrape_alias env mty with
+    | Mty_functor (Mpar_implicit(id, param), res) ->
+        let params = (id, param) :: params in
+          add acc params res
+    | _ -> acc
+  in
+  let implicit_instances = add env.implicit_instances [] mty in
+    {env with implicit_instances}
+
+let unregister_as_implicit path env =
+  let path = canonical_path env path in
+  let implicit_instances =
+    List.filter
+      (fun (p, _, _) -> not (Path.same path p))
+      env.implicit_instances
+  in
+    {env with implicit_instances}
+
 let register_if_implicit path md env =
   match md.md_implicit with
   | Asttypes.Nonimplicit -> env
-  | Asttypes.Implicit ->
-      let mty = !strengthen env md.md_type path in
-      let rec add acc params mty =
-        let acc = ((path, List.rev params, mty) :: acc) in
-        match scrape_alias env mty with
-        | Mty_functor (Mpar_implicit(id, param), res) ->
-            let params = (id, param) :: params in
-              add acc params res
-        | _ -> acc
-      in
-      let implicit_instances = add env.implicit_instances [] mty in
-        {env with implicit_instances}
+  | Asttypes.Implicit -> register_as_implicit path md env
+
+let add_implicit imp env =
+  match imp.imp_kind with
+  | Imp_implicit ->
+      let md = find_module imp.imp_path env in
+      register_as_implicit imp.imp_path md env
+  | Imp_explicit ->
+      unregister_as_implicit imp.imp_path env
 
 (* Compute structure descriptions *)
 
@@ -1644,7 +1658,7 @@ let add_item comp env =
   | Sig_modtype(id, decl)   -> add_modtype id decl env
   | Sig_class(id, decl, _)  -> add_class id decl env
   | Sig_class_type(id, decl, _) -> add_cltype id decl env
-  | Sig_implicit(path, arity) -> register_as_implicit path arity env
+  | Sig_implicit imp -> add_implicit imp env
 
 let rec add_signature sg env =
   match sg with
@@ -1678,8 +1692,8 @@ let open_signature slot root sg env0 =
             store_class slot (Ident.hide id) p decl env env0
         | Sig_class_type(id, decl, _) ->
             store_cltype slot (Ident.hide id) p decl env env0
-        | Sig_implicit(path, arity) ->
-            register_as_implicit path arity env
+        | Sig_implicit imp ->
+            add_implicit imp env
       )
       env0 sg pl in
   { newenv with summary = Env_open(env0.summary, root) }

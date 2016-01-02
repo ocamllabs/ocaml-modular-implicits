@@ -275,7 +275,7 @@ module Opn:
 (* Implicit bindings *)
 module Imp:
   sig
-    val mk: ?loc: loc -> ?attrs:attrs -> ?arity:int -> lid -> implicit_description
+    val mk: ?loc: loc -> ?attrs:attrs -> implicit_kind -> lid -> implicit_description
   end
 
 (* Includes *)

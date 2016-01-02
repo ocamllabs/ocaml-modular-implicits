@@ -45,6 +45,7 @@ let keyword_table =
     "else", ELSE;
     "end", END;
     "exception", EXCEPTION;
+    "explicit", EXPLICIT;
     "external", EXTERNAL;
     "false", FALSE;
     "for", FOR;
@@ -52,6 +53,7 @@ let keyword_table =
     "function", FUNCTION;
     "functor", FUNCTOR;
     "if", IF;
+    "implicit", IMPLICIT;
     "in", IN;
     "include", INCLUDE;
     "inherit", INHERIT;
@@ -61,7 +63,6 @@ let keyword_table =
     "match", MATCH;
     "method", METHOD;
     "module", MODULE;
-    "implicit", IMPLICIT;
     "mutable", MUTABLE;
     "new", NEW;
     "object", OBJECT;

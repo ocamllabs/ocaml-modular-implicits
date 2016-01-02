@@ -1071,11 +1071,16 @@ class printer  ()= object(self:'self)
     | Psig_extension(e, a) ->
         self#item_extension f e;
         self#item_attributes f a
-    | Psig_implicit id ->
-        (*FIXME Arity*)
-        pp f "@[<hov2>implicit@ %a@]%a"
-          self#longident_loc id.pimp_lid
-          self#item_attributes id.pimp_attributes
+    | Psig_implicit imp ->
+        let kind =
+          match imp.pimp_kind with
+          | Pimp_implicit -> "implicit"
+          | Pimp_explicit -> "explicit"
+        in
+          pp f "@[<hov2>%s@ %a@]%a"
+             kind
+             self#longident_loc imp.pimp_lid
+             self#item_attributes imp.pimp_attributes
 
   end
   method module_expr f x =
@@ -1262,10 +1267,16 @@ class printer  ()= object(self:'self)
     | Pstr_extension(e, a) ->
         self#item_extension f e;
         self#item_attributes f a
-    | Pstr_implicit id ->
-        pp f "@[<hov2>implicit@ %a@]%a"
-          self#longident_loc id.pimp_lid
-          self#item_attributes id.pimp_attributes
+    | Pstr_implicit imp ->
+        let kind =
+          match imp.pimp_kind with
+          | Pimp_implicit -> "implicit"
+          | Pimp_explicit -> "explicit"
+        in
+          pp f "@[<hov2>%s@ %a@]%a"
+             kind
+             self#longident_loc imp.pimp_lid
+             self#item_attributes imp.pimp_attributes
   end
   method type_param f (ct, a) =
     pp f "%s%a" (type_variance a) self#core_type ct

@@ -583,9 +583,8 @@ let default_mapper =
       );
 
     implicit_description =
-      (fun this {pimp_lid; pimp_arity; pimp_attributes; pimp_loc} ->
-         Imp.mk (map_loc this pimp_lid)
-           ~arity:pimp_arity
+      (fun this {pimp_lid; pimp_kind; pimp_attributes; pimp_loc} ->
+         Imp.mk pimp_kind (map_loc this pimp_lid)
            ~loc:(this.location this pimp_loc)
            ~attrs:(this.attributes this pimp_attributes)
       );

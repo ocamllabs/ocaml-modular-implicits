@@ -265,6 +265,17 @@ type class_type_declaration =
     clty_attributes: Parsetree.attributes;
   }
 
+type implicit_kind =
+  | Imp_implicit
+  | Imp_explicit
+
+type implicit_description =
+  { imp_kind : implicit_kind;
+    imp_path : Path.t;
+    imp_loc: Location.t;
+    imp_attributes: Parsetree.attributes;
+  }
+
 (* Type expressions for the module language *)
 
 type module_type =
@@ -288,7 +299,7 @@ and signature_item =
   | Sig_modtype of Ident.t * modtype_declaration
   | Sig_class of Ident.t * class_declaration * rec_status
   | Sig_class_type of Ident.t * class_type_declaration * rec_status
-  | Sig_implicit of Path.t * int
+  | Sig_implicit of implicit_description
 
 and module_declaration =
   {

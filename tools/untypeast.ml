@@ -72,10 +72,7 @@ and untype_structure_item item =
                    popen_loc = od.open_loc;
                   }
     | Tstr_implicit imp ->
-        Pstr_implicit {pimp_lid = imp.imp_txt; pimp_arity = imp.imp_arity;
-                       pimp_attributes = imp.imp_attributes;
-                       pimp_loc = imp.imp_loc;
-                      }
+        Pstr_implicit (untype_implicit_description imp)
     | Tstr_class list ->
         Pstr_class
           (List.map
@@ -195,6 +192,18 @@ and untype_extension_constructor ext =
     pext_loc = ext.ext_loc;
     pext_attributes = ext.ext_attributes;
   }
+
+and untype_implicit_description imp =
+  {
+    pimp_lid = imp.imp_txt;
+    pimp_kind = untype_implicit_kind imp.imp_kind;
+    pimp_attributes = imp.imp_attributes;
+    pimp_loc = imp.imp_loc;
+  }
+
+and untype_implicit_kind = function
+  | Timp_implicit -> Pimp_implicit
+  | Timp_explicit -> Pimp_explicit
 
 and untype_pattern pat =
   let desc =
@@ -420,10 +429,7 @@ and untype_signature_item item =
                    popen_loc = od.open_loc;
                   }
     | Tsig_implicit imp ->
-        Psig_implicit {pimp_lid = imp.imp_txt; pimp_arity = imp.imp_arity;
-                       pimp_attributes = imp.imp_attributes;
-                       pimp_loc = imp.imp_loc;
-                      }
+        Psig_implicit (untype_implicit_description imp)
     | Tsig_include incl ->
         Psig_include {pincl_mod = untype_module_type incl.incl_mod;
                       pincl_attributes = incl.incl_attributes;

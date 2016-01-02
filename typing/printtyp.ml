@@ -1158,6 +1158,10 @@ let tree_of_cltype_declaration id cl rs =
 let cltype_declaration id ppf cl =
   !Oprint.out_sig_item ppf (tree_of_cltype_declaration id cl Trec_first)
 
+let tree_of_implicit_kind = function
+  | Imp_implicit -> Oimp_implicit
+  | Imp_explicit -> Oimp_explicit
+
 (* Print a module type *)
 
 let wrap_env fenv ftree arg =
@@ -1254,8 +1258,9 @@ and tree_of_signature_rec env' = function
             [tree_of_class_declaration id decl rs]
         | Sig_class_type(id, decl, rs) ->
             [tree_of_cltype_declaration id decl rs]
-        | Sig_implicit(path, arity) ->
-            [Osig_implicit (tree_of_path path, arity)]
+        | Sig_implicit imp ->
+            [Osig_implicit (tree_of_implicit_kind imp.imp_kind,
+                            tree_of_path imp.imp_path)]
       in
       let env' = Env.add_signature (item :: sg) env' in
       trees @ tree_of_signature_rec env' rem

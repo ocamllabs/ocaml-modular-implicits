@@ -226,7 +226,7 @@ let init_shape modl =
         :: init_shape_struct env rem
     | Sig_class_type(id, ctyp, _) :: rem ->
         init_shape_struct env rem
-    | Sig_implicit(_,_) :: rem ->
+    | Sig_implicit _ :: rem ->
         init_shape_struct env rem
   in
   try

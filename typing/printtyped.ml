@@ -611,6 +611,11 @@ and class_declaration i ppf x =
   line i ppf "pci_expr =\n";
   class_expr (i+1) ppf x.ci_expr;
 
+and implicit_kind i ppf kind =
+  match kind with
+  | Timp_implicit -> line i ppf "Pimp_implicit"
+  | Timp_explicit -> line i ppf "Pimp_explicit"
+
 and module_type i ppf x =
   line i ppf "module_type %a\n" fmt_location x.mty_loc;
   attributes i ppf x.mty_attributes;
@@ -672,8 +677,9 @@ and signature_item i ppf x =
       attributes i ppf incl.incl_attributes;
       module_type i ppf incl.incl_mod
   | Tsig_implicit imp ->
-      line i ppf "Psig_implicit %a %d\n"
-        fmt_path imp.imp_path imp.imp_arity;
+      line i ppf "Psig_implicit %a\n"
+        fmt_path imp.imp_path;
+      implicit_kind i ppf imp.imp_kind;
       attributes i ppf imp.imp_attributes
   | Tsig_class (l) ->
       line i ppf "Psig_class\n";
@@ -811,8 +817,9 @@ and structure_item i ppf x =
       attributes i ppf incl.incl_attributes;
       module_expr i ppf incl.incl_mod;
   | Tstr_implicit imp ->
-      line i ppf "Pstr_implicit %a %d\n"
-        fmt_path imp.imp_path imp.imp_arity;
+      line i ppf "Pstr_implicit %a\n"
+        fmt_path imp.imp_path;
+      implicit_kind i ppf imp.imp_kind;
       attributes i ppf imp.imp_attributes
   | Tstr_attribute (s, arg) ->
       line i ppf "Pstr_attribute \"%s\"\n" s.txt;

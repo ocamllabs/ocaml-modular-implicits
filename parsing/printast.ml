@@ -709,10 +709,11 @@ and signature_item i ppf x =
   | Psig_attribute (s, arg) ->
       line i ppf "Psig_attribute \"%s\"\n" s.txt;
       payload i ppf arg
-  | Psig_implicit id ->
-      line i ppf "Psig_implicit %a %d\n"
-        fmt_longident_loc id.pimp_lid id.pimp_arity;
-      attributes i ppf id.pimp_attributes
+  | Psig_implicit imp ->
+      line i ppf "Psig_implicit %a\n"
+        fmt_longident_loc imp.pimp_lid;
+      implicit_kind i ppf imp.pimp_kind;
+      attributes i ppf imp.pimp_attributes
 
 and modtype_declaration i ppf = function
   | None -> line i ppf "#abstract"
@@ -842,10 +843,11 @@ and structure_item i ppf x =
   | Pstr_attribute (s, arg) ->
       line i ppf "Pstr_attribute \"%s\"\n" s.txt;
       payload i ppf arg
-  | Pstr_implicit id ->
-      line i ppf "Pstr_implicit %a %d\n"
-        fmt_longident_loc id.pimp_lid id.pimp_arity;
-      attributes i ppf id.pimp_attributes
+  | Pstr_implicit imp ->
+      line i ppf "Pstr_implicit %a\n"
+        fmt_longident_loc imp.pimp_lid;
+      implicit_kind i ppf imp.pimp_kind;
+      attributes i ppf imp.pimp_attributes
 
 and module_declaration i ppf pmd =
   string_loc i ppf pmd.pmd_name;
@@ -858,6 +860,11 @@ and module_binding i ppf pmb =
   line i ppf "%a\n" fmt_implicit_flag pmb.pmb_implicit;
   attributes i ppf pmb.pmb_attributes;
   module_expr (i+1) ppf pmb.pmb_expr
+
+and implicit_kind i ppf kind =
+  match kind with
+  | Pimp_implicit -> line i ppf "Pimp_implicit"
+  | Pimp_explicit -> line i ppf "Pimp_explicit"
 
 and core_type_x_core_type_x_location i ppf (ct1, ct2, l) =
   line i ppf "<constraint> %a\n" fmt_location l;
