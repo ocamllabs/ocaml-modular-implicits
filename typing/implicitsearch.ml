@@ -142,11 +142,11 @@ module Constraints = struct
           | _ -> env
         in
         aux env id ty items
-    | Sig_module (id, decl, (Trec_not | Trec_first)) :: items ->
+    | Sig_module (id, decl, _, (Trec_not | Trec_first)) :: items ->
         let rec aux env id decl items =
           let env = Env.add_module_declaration id decl env in
           match items with
-          | Sig_module (id, decl, Trec_next) :: items ->
+          | Sig_module (id, decl, _, Trec_next) :: items ->
               aux env id decl items
           | _ -> env
         in
@@ -193,7 +193,7 @@ module Constraints = struct
         with Not_found ->
           [], cstrs, field
         end
-    | Sig_module (id,decl,recst) ->
+    | Sig_module (id,decl,impf,recst) ->
         let name = Ident.name id in
         begin try
           let (_, subs), cstrs = list_extract (name_match name) cstrs in
@@ -204,7 +204,7 @@ module Constraints = struct
             | subs -> [(id, Sub subs)]
           in
           to_unify, cstrs,
-          Sig_module (id,{decl with md_type = mty}, recst)
+          Sig_module (id, {decl with md_type = mty}, impf, recst)
         with Not_found ->
           [], cstrs, field
         end
@@ -250,12 +250,12 @@ module Constraints = struct
         unify env ty ty';
         cstrs
 
-    | Sig_module (id,decl,recst),
+    | Sig_module (id,decl,_,_),
       ((id', Sub subs) :: cstrs) when Ident.same id id' ->
         constraint_mty env subs decl.md_type;
         cstrs
 
-      | _ -> cstrs
+    | _ -> cstrs
 
   and constraint_sig env cstrs items =
     let env = register_items env items in
@@ -968,9 +968,6 @@ end = struct
     | target :: sub_targets ->
       let partial = {partial with payload = (path, sub_targets) } in
       let md = Env.find_module path arg.env in
-      (* The original module declaration might be implicit, we want to avoid
-         rebinding implicit *)
-      let md = {md with md_implicit = Asttypes.Nonimplicit} in
       let target = Constraints.target arg.env target eq_initial in
       let termination = Termination.check_target arg.env target eq_initial partial.termination in
       let env = Env.add_module_declaration target.target_id md arg.env in

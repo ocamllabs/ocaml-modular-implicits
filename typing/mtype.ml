@@ -67,9 +67,9 @@ and strengthen_sig env sg p =
       Sig_type(id, newdecl, rs) :: strengthen_sig env rem p
   | (Sig_typext(id, ext, es) as sigelt) :: rem ->
       sigelt :: strengthen_sig env rem p
-  | Sig_module(id, md, rs) :: rem ->
+  | Sig_module(id, md, is, rs) :: rem ->
       let str = strengthen_decl env md (Pdot(p, Ident.name id, nopos)) in
-      Sig_module(id, str, rs)
+      Sig_module(id, str, is, rs)
       :: strengthen_sig (Env.add_module_declaration id md env) rem p
       (* Need to add the module in case it defines manifest module types *)
   | Sig_modtype(id, decl) :: rem ->
@@ -152,8 +152,8 @@ let nondep_supertype env mid mty =
       | Sig_typext(id, ext, es) ->
           Sig_typext(id, Ctype.nondep_extension_constructor env mid ext, es)
           :: rem'
-      | Sig_module(id, md, rs) ->
-          Sig_module(id, {md with md_type=nondep_mty env va md.md_type}, rs)
+      | Sig_module(id, md, is, rs) ->
+          Sig_module(id, {md with md_type=nondep_mty env va md.md_type}, is, rs)
           :: rem'
       | Sig_modtype(id, d) ->
           begin try
@@ -170,8 +170,8 @@ let nondep_supertype env mid mty =
       | Sig_class_type(id, d, rs) ->
           Sig_class_type(id, Ctype.nondep_cltype_declaration env mid d, rs)
           :: rem'
-      | Sig_implicit imp ->
-          Sig_implicit (nondep_implicit env imp)
+      | Sig_implicit(imp, is) ->
+          Sig_implicit(nondep_implicit env imp, is)
           :: rem'
 
   and nondep_modtype_decl env mtd =
@@ -213,12 +213,12 @@ and enrich_item env p = function
     Sig_type(id, decl, rs) ->
       Sig_type(id,
                 enrich_typedecl env (Pdot(p, Ident.name id, nopos)) decl, rs)
-  | Sig_module(id, md, rs) ->
+  | Sig_module(id, md, is, rs) ->
       Sig_module(id,
                   {md with
                    md_type = enrich_modtype env
                        (Pdot(p, Ident.name id, nopos)) md.md_type},
-                 rs)
+                 is, rs)
   | item -> item
 
 let rec type_paths env p mty =
@@ -236,7 +236,7 @@ and type_paths_sig env p pos sg =
       type_paths_sig env p pos' rem
   | Sig_type(id, decl, _) :: rem ->
       Pdot(p, Ident.name id, nopos) :: type_paths_sig env p pos rem
-  | Sig_module(id, md, _) :: rem ->
+  | Sig_module(id, md, _, _) :: rem ->
       type_paths env (Pdot(p, Ident.name id, pos)) md.md_type @
       type_paths_sig (Env.add_module_declaration id md env) p (pos+1) rem
   | Sig_modtype(id, decl) :: rem ->
@@ -261,7 +261,7 @@ and no_code_needed_sig env sg =
       | Val_prim _ -> no_code_needed_sig env rem
       | _ -> false
       end
-  | Sig_module(id, md, _) :: rem ->
+  | Sig_module(id, md, _, _) :: rem ->
       no_code_needed env md.md_type &&
       no_code_needed_sig (Env.add_module_declaration id md env) rem
   | (Sig_type _ | Sig_modtype _ | Sig_class_type _ | Sig_implicit _) :: rem ->
@@ -293,7 +293,7 @@ and contains_type_item env = function
                  {type_kind = Type_abstract; type_private = Private}),_)
   | Sig_modtype _ ->
       raise Exit
-  | Sig_module (_, {md_type = mty}, _) ->
+  | Sig_module (_, {md_type = mty}, _, _) ->
       contains_type env mty
   | Sig_value _
   | Sig_type _
@@ -362,12 +362,12 @@ let collect_arg_paths mty =
   and it_signature_item it si =
     type_iterators.it_signature_item it si;
     match si with
-      Sig_module (id, {md_type=Mty_alias p}, _) ->
+      Sig_module (id, {md_type=Mty_alias p}, _, _) ->
         bindings := Ident.add id p !bindings
-    | Sig_module (id, {md_type=Mty_signature sg}, _) ->
+    | Sig_module (id, {md_type=Mty_signature sg}, _, _) ->
         List.iter
           (function
-            | Sig_module (id', _, _) ->
+            | Sig_module (id', _, _, _) ->
               subst :=
                 PathMap.add (Pdot (Pident id, Ident.name id', -1)) id' !subst
             | _ -> ())
@@ -392,7 +392,7 @@ let rec remove_aliases env excl mty =
 and remove_aliases_sig env excl sg =
   match sg with
     [] -> []
-  | Sig_module(id, md, rs) :: rem  ->
+  | Sig_module(id, md, is, rs) :: rem  ->
       let mty =
         match md.md_type with
           Mty_alias _ when IdentSet.mem id excl ->
@@ -400,9 +400,8 @@ and remove_aliases_sig env excl sg =
         | mty ->
             remove_aliases env excl mty
       in
-      let implicit_ = md.md_implicit in
-      Sig_module(id, {md with md_type = mty} , rs) ::
-      remove_aliases_sig (Env.add_module ~implicit_ id mty env) excl rem
+      Sig_module(id, {md with md_type = mty} , is, rs) ::
+      remove_aliases_sig (Env.add_module id mty env) excl rem
   | Sig_modtype(id, mtd) :: rem ->
       Sig_modtype(id, mtd) ::
       remove_aliases_sig (Env.add_modtype id mtd env) excl rem

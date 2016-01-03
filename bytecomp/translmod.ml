@@ -216,7 +216,7 @@ let init_shape modl =
         init_shape_struct (Env.add_type ~check:false id tdecl env) rem
     | Sig_typext(id, ext, _) :: rem ->
         raise Not_found
-    | Sig_module(id, md, _) :: rem ->
+    | Sig_module(id, md, _, _) :: rem ->
         init_shape_mod env md.md_type ::
         init_shape_struct (Env.add_module_declaration id md env) rem
     | Sig_modtype(id, minfo) :: rem ->
@@ -318,7 +318,7 @@ let rec bound_value_identifiers = function
   | Sig_value(id, {val_kind = Val_reg}) :: rem ->
       id :: bound_value_identifiers rem
   | Sig_typext(id, ext, _) :: rem -> id :: bound_value_identifiers rem
-  | Sig_module(id, mty, _) :: rem -> id :: bound_value_identifiers rem
+  | Sig_module(id, mty, _, _) :: rem -> id :: bound_value_identifiers rem
   | Sig_class(id, decl, _) :: rem -> id :: bound_value_identifiers rem
   | _ :: rem -> bound_value_identifiers rem
 

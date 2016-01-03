@@ -58,15 +58,6 @@ exception Error of error list
    i.e. that x1 is the type of an implementation that fulfills the
    specification x2. If not, Error is raised with a backtrace of the error. *)
 
-(* Inclusion between implicit flags *)
-
-let implicit_flags env cxt id f1 l1 f2 l2 =
-  match f1, f2 with
-  | Asttypes.Implicit, Asttypes.Implicit -> ()
-  | Asttypes.Implicit, Asttypes.Nonimplicit -> ()
-  | Asttypes.Nonimplicit, Asttypes.Nonimplicit -> ()
-  | _ -> raise(Error[cxt, env, Implicit_flags(id, l1, l2)])
-
 (* Inclusion between value descriptions *)
 
 let value_descriptions env cxt subst id vd1 vd2 =
@@ -161,7 +152,7 @@ let item_ident_name = function
     Sig_value(id, d) -> (id, d.val_loc, Field_value(Ident.name id))
   | Sig_type(id, d, _) -> (id, d.type_loc, Field_type(Ident.name id))
   | Sig_typext(id, d, _) -> (id, d.ext_loc, Field_typext(Ident.name id))
-  | Sig_module(id, d, _) -> (id, d.md_loc, Field_module(Ident.name id))
+  | Sig_module(id, d, _, _) -> (id, d.md_loc, Field_module(Ident.name id))
   | Sig_modtype(id, d) -> (id, d.mtd_loc, Field_modtype(Ident.name id))
   | Sig_class(id, d, _) -> (id, d.cty_loc, Field_class(Ident.name id))
   | Sig_class_type(id, d, _) -> (id, d.clty_loc, Field_classtype(Ident.name id))
@@ -175,7 +166,7 @@ let is_runtime_component = function
   | Sig_class_type(_,_,_) -> false
   | Sig_value(_,_)
   | Sig_typext(_,_,_)
-  | Sig_module(_,_,_)
+  | Sig_module(_,_,_,_)
   | Sig_class(_, _,_) -> true
 
 (* Print a coercion *)
@@ -323,7 +314,7 @@ and signatures env cxt subst sig1 sig2 =
   let (id_pos_list,_) =
     List.fold_left
       (fun (l,pos) -> function
-           Sig_module (id, _, _) ->
+           Sig_module (id, _, _, _) ->
              ((id,pos,Tcoerce_none)::l , pos+1)
          | item -> (l, if is_runtime_component item then pos+1 else pos))
       ([], 0) sig1 in
@@ -421,13 +412,10 @@ and signature_components env cxt subst = function
     :: rem ->
       extension_constructors env cxt subst id1 ext1 ext2;
       (pos, Tcoerce_none) :: signature_components env cxt subst rem
-  | (Sig_module(id1, mty1, _), Sig_module(id2, mty2, _), pos) :: rem ->
+  | (Sig_module(id1, mty1, _, _), Sig_module(id2, mty2, _, _), pos) :: rem ->
       let cc =
         modtypes env (Module id1::cxt) subst
           (Mtype.strengthen env mty1.md_type (Pident id1)) mty2.md_type in
-      implicit_flags env cxt id1
-        mty1.md_implicit mty1.md_loc
-        mty2.md_implicit mty2.md_loc;
       (pos, cc) :: signature_components env cxt subst rem
   | (Sig_modtype(id1, info1), Sig_modtype(id2, info2), pos) :: rem ->
       modtype_infos env cxt subst id1 info1 info2;

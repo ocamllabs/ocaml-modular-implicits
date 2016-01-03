@@ -94,10 +94,11 @@ and out_sig_item =
         out_rec_status
   | Osig_typext of out_extension_constructor * out_ext_status
   | Osig_modtype of string * out_module_type
-  | Osig_module of string * out_module_type * out_rec_status * Asttypes.implicit_flag
+  | Osig_module of
+      string * out_module_type * Asttypes.implicit_flag * out_rec_status
   | Osig_type of out_type_decl * out_rec_status
   | Osig_value of string * out_type * string list
-  | Osig_implicit of out_implicit_kind * out_ident
+  | Osig_implicit of out_implicit_kind * out_ident * out_imp_status
 and out_type_decl =
   { otype_name: string;
     otype_params: (string * (bool * bool)) list;
@@ -127,6 +128,9 @@ and out_ext_status =
   | Oext_first
   | Oext_next
   | Oext_exception
+and out_imp_status =
+  | Oimps_standalone
+  | Oimps_attached
 
 type out_phrase =
   | Ophr_eval of out_value * out_type

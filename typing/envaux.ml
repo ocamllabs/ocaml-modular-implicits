@@ -75,6 +75,20 @@ let rec env_from_summary sum subst =
           in
           Env.open_signature Asttypes.Override path'
             (extract_sig env md.md_type) env
+      | Env_open_implicit(s, path) ->
+          let env = env_from_summary s subst in
+          let path' = Subst.module_path subst path in
+          let md =
+            try
+              Env.find_module path' env
+            with Not_found ->
+              raise (Error (Module_not_found path'))
+          in
+          Env.open_implicit path' (extract_sig env md.md_type) env
+      | Env_implicit(s, imp) ->
+          let env = env_from_summary s subst in
+          let imp' = Subst.implicit_description subst imp in
+            Env.add_implicit imp' env
       | Env_functor_arg(Env_module(s, id, desc), id') when Ident.same id id' ->
           Env.add_module_declaration id (Subst.module_declaration subst desc)
             ~arg:true (env_from_summary s subst)

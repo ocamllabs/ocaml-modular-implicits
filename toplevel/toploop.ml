@@ -197,8 +197,8 @@ let rec pr_item env items =
   | Sig_typext(id, ext, es) :: rem ->
       let tree = Printtyp.tree_of_extension_constructor id ext es in
       Some (tree, None, rem)
-  | Sig_module(id, md, rs) :: rem ->
-      let tree = Printtyp.tree_of_module id ~implicit_:md.md_implicit md.md_type rs in
+  | Sig_module(id, md, is, rs) :: rem ->
+      let tree = Printtyp.tree_of_module id ~implicit_:is md.md_type rs in
       Some (tree, None, rem)
   | Sig_modtype(id, decl) :: rem ->
       let tree = Printtyp.tree_of_modtype_declaration id decl in
@@ -209,6 +209,11 @@ let rec pr_item env items =
   | Sig_class_type(id, decl, rs) :: tydecl1 :: tydecl2 :: rem ->
       let tree = Printtyp.tree_of_cltype_declaration id decl rs in
       Some (tree, None, rem)
+  | Sig_implicit(imp, Timps_standalone) :: rem ->
+      let tree = Printtyp.tree_of_implicit_description imp Timps_standalone in
+      Some (tree, None, rem)
+  | Sig_implicit(imp, Timps_attached) :: rem ->
+      pr_item env rem
   | _ -> None
 
 let rec item_list env = function
