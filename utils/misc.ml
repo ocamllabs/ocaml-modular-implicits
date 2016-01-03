@@ -73,6 +73,10 @@ let may_map f = function
     Some x -> Some (f x)
   | None -> None
 
+let opt_value = function
+  | Some x -> x
+  | None -> assert false
+
 (* File functions *)
 
 let find_in_path path name =

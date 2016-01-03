@@ -1162,6 +1162,10 @@ let tree_of_implicit_kind = function
   | Imp_implicit -> Oimp_implicit
   | Imp_explicit -> Oimp_explicit
 
+let implicit_kind ppf = function
+  | Imp_implicit -> fprintf ppf "implicit"
+  | Imp_explicit -> fprintf ppf "explicit"
+
 let tree_of_implicit_status = function
   | Timps_standalone -> Oimps_standalone
   | Timps_attached -> Oimps_attached

@@ -26,7 +26,6 @@ val print_coercion: formatter -> module_coercion -> unit
 
 type symptom =
     Missing_field of Ident.t * Location.t * string (* kind *)
-  | Implicit_flags of Ident.t * Location.t * Location.t
   | Value_descriptions of Ident.t * value_description * value_description
   | Type_declarations of Ident.t * type_declaration
         * type_declaration * Includecore.type_mismatch list
@@ -45,6 +44,8 @@ type symptom =
   | Unbound_modtype_path of Path.t
   | Unbound_module_path of Path.t
   | Invalid_module_alias of Path.t
+  | Missing_implicit of implicit_description
+  | Reordered_implicits of implicit_description * implicit_description
 
 type pos =
   | Module of Ident.t

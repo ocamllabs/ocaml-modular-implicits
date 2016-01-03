@@ -19,7 +19,6 @@ open Types
 
 type symptom =
     Missing_field of Ident.t * Location.t * string (* kind *)
-  | Implicit_flags of Ident.t * Location.t * Location.t
   | Value_descriptions of Ident.t * value_description * value_description
   | Type_declarations of Ident.t * type_declaration
         * type_declaration * Includecore.type_mismatch list
@@ -38,6 +37,8 @@ type symptom =
   | Unbound_modtype_path of Path.t
   | Unbound_module_path of Path.t
   | Invalid_module_alias of Path.t
+  | Missing_implicit of implicit_description
+  | Reordered_implicits of implicit_description * implicit_description
 
 type pos =
   | Module of Ident.t
@@ -214,6 +215,63 @@ let simplify_structure_coercion cc id_pos_list =
   then Tcoerce_none
   else Tcoerce_structure (cc, id_pos_list)
 
+(* Check inclusion between a signature's implicits *)
+
+let check_implicits env cxt subst imps1 imps2 =
+  let mem_implicit imps imp =
+    let kind = imp.imp_kind in
+    let path = Env.canonical_path env imp.imp_path in
+      List.exists
+        (fun imp' ->
+          if imp'.imp_kind = kind then begin
+              let path' = Env.canonical_path env imp'.imp_path in
+                Path.same path path'
+          end else false)
+        imps
+  in
+  let find_implicit imps imp =
+    let kind = imp.imp_kind in
+    let path = Env.canonical_path env imp.imp_path in
+    let rec loop acc = function
+      | [] -> raise Not_found
+      | imp' :: rem ->
+          if imp'.imp_kind = kind then begin
+              let path' = Env.canonical_path env imp'.imp_path in
+                if Path.same path path' then List.rev acc, rem
+                else loop (imp' :: acc) rem
+          end else loop (imp' :: acc) rem
+    in
+      loop [] imps
+  in
+  let rec loop passed prev imps exps rem = function
+    | [] -> ()
+    | next :: rest ->
+        let next = Subst.implicit_description subst next in
+        try
+          match next.imp_kind with
+          | Imp_implicit ->
+              if mem_implicit imps next then
+                loop passed prev imps exps rem rest
+              else
+                let before, after = find_implicit rem next in
+                loop (passed @ exps) (Some next) (imps @ before) [] after rest
+          | Imp_explicit ->
+              if mem_implicit exps next then
+                loop passed prev imps exps rem rest
+              else
+                let before, after = find_implicit rem next in
+                loop (passed @ imps) (Some next) [] (exps @ before) after rest
+        with Not_found ->
+          if mem_implicit passed next
+             || mem_implicit imps next
+             || mem_implicit exps next  then
+            let prev = Misc.opt_value prev in
+              raise(Error[cxt, env, Reordered_implicits(prev, next)])
+          else
+            raise(Error[cxt, env, Missing_implicit next])
+  in
+    loop [] None [] [] imps1 imps2
+
 (* Inclusion between module types.
    Return the restriction that transforms a value of the smaller type
    into a value of the bigger type. *)
@@ -318,44 +376,46 @@ and signatures env cxt subst sig1 sig2 =
              ((id,pos,Tcoerce_none)::l , pos+1)
          | item -> (l, if is_runtime_component item then pos+1 else pos))
       ([], 0) sig1 in
-  (* Build a table of the components of sig1, along with their positions.
+  (* Build a table of the named components of sig1, along with their positions.
      The table is indexed by kind and name of component *)
-  let rec build_component_table pos tbl = function
-      [] -> pos, tbl
-    | Sig_implicit _ :: rem -> build_component_table pos tbl rem
+  let rec build_component_table pos tbl imps = function
+      [] -> pos, tbl, List.rev imps
+    | Sig_implicit(imp, _) :: rem ->
+        build_component_table pos tbl (imp :: imps) rem
     | item :: rem ->
         let (id, _loc, name) = item_ident_name item in
         let nextpos = if is_runtime_component item then pos + 1 else pos in
         build_component_table nextpos
-                              (Tbl.add name (id, item, pos) tbl) rem in
-  let len1, comps1 =
-    build_component_table 0 Tbl.empty sig1 in
+                              (Tbl.add name (id, item, pos) tbl) imps rem in
+  let len1, comps1, imps1 =
+    build_component_table 0 Tbl.empty [] sig1 in
   let len2 =
     List.fold_left
       (fun n i -> if is_runtime_component i then n + 1 else n)
       0
       sig2
   in
-  (* Pair each component of sig2 with a component of sig1,
+  (* Pair each named component of sig2 with a component of sig1,
      identifying the names along the way.
      Return a coercion list indicating, for all run-time components
      of sig2, the position of the matching run-time components of sig1
      and the coercion to be applied to it. *)
-  let rec pair_components subst paired unpaired = function
+  let rec pair_components subst paired unpaired imps = function
       [] ->
         begin match unpaired with
             [] ->
               let cc =
                 signature_components new_env cxt subst (List.rev paired)
               in
+              check_implicits new_env cxt subst imps1 (List.rev imps);
               if len1 = len2 then (* see PR#5098 *)
                 simplify_structure_coercion cc id_pos_list
               else
                 Tcoerce_structure (cc, id_pos_list)
           | _  -> raise(Error unpaired)
         end
-    | Sig_implicit _ :: rem ->
-        pair_components subst paired unpaired rem
+    | Sig_implicit(imp, _) :: rem ->
+        pair_components subst paired unpaired (imp :: imps) rem
     | item2 :: rem ->
         let (id2, loc, name2) = item_ident_name item2 in
         let name2, report =
@@ -383,17 +443,17 @@ and signatures env cxt subst sig1 sig2 =
                 subst
           in
           pair_components new_subst
-            ((item1, item2, pos1) :: paired) unpaired rem
+            ((item1, item2, pos1) :: paired) unpaired imps rem
         with Not_found ->
           let unpaired =
             if report then
               (cxt, env, Missing_field (id2, loc, kind_of_field_desc name2)) ::
               unpaired
             else unpaired in
-          pair_components subst paired unpaired rem
+          pair_components subst paired unpaired imps rem
         end in
   (* Do the pairing and checking, and return the final coercion *)
-  pair_components subst [] [] sig2
+  pair_components subst [] [] [] sig2
 
 (* Inclusion between signature components *)
 
@@ -508,9 +568,6 @@ let include_err ppf = function
   | Missing_field (id, loc, kind) ->
       fprintf ppf "The %s `%a' is required but not provided" kind ident id;
       show_loc "Expected declaration" ppf loc
-  | Implicit_flags (id, l1, l2) ->
-      fprintf ppf "Implicit annotations of %a do not match" ident id;
-      show_locs ppf (l1, l2)
   | Value_descriptions(id, d1, d2) ->
       fprintf ppf
         "@[<hv 2>Values do not match:@ %a@;<1 -2>is not included in@ %a@]"
@@ -569,6 +626,17 @@ let include_err ppf = function
       fprintf ppf "Unbound module %a" Printtyp.path path
   | Invalid_module_alias path ->
       fprintf ppf "Module %a cannot be aliased" Printtyp.path path
+  | Missing_implicit imp ->
+      fprintf ppf "`%a %a' is required but not provided"
+              Printtyp.implicit_kind imp.imp_kind
+              Printtyp.path imp.imp_path;
+      show_loc "Expected declaration" ppf imp.imp_loc
+  | Reordered_implicits(imp1, imp2) ->
+      fprintf ppf "`%a %a' and `%a %a' have been reordered"
+              Printtyp.implicit_kind imp1.imp_kind
+              Printtyp.path imp1.imp_path
+              Printtyp.implicit_kind imp2.imp_kind
+              Printtyp.path imp2.imp_path
 
 let rec context ppf = function
     Module id :: rem ->
