@@ -640,7 +640,16 @@ class printer  ()= object(self:'self)
         pp f "@[<hov2>(!poly!@ %a@ : %a)@]" self#simple_expr e self#core_type ct
     | Pexp_open (ovf, lid, e) ->
         pp f "@[<2>let open%s %a in@;%a@]" (open_flag ovf) self#longident_loc lid
-          self#expression  e
+          self#expression e
+    | Pexp_implicit(imp, e) ->
+        let kind =
+          match imp.pimp_kind with
+          | Pimp_implicit -> "implicit"
+          | Pimp_explicit -> "explicit"
+        in
+        pp f "@[<2>let %s %a in@;%a@]"
+           kind self#longident_loc imp.pimp_lid
+           self#expression e
     | Pexp_variant (l,Some eo) ->
         pp f "@[<2>`%s@;%a@]" l  self#simple_expr eo
     | Pexp_extension e -> self#extension f e

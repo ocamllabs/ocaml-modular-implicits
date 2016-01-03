@@ -288,6 +288,10 @@ and expression_extra i ppf x attrs =
   | Texp_open (ovf, m, _, _) ->
       line i ppf "Pexp_open %a \"%a\"\n" fmt_open_flag ovf fmt_path m;
       attributes i ppf attrs;
+  | Texp_implicit (imp, _) ->
+      line i ppf "Pexp_implicit \"%a\"\n" fmt_path imp.imp_path;
+      implicit_kind i ppf imp.imp_kind;
+      attributes i ppf attrs;
   | Texp_poly cto ->
       line i ppf "Pexp_poly\n";
       attributes i ppf attrs;
@@ -677,8 +681,7 @@ and signature_item i ppf x =
       attributes i ppf incl.incl_attributes;
       module_type i ppf incl.incl_mod
   | Tsig_implicit imp ->
-      line i ppf "Psig_implicit %a\n"
-        fmt_path imp.imp_path;
+      line i ppf "Psig_implicit %a\n" fmt_path imp.imp_path;
       implicit_kind i ppf imp.imp_kind;
       attributes i ppf imp.imp_attributes
   | Tsig_class (l) ->

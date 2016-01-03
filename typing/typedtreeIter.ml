@@ -245,6 +245,7 @@ module MakeIterator(Iter : IteratorArgument) : sig
         | Texp_coerce (cty1, cty2) ->
             option iter_core_type cty1; iter_core_type cty2
         | Texp_open (_, path, _, _) -> ()
+        | Texp_implicit _ -> ()
         | Texp_poly cto -> option iter_core_type cto
         | Texp_newtype s -> ())
         exp.exp_extra;

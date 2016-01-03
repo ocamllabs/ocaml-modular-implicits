@@ -292,6 +292,7 @@ and rw_exp iflag sexp =
 
   | Pexp_newtype (_, sexp) -> rewrite_exp iflag sexp
   | Pexp_open (_ovf, _, e) -> rewrite_exp iflag e
+  | Pexp_implicit (_, e) -> rewrite_exp iflag e
   | Pexp_pack (smod) -> rewrite_mod iflag smod
   | Pexp_extension _ -> ()
 

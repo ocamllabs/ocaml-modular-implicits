@@ -383,6 +383,10 @@ and expression i ppf x =
       line i ppf "Pexp_open %a \"%a\"\n" fmt_open_flag ovf
         fmt_longident_loc m;
       expression i ppf e
+  | Pexp_implicit (imp, e) ->
+      line i ppf "Pexp_implicit \"%a\"\n" fmt_longident_loc imp.pimp_lid;
+      implicit_kind i ppf imp.pimp_kind;
+      expression i ppf e
   | Pexp_extension (s, arg) ->
       line i ppf "Pexp_extension \"%s\"\n" s.txt;
       payload i ppf arg

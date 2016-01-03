@@ -193,6 +193,7 @@ let rec add_expr bv exp =
   | Pexp_newtype (_, e) -> add_expr bv e
   | Pexp_pack m -> add_module bv m
   | Pexp_open (_ovf, m, e) -> addmodule bv m; add_expr bv e
+  | Pexp_implicit (imp, e) -> addmodule bv imp.pimp_lid; add_expr bv e
   | Pexp_extension _ -> ()
 
 and add_cases bv cases =
@@ -267,8 +268,8 @@ and add_sig_item bv item =
       List.iter (add_class_description bv) cdl; bv
   | Psig_class_type cdtl ->
       List.iter (add_class_type_declaration bv) cdtl; bv
-  | Psig_implicit id ->
-      addmodule bv id.pimp_lid; bv
+  | Psig_implicit imp ->
+      addmodule bv imp.pimp_lid; bv
   | Psig_attribute _ | Psig_extension _ ->
       bv
 

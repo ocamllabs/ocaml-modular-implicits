@@ -390,6 +390,7 @@ module E = struct
     | Pexp_pack me -> pack ~loc ~attrs (sub.module_expr sub me)
     | Pexp_open (ovf, lid, e) ->
         open_ ~loc ~attrs ovf (map_loc sub lid) (sub.expr sub e)
+    | Pexp_implicit (imp, e) -> implicit_ ~loc ~attrs imp e
     | Pexp_extension x -> extension ~loc ~attrs (sub.extension sub x)
 end
 

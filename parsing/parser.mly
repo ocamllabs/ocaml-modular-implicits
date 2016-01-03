@@ -1130,6 +1130,12 @@ expr:
       { mkexp (Pexp_letmodule($2, $4)) (* FIXME: no attributes *) }
   | LET OPEN open_flag ext_attributes mod_longident IN seq_expr
       { mkexp_attrs (Pexp_open($3, mkrhs $5 5, $7)) $4 }
+  | LET IMPLICIT ext_attributes mod_longident IN seq_expr
+      { mkexp_attrs
+          (Pexp_implicit (Imp.mk Pimp_implicit (mkrhs $4 4), $6)) $3 }
+  | LET EXPLICIT ext_attributes mod_longident IN seq_expr
+      { mkexp_attrs
+          (Pexp_implicit (Imp.mk Pimp_explicit (mkrhs $4 4), $6)) $3 }
   | FUNCTION ext_attributes opt_bar match_cases
       { mkexp_attrs (Pexp_function(List.rev $4)) $2 }
   | FUN ext_attributes labeled_simple_pattern fun_def

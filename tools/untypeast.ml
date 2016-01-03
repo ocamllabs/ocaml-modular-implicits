@@ -263,6 +263,7 @@ and untype_extra (extra, loc, attrs) sexp =
     | Texp_constraint cty ->
         Pexp_constraint (sexp, untype_core_type cty)
     | Texp_open (ovf, _path, lid, _) -> Pexp_open (ovf, lid, sexp)
+    | Texp_implicit (imp, _) -> Pexp_implicit (untype_implicit_description imp, sexp)
     | Texp_poly cto -> Pexp_poly (sexp, option untype_core_type cto)
     | Texp_newtype s -> Pexp_newtype (s, sexp)
   in

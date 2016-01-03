@@ -86,6 +86,11 @@ let type_module =
 let type_open =
   ref (fun _ -> assert false)
 
+(* Forward declaration, to be filled in by Typemod.type_implicit *)
+
+let type_implicit =
+  ref (fun _ -> assert false)
+
 (* Forward declaration, to be filled in by Typemod.type_package *)
 
 let type_package =
@@ -144,6 +149,7 @@ let iter_expression f e =
     | Pexp_record (iel, eo) ->
         may expr eo; List.iter (fun (_, e) -> expr e) iel
     | Pexp_open (_, _, e)
+    | Pexp_implicit (_, e)
     | Pexp_newtype (_, e)
     | Pexp_poly (e, _)
     | Pexp_lazy e
@@ -2767,6 +2773,14 @@ and type_expect_ ?in_function env sexp ty_expected =
       let exp = type_expect newenv e ty_expected in
       { exp with
         exp_extra = (Texp_open (ovf, path, lid, newenv), loc,
+                     sexp.pexp_attributes) ::
+                      exp.exp_extra;
+      }
+  | Pexp_implicit (imp, e) ->
+      let (imp, _, newenv) = !type_implicit env imp in
+      let exp = type_expect newenv e ty_expected in
+      { exp with
+        exp_extra = (Texp_implicit (imp, newenv), loc,
                      sexp.pexp_attributes) ::
                       exp.exp_extra;
       }

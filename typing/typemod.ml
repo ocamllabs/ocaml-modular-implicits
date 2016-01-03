@@ -1791,6 +1791,7 @@ let () =
   Typetexp.transl_modtype_longident := transl_modtype_longident;
   Typetexp.transl_modtype := transl_modtype;
   Typecore.type_open := type_open_ ?toplevel:None;
+  Typecore.type_implicit := type_implicit;
   Typecore.type_package := type_package;
   Typeimplicit.type_implicit_instance := type_implicit_instance;
   type_module_type_of_fwd := type_module_type_of

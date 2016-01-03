@@ -383,6 +383,7 @@ module MakeMap(Map : MapArgument) = struct
         Texp_poly (Some ( map_core_type ct )), loc, attrs
       | Texp_newtype _
       | Texp_open _
+      | Texp_implicit _
       | Texp_poly None -> exp_extra
 
 

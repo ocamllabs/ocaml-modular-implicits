@@ -331,6 +331,7 @@ and expression_desc =
            let! open M in E
            let open implicit M in E
         *)
+  | Pexp_implicit of implicit_description * expression
   | Pexp_extension of extension
         (* [%id] *)
 
