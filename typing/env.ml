@@ -1117,6 +1117,11 @@ let scrape_alias env mty = scrape_alias env mty
 
 (* Follow all aliases in a path *)
 
+(* CR-someday lwhite: why is this different from normalize path?
+   In fact why are they even necessery? Really aliases in the path
+   should be reflected (by strengthening) as aliases on the item
+   pointed to by the path.
+ *)
 let rec canonical_path env path =
   try
     let md = find_module path env in
@@ -1288,18 +1293,24 @@ let prefixed_implicits root sg =
 
 let register_as_implicit path env =
   let path = canonical_path env path in
-  let md = find_module path env in
-  let mty = !strengthen env md.md_type path in
-  let rec add acc params mty =
-    let acc = ((path, List.rev params, mty) :: acc) in
-    match scrape_alias env mty with
-    | Mty_functor (Mpar_implicit(id, param), res) ->
-        let params = (id, param) :: params in
-          add acc params res
-    | _ -> acc
-  in
-  let implicit_instances = add env.implicit_instances [] mty in
-    {env with implicit_instances}
+    try
+      let md = find_module path env in
+      let mty = !strengthen env md.md_type path in
+      let rec add acc params mty =
+        let acc = ((path, List.rev params, mty) :: acc) in
+        match scrape_alias env mty with
+        | Mty_functor (Mpar_implicit(id, param), res) ->
+            let params = (id, param) :: params in
+              add acc params res
+        | _ -> acc
+      in
+      let implicit_instances = add env.implicit_instances [] mty in
+        {env with implicit_instances}
+    with Not_found ->
+      (* Can happen if the environment is ill-formed (e.g. whilst printing types).
+         In these cases we do not care about the implicit scope anyway. *)
+         env
+
 
 let unregister_as_implicit path env =
   let path = canonical_path env path in
