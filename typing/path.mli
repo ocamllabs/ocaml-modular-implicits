@@ -17,6 +17,7 @@ type t =
   | Pdot of t * string * int
   | Papply of t * t * Asttypes.implicit_flag
 
+val dummy: t
 val same: t -> t -> bool
 val isfree: Ident.t -> t -> bool
 val binding_time: t -> int

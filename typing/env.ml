@@ -1202,7 +1202,8 @@ let signature_item_ident = function
 let rec prefix_idents root pos sub = function
   | [] -> ([], sub)
   | Sig_implicit _ :: rem ->
-      prefix_idents root pos sub rem
+      let (pl, final_sub) = prefix_idents root pos sub rem in
+      (Path.dummy :: pl, final_sub)
   | item :: rem ->
       let id   = signature_item_ident item in
       let size = signature_item_size item in

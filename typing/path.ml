@@ -17,6 +17,8 @@ type t =
 
 let nopos = -1
 
+let dummy = Pident Ident.dummy
+
 let rec same p1 p2 =
   match (p1, p2) with
     (Pident id1, Pident id2) -> Ident.same id1 id2
