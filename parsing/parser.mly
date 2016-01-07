@@ -676,8 +676,9 @@ structure_item:
       { mkstr(Pstr_class (List.rev $2)) }
   | CLASS TYPE class_type_declarations
       { mkstr(Pstr_class_type (List.rev $3)) }
-  | INCLUDE module_expr post_item_attributes
-      { mkstr(Pstr_include (Incl.mk $2 ~attrs:$3 ~loc:(symbol_rloc()))) }
+  | INCLUDE include_flag module_expr post_item_attributes
+      { mkstr(Pstr_include
+                (Incl.mk $3 ~flag:$2 ~attrs:$4 ~loc:(symbol_rloc()))) }
   | item_extension post_item_attributes
       { mkstr(Pstr_extension ($1, $2)) }
   | floating_attribute
@@ -793,8 +794,9 @@ signature_item:
       { mksig(Psig_open $1) }
   | implicit_statement
       { mksig(Psig_implicit $1) }
-  | INCLUDE module_type post_item_attributes %prec below_WITH
-      { mksig(Psig_include (Incl.mk $2 ~attrs:$3 ~loc:(symbol_rloc()))) }
+  | INCLUDE include_flag module_type post_item_attributes %prec below_WITH
+      { mksig(Psig_include
+                (Incl.mk $3 ~flag:$2 ~attrs:$4 ~loc:(symbol_rloc()))) }
   | CLASS class_descriptions
       { mksig(Psig_class (List.rev $2)) }
   | CLASS TYPE class_type_declarations
@@ -2147,6 +2149,10 @@ private_virtual_flags:
 open_flag:
   | IMPLICIT                                    { Open_implicit }
   | override_flag                               { Open_all $1 }
+;
+include_flag:
+  | /* empty */                                 { Include_all }
+  | IMPLICIT                                    { Include_implicit }
 ;
 override_flag:
     /* empty */                                 { Fresh }

@@ -351,6 +351,7 @@ and 'a include_infos =
     {
      incl_mod: 'a;
      incl_type: Types.signature;
+     incl_flag: include_flag;
      incl_loc: Location.t;
      incl_attributes: attribute list;
     }

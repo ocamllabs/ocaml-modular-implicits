@@ -332,9 +332,10 @@ module Imp = struct
 end
 
 module Incl = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) mexpr =
+  let mk ?(loc = !default_loc) ?(attrs = []) ?(flag = Include_all) mexpr =
     {
      pincl_mod = mexpr;
+     pincl_flag = flag;
      pincl_loc = loc;
      pincl_attributes = attrs;
     }

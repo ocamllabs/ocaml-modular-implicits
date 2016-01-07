@@ -90,6 +90,10 @@ let open_flag = function
   | Open_all x -> override x
   | Open_implicit -> " implicit"
 
+let include_flag = function
+  | Include_all -> ""
+  | Include_implicit -> " implicit"
+
 let implicit_flag = function
   | Nonimplicit -> ""
   | Implicit -> " implicit"
@@ -1045,7 +1049,8 @@ class printer  ()= object(self:'self)
            self#longident_loc od.popen_lid
            self#item_attributes od.popen_attributes
     | Psig_include incl ->
-        pp f "@[<hov2>include@ %a@]%a"
+        pp f "@[<hov2>include%s@ %a@]%a"
+          (include_flag incl.pincl_flag)
           self#module_type incl.pincl_mod
           self#item_attributes incl.pincl_attributes
     | Psig_modtype {pmtd_name=s; pmtd_type=md; pmtd_attributes=attrs} ->
@@ -1250,7 +1255,8 @@ class printer  ()= object(self:'self)
           self#value_description vd
           self#item_attributes vd.pval_attributes
     | Pstr_include incl ->
-        pp f "@[<hov2>include@ %a@]%a"
+        pp f "@[<hov2>include%s@ %a@]%a"
+           (include_flag incl.pincl_flag)
           self#module_expr incl.pincl_mod
           self#item_attributes incl.pincl_attributes
     | Pstr_recmodule decls -> (* 3.07 *)

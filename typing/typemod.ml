@@ -39,6 +39,7 @@ type error =
   | Scoping_pack of Longident.t * type_expr
   | Recursive_module_require_explicit_type
   | Argument_mismatch of module_parameter * module_argument
+  | Invalid_implicit_include of module_type
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -472,6 +473,16 @@ and approx_sig env ssg =
           let mty = approx_modtype env smty in
           let sg = Subst.signature Subst.identity
                      (extract_sig env smty.pmty_loc mty) in
+          let sg =
+            match sincl.pincl_flag with
+            | Include_all -> sg
+            | Include_implicit ->
+                try
+                  Mtype.implicits_only (Env.add_signature sg env) sg
+                with Not_found ->
+                  raise(Error(smty.pmty_loc, env,
+                              Invalid_implicit_include mty))
+          in
           let newenv = Env.add_signature sg env in
           sg @ approx_sig newenv srem
       | Psig_class sdecls | Psig_class_type sdecls ->
@@ -780,7 +791,19 @@ and transl_signature env sg =
             let tmty = transl_modtype env smty in
             let mty = tmty.mty_type in
             let sg = Subst.signature Subst.identity
-                       (extract_sig env smty.pmty_loc mty) in
+                       (extract_sig env smty.pmty_loc mty)
+            in
+            let sg =
+              match sincl.pincl_flag with
+              | Include_all -> sg
+              | Include_implicit ->
+                  try
+                    Mtype.implicits_only (Env.add_signature sg env) sg
+                  with Not_found ->
+                    raise(Error(smty.pmty_loc, env,
+                                Invalid_implicit_include mty))
+
+            in
             List.iter
               (check_sig_item type_names module_names modtype_names
                               item.psig_loc)
@@ -789,6 +812,7 @@ and transl_signature env sg =
             let incl =
               { incl_mod = tmty;
                 incl_type = sg;
+                incl_flag = sincl.pincl_flag;
                 incl_attributes = sincl.pincl_attributes;
                 incl_loc = sincl.pincl_loc;
               }
@@ -1595,6 +1619,16 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
         let sg = Subst.signature Subst.identity
             (extract_sig_open env smodl.pmod_loc modl.mod_type) in
         let sg =
+          match sincl.pincl_flag with
+          | Include_all -> sg
+          | Include_implicit ->
+              try
+                Mtype.implicits_only (Env.add_signature sg env) sg
+              with Not_found ->
+                raise(Error(smodl.pmod_loc, env,
+                            Invalid_implicit_include modl.mod_type))
+        in
+        let sg =
           match modl.mod_desc with
             Tmod_ident (p, _) when not (Env.is_functor_arg p env) ->
               Env.add_required_global (Path.head p);
@@ -1621,6 +1655,7 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr scope =
         let incl =
           { incl_mod = modl;
             incl_type = sg;
+            incl_flag = sincl.pincl_flag;
             incl_attributes = sincl.pincl_attributes;
             incl_loc = sincl.pincl_loc;
           }
@@ -2034,6 +2069,12 @@ let report_error ppf = function
       | Mpar_applicative _, Pmarg_applicative _ -> assert false
       | Mpar_implicit _, Pmarg_implicit _ -> assert false
     end
+  | Invalid_implicit_include mty ->
+      fprintf ppf
+        "@[The implicits in@ %a@ \
+           contain references to non-implicit components \
+           which cannot be removed.@]" modtype mty
+
 
 
 let report_error env ppf err =

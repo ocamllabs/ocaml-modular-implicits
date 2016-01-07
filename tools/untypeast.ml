@@ -85,6 +85,7 @@ and untype_structure_item item =
              list)
     | Tstr_include incl ->
         Pstr_include {pincl_mod = untype_module_expr incl.incl_mod;
+                      pincl_flag = incl.incl_flag;
                       pincl_attributes = incl.incl_attributes;
                       pincl_loc = incl.incl_loc;
                      }
@@ -433,6 +434,7 @@ and untype_signature_item item =
         Psig_implicit (untype_implicit_description imp)
     | Tsig_include incl ->
         Psig_include {pincl_mod = untype_module_type incl.incl_mod;
+                      pincl_flag = incl.incl_flag;
                       pincl_attributes = incl.incl_attributes;
                       pincl_loc = incl.incl_loc;
                      }

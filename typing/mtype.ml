@@ -413,3 +413,31 @@ let remove_aliases env sg =
   (* PathSet.iter (fun p -> Format.eprintf "%a@ " Printtyp.path p) excl;
   Format.eprintf "@."; *)
   remove_aliases env excl sg
+
+(* Restrict a signature to its implicit components. Raises [Not_found]
+if references to other elements in the signature cannot be removed. *)
+let implicits_only env sg =
+  let rec extract_implicits_and_module_ids imps mids = function
+    | [] -> List.rev imps, mids
+    | Sig_implicit(imp, _) :: rest ->
+        extract_implicits_and_module_ids (imp :: imps) mids rest
+    | Sig_module(mid, _, _, _) :: rest ->
+        extract_implicits_and_module_ids imps (mid :: mids) rest
+    | _ :: rest ->
+        extract_implicits_and_module_ids imps mids rest
+  in
+  let imps, mids = extract_implicits_and_module_ids [] [] sg in
+  List.map
+    (fun imp ->
+       let imp =
+         let path = imp.imp_path in
+         let free = List.exists (fun mid -> Path.isfree mid path) mids in
+         if free then
+           let path = Env.normalize_path None env path in
+           let free = List.exists (fun mid -> Path.isfree mid path) mids in
+             if free then raise Not_found
+             else { imp with imp_path = path }
+         else imp
+       in
+         Sig_implicit(imp, Timps_standalone))
+    imps

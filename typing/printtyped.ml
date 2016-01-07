@@ -95,6 +95,11 @@ let fmt_open_flag f x =
   | Open_implicit -> fprintf f "Open_implicit";
 ;;
 
+let fmt_include_flag f x =
+  match x with
+  | Include_all -> fprintf f "Include_all";
+  | Include_implicit -> fprintf f "Include_implicit";
+;;
 
 let fmt_closed_flag f x =
   match x with
@@ -677,7 +682,8 @@ and signature_item i ppf x =
            fmt_path od.open_path;
       attributes i ppf od.open_attributes
   | Tsig_include incl ->
-      line i ppf "Psig_include\n";
+      line i ppf "Psig_include %a\n"
+           fmt_include_flag incl.incl_flag;
       attributes i ppf incl.incl_attributes;
       module_type i ppf incl.incl_mod
   | Tsig_implicit imp ->
@@ -816,7 +822,8 @@ and structure_item i ppf x =
       line i ppf "Pstr_class_type\n";
       list i class_type_declaration ppf (List.map (fun (_, _, cl) -> cl) l);
   | Tstr_include incl ->
-      line i ppf "Pstr_include";
+      line i ppf "Pstr_include %a"
+           fmt_include_flag incl.incl_flag;
       attributes i ppf incl.incl_attributes;
       module_expr i ppf incl.incl_mod;
   | Tstr_implicit imp ->

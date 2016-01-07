@@ -88,6 +88,12 @@ let fmt_open_flag f x =
   | Open_implicit -> fprintf f "Open_implicit";
 ;;
 
+let fmt_include_flag f x =
+  match x with
+  | Include_all -> fprintf f "Include_all";
+  | Include_implicit -> fprintf f "Include_implicit";
+;;
+
 let fmt_closed_flag f x =
   match x with
   | Closed -> fprintf f "Closed"
@@ -697,7 +703,8 @@ and signature_item i ppf x =
         fmt_longident_loc od.popen_lid;
       attributes i ppf od.popen_attributes
   | Psig_include incl ->
-      line i ppf "Psig_include\n";
+      line i ppf "Psig_include %a\n"
+           fmt_include_flag incl.pincl_flag;
       module_type i ppf incl.pincl_mod;
       attributes i ppf incl.pincl_attributes
   | Psig_class (l) ->
@@ -837,7 +844,8 @@ and structure_item i ppf x =
       line i ppf "Pstr_class_type\n";
       list i class_type_declaration ppf l;
   | Pstr_include incl ->
-      line i ppf "Pstr_include";
+      line i ppf "Pstr_include %a"
+           fmt_include_flag incl.pincl_flag;
       attributes i ppf incl.pincl_attributes;
       module_expr i ppf incl.pincl_mod
   | Pstr_extension ((s, arg), attrs) ->

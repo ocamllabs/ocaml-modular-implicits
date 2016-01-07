@@ -733,6 +733,7 @@ and implicit_kind =
 and 'a include_infos =
     {
      pincl_mod: 'a;
+     pincl_flag: include_flag;
      pincl_loc: Location.t;
      pincl_attributes: attributes;
     }
