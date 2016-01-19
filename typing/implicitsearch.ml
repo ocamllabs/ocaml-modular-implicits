@@ -30,6 +30,17 @@ let rec list_filtermap f = function
 let string_of_path path =
   Path.to_longident path |> Longident.flatten |> String.concat "."
 
+let has_suffix ~suffix str =
+  let l = String.length str and n = String.length suffix in
+  l >= n &&
+  try
+    for i = 0 to n - 1 do
+      if str.[l - n + i] <> suffix.[i] then
+        raise Exit
+    done;
+    true
+  with Exit -> false
+
 let papply path arg = Path.Papply (path, arg, Asttypes.Implicit)
 
 (** [goal] is the point from which a search starts *)
@@ -303,8 +314,13 @@ module Constraints = struct
         acc
       else
         let path = List.map fst path in
+        let rec is_row = function
+          | [t] -> has_suffix ~suffix:"#row" t
+          | _ :: xs -> is_row xs
+          | [] -> assert false
+        in
         let cstrs, hkt = acc in
-        if eqn.eq_lhs_params = [] then
+        if eqn.eq_lhs_params = [] && not (is_row path) then
           ((path, eqn.eq_rhs) :: cstrs), hkt
         else
           cstrs, ((eqn.eq_lhs, eqn.eq_rhs) :: hkt) in
