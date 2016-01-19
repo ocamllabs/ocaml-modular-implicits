@@ -46,9 +46,10 @@ type pending_implicit = {
   implicit_argument: argument;
 }
 
-(*val env : Env.t
-  val unlink_on
-  : Ident.t -> (type_expr -> type_expr -> unit) option*)
+(*
+  val env : Env.t
+  val unlink_on : Ident.t -> (type_expr -> type_expr -> unit) option
+*)
 let unlink env unlink_on =
   let path_table = Hashtbl.create 7 in
 

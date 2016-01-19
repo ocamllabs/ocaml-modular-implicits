@@ -32,31 +32,34 @@ let string_of_path path =
 
 let papply path arg = Path.Papply (path, arg, Asttypes.Implicit)
 
-(** [target] is the point from which a search starts *)
-type target = {
+(** [goal] is the point from which a search starts *)
+type goal = {
   (* The module type we try to find an instance for *)
-  target_type : Types.module_type;
-  (* The identifier to which bound the result of the search to.
+  goal_type : Types.module_type;
+  (* The identifier to which the result of the search will be bound.
      E.g we are trying to fill the hole in:
-       module %target_id : %target_type = _ *)
-  target_id   : Ident.t;
+       module %goal_id : %goal_type = _ *)
+  goal_var : Ident.t;
+
+  (* Constraints that should be satisfied by a solution.  That is when a
+     concrete module is bound to goal_var, equalities in goal_constraints
+     should be true. *)
+  goal_constraints : (type_expr * type_expr) list;
 
   (* A unique identifier that will be used for termination checking.  When the
-     target is the argument to a functor instantiation, if this functor is
+     goal is the argument to a functor instantiation, if this functor is
      instantiated multiple times we enforce that the constraints on the
      argument are stronger.
 
      Pair (Arg_1) (Pair (Arg_1') (Arg_2))
 
-     Arg_1 and Arg_1' targets will have a different target_id but the same
-     target_uid.  We check that constraints on Arg_1' are stronger than those
+     Arg_1 and Arg_1' targets will have a different goal_var but the same
+     goal_uid.  We check that constraints on Arg_1' are stronger than those
      on Arg_1'.
 
      Note: This is also true of (Pair (Arg_1') (Arg_2)) and Arg_2, used as
      second arguments to Pair.  *)
-  target_uid  : Ident.t;
-
-  target_hkt  : (type_expr * type_expr) list;
+  goal_termination_id : Ident.t;
 }
 
 (** Constraints are a list of equations of the form [path] = [type_expr].
@@ -288,15 +291,15 @@ module Constraints = struct
     in
     List.map flatten_cstr cstrs
 
-  (* Apply a list of equations to a target.
+  (* Apply a list of equations to a goal.
      Types referred to by paths *must* be abstract. *)
-  let target
-    : Env.t -> target -> equality_equation list -> target
-    = fun env target eqns ->
+  let goal
+    : Env.t -> goal -> equality_equation list -> goal
+    = fun env goal eqns ->
     (* [env] is needed only to expand module type names *)
     let extract_constraint acc eqn =
       let id, path = Path.flatten eqn.eq_lhs_path in
-      if not (Ident.same id target.target_id) then
+      if not (Ident.same id goal.goal_var) then
         acc
       else
         let path = List.map fst path in
@@ -306,50 +309,10 @@ module Constraints = struct
         else
           cstrs, ((eqn.eq_lhs, eqn.eq_rhs) :: hkt) in
     let cstrs, hkt = List.fold_left extract_constraint ([],[]) eqns in
-    let mty = apply_abstract env target.target_type cstrs in
-    let target = {target with target_type = mty;
-                   target_hkt = hkt @ target.target_hkt} in
-    target
-
-  (* Apply a list of equations to a list of targets.
-     Types referred to by paths *must* be abstract. *)
-  (* DEPRECATED *)
-  let targets
-    : Env.t -> target list -> equality_equation list -> target list
-    = fun env targets eqns ->
-    (* [env] is needed only to expand module type names *)
-    let register_constraint table eqn =
-      let id, path = Path.flatten eqn.eq_lhs_path in
-      let path = List.map fst path in
-      let cstrs, hkt =
-        try Ident.find_same id table
-        with Not_found -> [], []
-      in
-      let cstrs' =
-        if eqn.eq_lhs_params = [] then
-          ((path, eqn.eq_rhs) :: cstrs), hkt
-        else
-          cstrs, ((eqn.eq_lhs, eqn.eq_rhs) :: hkt)
-      in
-      Ident.add id cstrs' table
-    in
-    let constraint_table =
-      List.fold_left register_constraint Ident.empty eqns in
-    let constraint_target (targets,env) target =
-      let target =
-        try
-          let cstrs, hkt = Ident.find_same target.target_id constraint_table in
-          let mty = apply_abstract env target.target_type cstrs in
-          {target with target_type = mty;
-                       target_hkt = hkt @ target.target_hkt}
-        with Not_found ->
-          target
-      in
-      let env = Env.add_module target.target_id target.target_type env in
-      (target :: targets, env)
-    in
-    let rtargets, _env = List.fold_left constraint_target ([],env) targets in
-    List.rev rtargets
+    let mty = apply_abstract env goal.goal_type cstrs in
+    let goal = {goal with goal_type = mty;
+                   goal_constraints = hkt @ goal.goal_constraints} in
+    goal
 
 end
 
@@ -395,7 +358,7 @@ let remove_type_variables () =
         equations
   ) variables*)
 
-let target_of_pending inst =
+let goal_of_pending inst =
   let env = inst.implicit_env in
   let ident = inst.implicit_id in
   let path, nl, tl = inst.implicit_type in
@@ -436,24 +399,26 @@ let target_of_pending inst =
     hkt;
   let id = inst.implicit_id in
   !variables,
-  {target_type = mty; target_id = id; target_uid = id; target_hkt = hkt}
+  {goal_type = mty;
+   goal_var = id;
+   goal_termination_id = id;
+   goal_constraints = hkt}
 
 (** Termination checking **)
 module Termination : sig
 
-  (* A termination criterion is a set of constraints applying on a target_uid.
-     It's satisfied in a given state iff its constraints are stronger than
-     those found the state. *)
+  (* A termination criterion is a set of constraints applying on a
+     goal_termination_id.
+     It's satisfied in a search state iff its constraints are stronger than
+     those found the search state. *)
   type t
   type state
   val initial : state
 
-  (* From a list of target and constraints applying on those targets,
-     returns a termination criterion for each target *)
+  (* From a goal and an initial list of constraints,
+     build a termination criterion *)
   val normalize_equations
-    : target -> equality_equation list -> t
-  val normalize_equations'
-    : target list -> equality_equation list -> t list
+    : goal -> equality_equation list -> t
 
   (* [check env t state] ensures that termination criterion for [t] is
      satisfied in [state] and returns the stronger state.
@@ -464,7 +429,7 @@ module Termination : sig
 
   val check : Env.t -> t -> state -> state
 
-  val check_target : Env.t -> target -> equality_equation list -> state -> state
+  val check_goal : Env.t -> goal -> equality_equation list -> state -> state
 end = struct
 
   (* Set of equations used for computing termination criterion.
@@ -581,17 +546,17 @@ end = struct
   let initial = Ident.empty
 
   let normalize_equations
-      (* Target *)
-      (target : target)
-      (* All path must refer to some target_id *)
+      (* Goal *)
+      (goal : goal)
+      (* All path must refer to some goal_var *)
       (eqns : equality_equation list)
-      (* List of equations applying to target *)
+      (* List of equations applying to goal *)
     : t =
-    (* Add equations to target_id *)
+    (* Add equations to goal_var *)
     let eqns = list_filtermap
         (fun eqn ->
           let id, path = Path.flatten eqn.eq_lhs_path in
-          if not (Ident.same target.target_id id) then
+          if not (Ident.same goal.goal_var id) then
             None
           else
             let path = List.map fst path in
@@ -600,42 +565,7 @@ end = struct
     let eqns = List.sort (fun (a,_) (b,_) -> compare a b) eqns in
     let eqns = merge_eqns eqns in
     assert (wellformed_eqns eqns);
-    (target.target_uid, eqns)
-
-  (* DEPRECATED *)
-  let normalize_equations'
-      (* List of targets *)
-      (targets : target list)
-      (* All path must refer to some target_id *)
-      (eqns : equality_equation list)
-      (* List of equations applying to each target *)
-    : t list =
-    (* Map target_id to target_uid *)
-    let table = List.fold_left
-        (fun table {target_id; target_uid} ->
-           Ident.add target_id (target_uid,ref []) table)
-        Ident.empty targets
-    in
-    (* Add equations to target_id *)
-    List.iter
-      (fun eqn ->
-         try
-           let id, path = Path.flatten eqn.eq_lhs_path in
-           let _uid, eqns = Ident.find_same id table in
-           let path = List.map fst path in
-           eqns := (path, [eqn.eq_lhs_params, eqn.eq_rhs]) :: !eqns
-         with Not_found -> assert false)
-      eqns;
-    List.map
-      (fun target ->
-         try
-           let uid, eqns = Ident.find_same target.target_id table in
-           let eqns = List.sort (fun (a,_) (b,_) -> compare a b) !eqns in
-           let eqns = merge_eqns eqns in
-           assert (wellformed_eqns eqns);
-           (uid, eqns)
-         with Not_found -> assert false)
-      targets
+    (goal.goal_termination_id, eqns)
 
   let explain success ppf (id,eqns,eqns') =
     let print_ppath ppf (path,params) = match params with
@@ -679,8 +609,8 @@ end = struct
     end;
     Ident.add uid eqns stack
 
-  let check_target env target eqns stack =
-    let t = normalize_equations target eqns in
+  let check_goal env goal eqns stack =
+    let t = normalize_equations goal eqns in
     check env t stack
 end
 
@@ -697,7 +627,7 @@ let report_error msg exn =
 
 module Search : sig
 
-  type candidate = Path.t * target list * Types.module_type
+  type candidate = Path.t * goal list * Types.module_type
 
   type query
   type partial
@@ -708,7 +638,7 @@ module Search : sig
 
   val all_candidates : query -> candidate list
 
-  val start : Env.t -> Ident.t list -> target -> query
+  val start : Env.t -> Ident.t list -> goal -> query
 
   type outcome = [
     | `Done of result
@@ -720,13 +650,13 @@ module Search : sig
 
 end = struct
 
-  type candidate = Path.t * target list * Types.module_type
+  type candidate = Path.t * goal list * Types.module_type
 
   type 'a state =
     {
       payload: 'a;
       termination: Termination.state;
-      target: target;
+      goal: goal;
       env: Env.t;
 
       (* List of partials paths being constructed, only for debug purpose *)
@@ -751,7 +681,7 @@ end = struct
   type partial =
     (* Intermediate result: a path has been found, but some arguments are
        missing and need to be applied *)
-    (Path.t * target list) state
+    (Path.t * goal list) state
 
   type result =
     (* Final result: the path points to a module with the desired type *)
@@ -766,7 +696,7 @@ end = struct
     | `Step of partial * query
   ]
 
-  let start env vars target =
+  let start env vars goal =
     let level = get_current_level () in
     let env = List.fold_left (fun env variable ->
         Env.add_type ~check:false variable
@@ -781,7 +711,7 @@ end = struct
     {
       payload = ();
       termination = Termination.initial;
-      target = target;
+      goal = goal;
       env = env;
 
       debug_path = [];
@@ -798,13 +728,13 @@ end = struct
           let param' = Subst.modtype s param in
           let id' = Ident.rename id in
           let s' = Subst.add_module id (Path.Pident id') s in
-          let target =
-            { target_uid = id;
-              target_id = id';
-              target_type = param';
-              target_hkt = []; }
-          in
-          let acc' = target :: acc in
+          let goal = {
+            goal_var = id';
+            goal_type = param';
+            goal_constraints = [];
+            goal_termination_id = id;
+          } in
+          let acc' = goal :: acc in
             loop path res s' acc' rest
     in
       loop path mty Subst.identity [] params
@@ -827,7 +757,7 @@ end = struct
 
   exception Invalid_candidate
 
-  let step0 state (path, sub_targets, candidate_mty) =
+  let step0 state (path, sub_goals, candidate_mty) =
     state.eq_var := state.eq_initial;
     let rec print_paths ppf = function
       | [] -> Format.pp_print_string ppf "_";
@@ -835,21 +765,21 @@ end = struct
     in
     let print_paths ppf ps = print_paths ppf (List.rev ps) in
     printf "%a <- %a\n" print_paths state.debug_path Printtyp.path path;
-    let target = state.target in
+    let goal = state.goal in
     (* Generate coercion. if this succeeds this produce equations in eq_var *)
     let eq_table, env = List.fold_left
-        (fun (eq_table, env) sub_target ->
+        (fun (eq_table, env) sub_goal ->
           printf "Binding %a with type %a\n%!"
-            Printtyp.ident sub_target.target_id
-            Printtyp.modtype sub_target.target_type;
-          Tbl.add sub_target.target_id state.eq_var eq_table,
-          Env.add_module sub_target.target_id sub_target.target_type env)
-        (state.eq_table, state.env) sub_targets
+            Printtyp.ident sub_goal.goal_var
+            Printtyp.modtype sub_goal.goal_type;
+          Tbl.add sub_goal.goal_var state.eq_var eq_table,
+          Env.add_module sub_goal.goal_var sub_goal.goal_type env)
+        (state.eq_table, state.env) sub_goals
     in
-    let env = Env.add_module target.target_id candidate_mty env in
+    let env = Env.add_module goal.goal_var candidate_mty env in
     Ctype.with_equality_equations eq_table
       (fun () ->
-        let tyl, tvl = List.split target.target_hkt in
+        let tyl, tvl = List.split goal.goal_constraints in
         begin try
           if tyl <> [] then
             printf "Checkinq equalities between hkt constraints:\n%!";
@@ -897,7 +827,7 @@ end = struct
           raise Invalid_candidate
         end;
         let _ : module_coercion =
-          Includemod.modtypes env candidate_mty target.target_type
+          Includemod.modtypes env candidate_mty goal.goal_type
         in
         ());
     let rec neweqns = function
@@ -924,19 +854,20 @@ end = struct
        functor F (X : T) (Y : S) = ...
 
        we might have type t = Y.t X.t as a constraint on X *)
-    let eq_table = cleanup_equations target.target_id eq_table in
+    let eq_table = cleanup_equations goal.goal_var eq_table in
 
     (* Keep new equations potentially added to top variables *)
     let state = {state with eq_initial = eq_final; env; eq_table = eq_table} in
-    match sub_targets with
+    match sub_goals with
     | [] ->
       `Done {state with payload = path}
-    | target :: sub_targets ->
+    | goal :: sub_goals ->
       let debug_path = state.debug_path in
-      let partial = {state with payload = (path, sub_targets)} in
-      let target = Constraints.target state.env target eq_final in
-      let termination = Termination.check_target state.env target eq_final state.termination in
-      let state = {state with target; termination; debug_path = path :: debug_path} in
+      let partial = {state with payload = (path, sub_goals)} in
+      let goal = Constraints.goal state.env goal eq_final in
+      let termination =
+        Termination.check_goal state.env goal eq_final state.termination in
+      let state = {state with goal; termination; debug_path = path :: debug_path} in
       `Step (partial, state)
 
   let rec step state = function
@@ -954,28 +885,29 @@ end = struct
         step state candidates
 
   let apply partial arg =
-    let partial_path, sub_targets = partial.payload in
+    let partial_path, sub_goals = partial.payload in
     let arg_path = arg.payload in
     let eq_initial = arg.eq_initial in
     let path = papply partial_path arg_path in
-    match sub_targets with
+    match sub_goals with
     | [] ->
       let state = {partial with
                   (* We get the equations from the argument but keep
                       termination state from the parent *)
                     payload = path; eq_initial} in
       `Done state
-    | target :: sub_targets ->
-      let partial = {partial with payload = (path, sub_targets) } in
+    | goal :: sub_goals ->
+      let partial = {partial with payload = (path, sub_goals) } in
       let md = Env.find_module path arg.env in
       (* The original module declaration might be implicit, we want to avoid
          rebinding implicit *)
       let md = {md with md_implicit = Asttypes.Nonimplicit} in
-      let target = Constraints.target arg.env target eq_initial in
-      let termination = Termination.check_target arg.env target eq_initial partial.termination in
-      let env = Env.add_module_declaration target.target_id md arg.env in
+      let goal = Constraints.goal arg.env goal eq_initial in
+      let termination =
+        Termination.check_goal arg.env goal eq_initial partial.termination in
+      let env = Env.add_module_declaration goal.goal_var md arg.env in
       let debug_path = path :: partial.debug_path in
-      let arg = {arg with payload = (); target; debug_path; termination; env} in
+      let arg = {arg with payload = (); goal; debug_path; termination; env} in
       `Step (partial, arg)
 end
 
@@ -1056,7 +988,7 @@ let rec canonical_path env path =
 
 let find_pending_instance inst =
   let snapshot = Btype.snapshot () in
-  let vars, target = target_of_pending inst in
+  let vars, goal = goal_of_pending inst in
   let env = inst.implicit_env in
   let env = List.fold_left (fun env (_ty,ident) ->
       (* Create a fake abstract type declaration for name. *)
@@ -1077,7 +1009,7 @@ let find_pending_instance inst =
     ) env vars
   in
   let loc = inst.implicit_loc in
-  let query = Search.start env (List.map snd vars) target in
+  let query = Search.start env (List.map snd vars) goal in
   try
     let solution = Solution.search query in
     let path = Solution.get solution in

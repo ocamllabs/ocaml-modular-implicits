@@ -3393,7 +3393,7 @@ let rec eqtype rename type_pairs subst env t1 t2 =
               && Tbl.mem (Path.head p1) !equality_equations
               && Tbl.mem (Path.head p2) !equality_equations ->
               let (tl, tr) =
-                (* Base-kinded have priorioties *)
+                (* Base-kinded have priorities *)
                 if (tl1 = [] && tl2 <> []) then
                   (t1', t2')
                 else if (tl2 = [] && tl1 <> []) then
