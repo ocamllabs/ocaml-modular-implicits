@@ -41,7 +41,7 @@ let functor_path path param =
   | Some p, Tmpar_generative -> Some p
   | Some p, Tmpar_applicative(id, _, _) ->
       Some(Papply(p, Pident id, Nonimplicit))
-  | Some p, Tmpar_implicit(id, _, _) ->
+  | Some p, Tmpar_implicit(_, id, _, _) ->
       Some(Papply(p, Pident id, Implicit))
 
 let field_path path field =
@@ -347,7 +347,7 @@ let rec transl_module cc rootpath mexp =
         match param with
         | Tmpar_generative -> Ident.create "()"
         | Tmpar_applicative(id, _, _) -> id
-        | Tmpar_implicit(id, _, _) -> id
+        | Tmpar_implicit(_, id, _, _) -> id
       in
       oo_wrap mexp.mod_env true
         (function

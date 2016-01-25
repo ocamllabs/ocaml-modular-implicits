@@ -364,9 +364,9 @@ let rec modtype s = function
           let id' = Ident.rename id in
             Mty_functor(Mpar_applicative(id', modtype s mty),
                         modtype (add_module id (Pident id') s) res)
-      | Mpar_implicit(id, mty) ->
+      | Mpar_implicit(virt, id, mty) ->
           let id' = Ident.rename id in
-            Mty_functor(Mpar_implicit(id', modtype s mty),
+            Mty_functor(Mpar_implicit(virt, id', modtype s mty),
                         modtype (add_module id (Pident id') s) res)
     end
   | Mty_alias p ->

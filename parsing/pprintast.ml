@@ -941,8 +941,8 @@ class printer  ()= object(self:'self)
     | Pmpar_generative -> pp f "()"
     | Pmpar_applicative(s, mty) ->
         pp f "(%s:%a)" s.txt self#module_type mty
-    | Pmpar_implicit(s, mty) ->
-        pp f "{%s:%a}" s.txt self#module_type mty
+    | Pmpar_implicit(v, s, mty) ->
+        pp f "{%a%s:%a}" self#virtual_flag v s.txt self#module_type mty
 
   method module_argument f x =
     match x with

@@ -516,8 +516,8 @@ and untype_module_parameter = function
   | Tmpar_generative -> Pmpar_generative
   | Tmpar_applicative(_id, name, mty) ->
       Pmpar_applicative(name, untype_module_type mty)
-  | Tmpar_implicit(_id, name, mty) ->
-      Pmpar_implicit(name, untype_module_type mty)
+  | Tmpar_implicit(virt, _id, name, mty) ->
+      Pmpar_implicit(virt, name, untype_module_type mty)
 
 and untype_module_argument = function
   | Tmarg_generative -> Pmarg_generative

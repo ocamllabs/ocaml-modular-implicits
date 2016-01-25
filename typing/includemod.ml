@@ -284,19 +284,20 @@ and try_modtypes env cxt subst mty1 mty2 =
               (Tcoerce_none, Tcoerce_none) -> Tcoerce_none
             | _ -> Tcoerce_functor(cc_arg, cc_res)
         end
-      | Mpar_implicit(id1, arg1), Mpar_implicit(id2, arg2) -> begin
-          let arg2' = Subst.modtype subst arg2 in
-          let cc_arg =
-            modtypes env (Param (Implicit id1)::cxt) Subst.identity arg2' arg1
-          in
-          let cc_res =
-            modtypes (Env.add_module id1 arg2' env) (Body (Implicit id1)::cxt)
-                     (Subst.add_module id2 (Pident id1) subst) res1 res2
-          in
+      | Mpar_implicit(v1, id1, arg1), Mpar_implicit(v2, id2, arg2) when v1 = v2 ->
+          begin
+            let arg2' = Subst.modtype subst arg2 in
+            let cc_arg =
+              modtypes env (Param (Implicit id1)::cxt) Subst.identity arg2' arg1
+            in
+            let cc_res =
+              modtypes (Env.add_module id1 arg2' env) (Body (Implicit id1)::cxt)
+                (Subst.add_module id2 (Pident id1) subst) res1 res2
+            in
             match (cc_arg, cc_res) with
               (Tcoerce_none, Tcoerce_none) -> Tcoerce_none
             | _ -> Tcoerce_functor(cc_arg, cc_res)
-        end
+          end
       | (_, _) -> raise Dont_match
     end
   | (_, _) ->

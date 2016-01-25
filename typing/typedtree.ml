@@ -187,8 +187,8 @@ and module_expr =
    }
 
 and module_type_constraint =
-  Tmodtype_implicit
-| Tmodtype_explicit of module_type
+    Tmodtype_implicit
+  | Tmodtype_explicit of module_type
 
 and module_expr_desc =
     Tmod_ident of Path.t * Longident.t loc
@@ -202,7 +202,7 @@ and module_expr_desc =
 and module_parameter =
   | Tmpar_generative
   | Tmpar_applicative of Ident.t * string loc * module_type
-  | Tmpar_implicit of Ident.t * string loc * module_type
+  | Tmpar_implicit of virtual_flag * Ident.t * string loc * module_type
 
 and module_argument =
   | Tmarg_generative

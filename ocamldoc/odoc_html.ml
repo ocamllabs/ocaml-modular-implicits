@@ -1433,7 +1433,7 @@ class html =
     method html_of_module_parameter_type b m_name p =
       match p.mp_type with
       | Mp_generative -> bs b "<code>()</code>"
-      | Mp_applicative mty | Mp_implicit mty ->
+      | Mp_applicative mty | Mp_implicit (_,mty) ->
           self#html_of_module_type b m_name ~code: p.mp_type_code mty
 
     (** Generate a file containing the module type in the given file name. *)

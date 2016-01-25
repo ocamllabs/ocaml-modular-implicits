@@ -766,8 +766,9 @@ and module_parameter i ppf x =
   | Pmpar_applicative(s, mty) ->
       line i ppf "Pmarg_applicative %a\n" fmt_string_loc s;
       module_type i ppf mty
-  | Pmpar_implicit(s, mty) ->
-      line i ppf "Pmarg_implicit %a\n" fmt_string_loc s;
+  | Pmpar_implicit(v, s, mty) ->
+      line i ppf "Pmarg_implicit (%a %a)\n"
+        fmt_virtual_flag v fmt_string_loc s;
       module_type i ppf mty
 
 and module_argument i ppf x =

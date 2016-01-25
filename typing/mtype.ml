@@ -38,7 +38,7 @@ let rec strengthen env mty p =
     when !Clflags.applicative_functors ->
       let res' = strengthen env res (Papply(p, Pident id, Nonimplicit)) in
       Mty_functor(param, res')
-  | Mty_functor(Mpar_implicit(id, _) as param, res)
+  | Mty_functor(Mpar_implicit(_, id, _) as param, res)
     when !Clflags.applicative_functors ->
       let res' = strengthen env res (Papply(p, Pident id, Implicit)) in
       Mty_functor(param, res')
@@ -128,8 +128,8 @@ let nondep_supertype env mid mty =
                           nondep_mty
                             (Env.add_module ~arg:true id arg env)
                             va res)
-          | Mpar_implicit(id, arg) ->
-              Mty_functor(Mpar_implicit(id, nondep_mty env var_inv arg),
+          | Mpar_implicit(virt, id, arg) ->
+              Mty_functor(Mpar_implicit(virt, id, nondep_mty env var_inv arg),
                           nondep_mty
                             (Env.add_module ~arg:true id arg env)
                             va res)

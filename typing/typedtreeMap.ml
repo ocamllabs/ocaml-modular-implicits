@@ -511,8 +511,8 @@ module MakeMap(Map : MapArgument) = struct
     | Tmpar_generative -> Tmpar_generative
     | Tmpar_applicative(id, name, mtype) ->
         Tmpar_applicative(id, name, map_module_type mtype)
-    | Tmpar_implicit(id, name, mtype) ->
-        Tmpar_implicit(id, name, map_module_type mtype)
+    | Tmpar_implicit(virt, id, name, mtype) ->
+        Tmpar_implicit(virt, id, name, map_module_type mtype)
 
   and map_module_argument marg =
     match marg with

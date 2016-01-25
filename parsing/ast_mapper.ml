@@ -210,8 +210,8 @@ module MT = struct
     | Pmpar_generative -> Pmpar_generative
     | Pmpar_applicative(s, mty) ->
         Pmpar_applicative(map_loc sub s, sub.module_type sub mty)
-    | Pmpar_implicit(s, mty) ->
-        Pmpar_implicit(map_loc sub s, sub.module_type sub mty)
+    | Pmpar_implicit(flag, s, mty) ->
+        Pmpar_implicit(flag, map_loc sub s, sub.module_type sub mty)
 
   let map sub {pmty_desc = desc; pmty_loc = loc; pmty_attributes = attrs} =
     let open Mty in

@@ -276,7 +276,7 @@ type module_type =
 and module_parameter =
   | Mpar_generative
   | Mpar_applicative of Ident.t * module_type
-  | Mpar_implicit of Ident.t * module_type
+  | Mpar_implicit of virtual_flag * Ident.t * module_type
 
 and signature = signature_item list
 

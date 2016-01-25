@@ -201,7 +201,7 @@ and module_expr_desc =
 and module_parameter =
   | Tmpar_generative
   | Tmpar_applicative of Ident.t * string loc * module_type
-  | Tmpar_implicit of Ident.t * string loc * module_type
+  | Tmpar_implicit of virtual_flag * Ident.t * string loc * module_type
 
 and module_argument =
   | Tmarg_generative

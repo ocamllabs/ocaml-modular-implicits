@@ -477,7 +477,7 @@ module MakeIterator(Iter : IteratorArgument) : sig
       match mparam with
       | Tmpar_generative -> ()
       | Tmpar_applicative(_, _, mtype) -> iter_module_type mtype
-      | Tmpar_implicit(_, _, mtype) -> iter_module_type mtype
+      | Tmpar_implicit(_, _, _, mtype) -> iter_module_type mtype
 
     and iter_module_argument marg =
       match marg with

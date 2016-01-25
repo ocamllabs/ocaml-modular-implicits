@@ -64,7 +64,7 @@ let simpl_module_type ?code t =
     match p with
     | Types.Mpar_generative -> Types.Mpar_generative
     | Types.Mpar_applicative(id, mt) -> Types.Mpar_applicative(id, iter mt)
-    | Types.Mpar_implicit(id, mt) -> Types.Mpar_implicit(id, iter mt)
+    | Types.Mpar_implicit(v, id, mt) -> Types.Mpar_implicit(v, id, iter mt)
   in
   iter t
 

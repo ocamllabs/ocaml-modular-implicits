@@ -1082,7 +1082,7 @@ let pack_implicit inst path =
                 match param with
                 | Mpar_generative -> assert false
                 | Mpar_applicative(param, mty_param)
-                | Mpar_implicit(param, mty_param) ->
+                | Mpar_implicit(_, param, mty_param) ->
                     param, mty_param
               in
               let coercion = Includemod.modtypes env marg.mod_type mty_param in

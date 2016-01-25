@@ -432,24 +432,23 @@ class virtual to_text =
           [ Newline ;
             Bold [Raw Odoc_messages.parameters] ;
             Raw ":" ;
-            List
-              (List.map
-                 (fun (p, desc_opt) ->
-                   begin match p.mp_type with
-                   | Mp_generative -> [Raw ""]
-                   | Mp_applicative mty ->
-                       [Code (p.mp_name^" : ")] @
-                       (self#text_of_module_type mty)
-                   | Mp_implicit mty ->
-                       [Code (p.mp_name^" : ")] @
-                       (self#text_of_module_type mty)
-                   end @
-                   (match desc_opt with
-                     None -> []
-                   | Some t -> (Raw " ") :: t)
-                 )
-                 l
-              )
+            let text_of_module_parameter (p, desc_opt) =
+              begin match p.mp_type with
+              | Mp_generative -> [Raw ""]
+              | Mp_applicative mty ->
+                  [Code (p.mp_name^" : ")] @
+                  (self#text_of_module_type mty)
+              | Mp_implicit (v, mty) ->
+                  let v = if v = Asttypes.Virtual then "virtual " else "" in
+                  [Code (v ^ p.mp_name ^ " : ")] @
+                  (self#text_of_module_type mty)
+              end @
+              begin match desc_opt with
+                None -> []
+              | Some t -> (Raw " ") :: t
+              end
+            in
+            List (List.map text_of_module_parameter l)
           ]
 
 (**/**)

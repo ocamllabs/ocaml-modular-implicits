@@ -10,6 +10,7 @@
 (*                                                                     *)
 (***********************************************************************)
 
+open Asttypes
 open Format
 open Outcometree
 
@@ -42,6 +43,10 @@ let value_ident ppf name =
     fprintf ppf "( %s )" name
   else
     pp_print_string ppf name
+
+let virtual_flag ppf = function
+  | Virtual -> fprintf ppf "virtual@;"
+  | Concrete -> ()
 
 (* Values *)
 
@@ -383,8 +388,9 @@ and print_out_module_parameter ppf =
       fprintf ppf "()"
   | Ompar_applicative(name, mty) ->
       fprintf ppf "(%s : %a)" name print_out_module_type mty
-  | Ompar_implicit(name, mty) ->
-      fprintf ppf "{%s : %a}" name print_out_module_type mty
+  | Ompar_implicit(virt, name, mty) ->
+      fprintf ppf "{%a%s : %a}"
+        virtual_flag virt name print_out_module_type mty
 
 and print_out_module_type ppf =
   function

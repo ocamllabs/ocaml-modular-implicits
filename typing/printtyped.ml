@@ -741,8 +741,9 @@ and module_parameter i ppf x =
   | Tmpar_applicative(s, _, mty) ->
       line i ppf "Pmarg_applicative \"%a\"\n" fmt_ident s;
       module_type i ppf mty
-  | Tmpar_implicit(s, _, mty) ->
-      line i ppf "Pmarg_implicit \"%a\"\n" fmt_ident s;
+  | Tmpar_implicit(v, s, _, mty) ->
+      line i ppf "Pmarg_implicit (%a, \"%a\")\n"
+        fmt_virtual_flag v fmt_ident s;
       module_type i ppf mty
 
 and module_argument i ppf x =

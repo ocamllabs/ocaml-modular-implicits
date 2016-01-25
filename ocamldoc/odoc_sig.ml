@@ -1368,7 +1368,7 @@ module Analyser =
        match parse_module_param with
        | Parsetree.Pmpar_generative -> Location.none
        | Parsetree.Pmpar_applicative(_, pmty)
-       | Parsetree.Pmpar_implicit(_, pmty) ->
+       | Parsetree.Pmpar_implicit(_, _, pmty) ->
            pmty.Parsetree.pmty_loc
      in
      let loc_start = loc.Location.loc_start.Lexing.pos_cnum in
@@ -1378,7 +1378,7 @@ module Analyser =
      let mp_name =
        match sig_module_param with
        | Mpar_generative -> "()"
-       | Mpar_applicative(ident, _) | Mpar_implicit(ident, _) ->
+       | Mpar_applicative(ident, _) | Mpar_implicit(_, ident, _) ->
            Name.from_ident ident
      in
      let mp_kind =
@@ -1386,7 +1386,7 @@ module Analyser =
        | Parsetree.Pmpar_generative, Mpar_generative ->
            Module_type_struct []
        | Parsetree.Pmpar_applicative(_, pmty), Mpar_applicative(_, mty)
-       | Parsetree.Pmpar_implicit(_, pmty), Mpar_implicit(_, mty) ->
+       | Parsetree.Pmpar_implicit(_, _, pmty), Mpar_implicit(_, _, mty) ->
            analyse_module_type_kind env current_module_name
                                     pmty mty
        | _, _ ->
@@ -1399,8 +1399,8 @@ module Analyser =
        | Mpar_generative -> Mp_generative
        | Mpar_applicative(_, mty) ->
            Mp_applicative (Odoc_env.subst_module_type env mty)
-       | Mpar_implicit(_, mty) ->
-           Mp_implicit (Odoc_env.subst_module_type env mty)
+       | Mpar_implicit(virt, _, mty) ->
+           Mp_implicit (virt, Odoc_env.subst_module_type env mty)
      in
        {
          mp_name = mp_name ;

@@ -497,7 +497,7 @@ module Module :
     and module_parameter_type = Odoc_module.module_parameter_type =
       | Mp_generative
       | Mp_applicative of Types.module_type
-      | Mp_implicit of Types.module_type
+      | Mp_implicit of Asttypes.virtual_flag * Types.module_type
 
     and module_argument = Odoc_module.module_argument =
       | Ma_generative

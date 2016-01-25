@@ -771,8 +771,9 @@ and module_parameter =
         (* () *)
   | Pmpar_applicative of string loc * module_type
         (* (X : MT) *)
-  | Pmpar_implicit of string loc * module_type
+  | Pmpar_implicit of virtual_flag * string loc * module_type
         (* {X : MT} *)
+        (* {virtual X : MT} *)
 
 and module_argument =
   | Pmarg_generative

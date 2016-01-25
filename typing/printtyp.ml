@@ -1226,12 +1226,12 @@ let rec tree_of_modtype = function
           in
             Omty_functor
               (Ompar_applicative(Ident.name id, tree_of_modtype mty), res)
-      | Mpar_implicit(id, mty) ->
+      | Mpar_implicit(virt, id, mty) ->
           let res =
             wrap_env (Env.add_module ~arg:true id mty) tree_of_modtype ty_res
           in
             Omty_functor
-              (Ompar_implicit(Ident.name id, tree_of_modtype mty), res)
+              (Ompar_implicit(virt, Ident.name id, tree_of_modtype mty), res)
     end
   | Mty_alias p ->
       Omty_alias (tree_of_path p)

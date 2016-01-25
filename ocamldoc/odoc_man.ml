@@ -727,8 +727,9 @@ class man =
                | Mp_applicative mty ->
                    bs b ("\""^p.mp_name^"\"\n");
                    self#man_of_module_type b m_name mty
-               | Mp_implicit mty ->
-                   bs b ("\""^p.mp_name^"\"\n");
+               | Mp_implicit (v, mty) ->
+                   let v = if v = Asttypes.Virtual then "virtual " else "" in
+                   bs b ("\""^v^p.mp_name^"\"\n");
                    self#man_of_module_type b m_name mty);
               bs b "\n";
               (

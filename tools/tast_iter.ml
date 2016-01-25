@@ -209,7 +209,7 @@ let module_parameter sub mparam =
   match mparam with
   | Tmpar_generative -> ()
   | Tmpar_applicative(_, _, mtype) -> sub # module_type mtype
-  | Tmpar_implicit(_, _, mtype) -> sub # module_type mtype
+  | Tmpar_implicit(_, _, _, mtype) -> sub # module_type mtype
 
 let module_type sub mty =
   match mty.mty_desc with

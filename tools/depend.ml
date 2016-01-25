@@ -292,7 +292,7 @@ and add_module_parameter bv = function
   | Pmpar_applicative(id, mty) ->
       add_modtype bv mty;
       StringSet.add id.txt bv
-  | Pmpar_implicit(id, mty) ->
+  | Pmpar_implicit(_, id, mty) ->
       add_modtype bv mty;
       StringSet.add id.txt bv
 

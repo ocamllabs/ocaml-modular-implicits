@@ -545,7 +545,7 @@ let find_module ~alias path env =
                 let param_id =
                   match f.fcomp_param with
                   | Mpar_generative -> assert false
-                  | Mpar_applicative(id, _) | Mpar_implicit(id, _) -> id
+                  | Mpar_applicative(id, _) | Mpar_implicit(_, id, _) -> id
                 in
                 let mty =
                   Subst.modtype
@@ -708,7 +708,7 @@ let rec lookup_module_descr lid env =
           | Mpar_generative, _ -> raise Not_found
           | Mpar_applicative _, Implicit -> raise Not_found
           | Mpar_implicit _, Nonimplicit -> raise Not_found
-          | (Mpar_applicative(_, param) | Mpar_implicit(_, param)), _ ->
+          | (Mpar_applicative(_, param) | Mpar_implicit(_, _, param)), _ ->
               !check_modtype_inclusion env mty2 p2 param;
               (Papply(p1, p2, i), !components_of_functor_appl' f p1 p2 i)
         end
@@ -757,7 +757,7 @@ and lookup_module ~load lid env : Path.t =
           | Mpar_generative, _ -> raise Not_found
           | Mpar_applicative _, Implicit -> raise Not_found
           | Mpar_implicit _, Nonimplicit -> raise Not_found
-          | (Mpar_applicative(_, param) | Mpar_implicit(_, param)), _ ->
+          | (Mpar_applicative(_, param) | Mpar_implicit(_, _, param)), _ ->
               !check_modtype_inclusion env mty2 p2 param;
               p
         end
@@ -1279,7 +1279,7 @@ let register_if_implicit path md env =
       let rec add acc params mty =
         let acc = ((path, List.rev params, mty) :: acc) in
         match scrape_alias env mty with
-        | Mty_functor (Mpar_implicit(id, param), res) ->
+        | Mty_functor (Mpar_implicit(_, id, param), res) ->
             let params = (id, param) :: params in
               add acc params res
         | _ -> acc
@@ -1378,8 +1378,8 @@ and components_of_module_maker (env, sub, path, mty) =
         | Mpar_generative -> Mpar_generative
         | Mpar_applicative(id, mty) ->
             Mpar_applicative(id, Subst.modtype sub mty)
-        | Mpar_implicit(id, mty) ->
-            Mpar_implicit(id, Subst.modtype sub mty)
+        | Mpar_implicit(virt, id, mty) ->
+            Mpar_implicit(virt, id, Subst.modtype sub mty)
       in
         Functor_comps {
           fcomp_param = param;
@@ -1558,7 +1558,7 @@ let components_of_functor_appl f p1 p2 i =
     let param_id =
       match f.fcomp_param with
       | Mpar_generative -> assert false
-      | Mpar_applicative(id, _) | Mpar_implicit(id, _) -> id
+      | Mpar_applicative(id, _) | Mpar_implicit(_, id, _) -> id
     in
     let mty =
       Subst.modtype (Subst.add_module param_id p2 Subst.identity)

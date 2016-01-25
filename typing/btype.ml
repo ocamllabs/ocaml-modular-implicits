@@ -296,7 +296,7 @@ let type_iterators =
   and it_module_parameter it = function
     | Mpar_generative -> ()
     | Mpar_applicative(_, mt) -> it.it_module_type it mt
-    | Mpar_implicit(_, mt) -> it.it_module_type it mt
+    | Mpar_implicit(_, _, mt) -> it.it_module_type it mt
   and it_class_type it = function
       Cty_constr (p, tyl, cty) ->
         it.it_path p;

@@ -351,13 +351,13 @@ let rec approx_modtype env smty =
                 name.txt arg env
             in
               Mpar_applicative(id, arg), newenv
-        | Pmpar_implicit(name, sarg) ->
+        | Pmpar_implicit(virt, name, sarg) ->
             let arg = approx_modtype env sarg in
             let (id, newenv) =
               Env.enter_module ~arg:true ~implicit_:Implicit
                 name.txt arg env
             in
-              Mpar_implicit(id, arg), newenv
+            Mpar_implicit(virt, id, arg), newenv
       in
       let res = approx_modtype newenv sres in
       Mty_functor(param, res)
@@ -561,15 +561,15 @@ let rec transl_modtype env smty =
             let tparam = Tmpar_applicative(id, name, arg) in
             let param = Mpar_applicative(id, ty_arg) in
               tparam, param, newenv
-        | Pmpar_implicit(name, sarg) ->
+        | Pmpar_implicit(virt, name, sarg) ->
             let arg = transl_modtype env sarg in
             let ty_arg = arg.mty_type in
             let (id, newenv) =
               Env.enter_module ~arg:true ~implicit_:Implicit name.txt
                 ty_arg env
             in
-            let tparam = Tmpar_implicit(id, name, arg) in
-            let param = Mpar_implicit(id, ty_arg) in
+            let tparam = Tmpar_implicit(virt, id, name, arg) in
+            let param = Mpar_implicit(virt, id, ty_arg) in
               tparam, param, newenv
       in
       Ctype.init_def(Ident.current_time()); (* PR#6513 *)
@@ -1196,15 +1196,15 @@ let rec type_module ?(alias=false) sttn funct_body anchor env smod =
             let tparam = Tmpar_applicative(id, name, mty) in
             let param = Mpar_applicative(id, ty_arg) in
               tparam, param, newenv, true
-        | Pmpar_implicit(name, smty) ->
+        | Pmpar_implicit(virt, name, smty) ->
             let mty = transl_modtype env smty in
             let ty_arg = mty.mty_type in
             let id, newenv =
               Env.enter_module ~arg:true ~implicit_:Implicit
                                name.txt ty_arg env
             in
-            let tparam = Tmpar_implicit(id, name, mty) in
-            let param = Mpar_implicit(id, ty_arg) in
+            let tparam = Tmpar_implicit(virt, id, name, mty) in
+            let param = Mpar_implicit(virt, id, ty_arg) in
               tparam, param, newenv, true
       in
       let body = type_module sttn funct_body None newenv sbody in
@@ -1241,7 +1241,7 @@ let rec type_module ?(alias=false) sttn funct_body anchor env smod =
                     raise(Error(sarg.pmod_loc, env, Not_included msg))
                 in
                   Tmarg_applicative(arg, coercion)
-            | Mpar_implicit(param, mty_param), Pmarg_implicit sarg ->
+            | Mpar_implicit(_, param, mty_param), Pmarg_implicit sarg ->
                 let arg = type_module true funct_body None env sarg in
                 let coercion =
                   try
@@ -1254,11 +1254,15 @@ let rec type_module ?(alias=false) sttn funct_body anchor env smod =
                 raise (Error (sfunct.pmod_loc, env,
                               Argument_mismatch(mty_param, sarg)))
           in
+          let pathable = match mty_param with
+            | Mpar_implicit (Virtual, _, _) -> false
+            | _ -> pathable
+          in
           let mty_appl =
             match arg, mty_param with
             | Tmarg_generative, _ -> mty_res
             | (Tmarg_applicative(arg, _) | Tmarg_implicit(arg, _)),
-              (Mpar_applicative(param, _) | Mpar_implicit(param, _)) ->
+              (Mpar_applicative(param, _) | Mpar_implicit(_, param, _)) ->
                 if pathable then
                   Subst.modtype
                     (Subst.add_module param

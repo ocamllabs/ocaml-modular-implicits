@@ -107,8 +107,8 @@ and value_kind =
   | Val_prim of Primitive.description   (* Primitive *)
   | Val_ivar of mutable_flag * string   (* Instance variable (mutable ?) *)
   | Val_self of (Ident.t * type_expr) Meths.t ref *
-                (Ident.t * Asttypes.mutable_flag *
-                 Asttypes.virtual_flag * type_expr) Vars.t ref *
+                (Ident.t * mutable_flag *
+                 virtual_flag * type_expr) Vars.t ref *
                 string * type_expr
                                         (* Self *)
   | Val_anc of (string * Ident.t) list * string
@@ -251,8 +251,7 @@ type class_type =
 
 and class_signature =
   { csig_self: type_expr;
-    csig_vars:
-      (Asttypes.mutable_flag * Asttypes.virtual_flag * type_expr) Vars.t;
+    csig_vars: (mutable_flag * virtual_flag * type_expr) Vars.t;
     csig_concr: Concr.t;
     csig_inher: (Path.t * type_expr list) list }
 
@@ -286,7 +285,7 @@ type module_type =
 and module_parameter =
   | Mpar_generative
   | Mpar_applicative of Ident.t * module_type
-  | Mpar_implicit of Ident.t * module_type
+  | Mpar_implicit of virtual_flag * Ident.t * module_type
 
 and signature = signature_item list
 

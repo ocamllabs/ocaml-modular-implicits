@@ -681,7 +681,9 @@ functor_param:
   | LPAREN functor_param_name COLON module_type RPAREN
       { Pmpar_applicative(mkrhs $2 2, $4) }
   | LBRACE functor_param_name COLON module_type RBRACE
-      { Pmpar_implicit(mkrhs $2 2, $4) }
+      { Pmpar_implicit(Concrete, mkrhs $2 2, $4) }
+  | LBRACE VIRTUAL functor_param_name COLON module_type RBRACE
+      { Pmpar_implicit(Virtual, mkrhs $3 3, $5) }
 ;
 
 functor_param_name:
