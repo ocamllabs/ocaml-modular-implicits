@@ -30,6 +30,8 @@ val with_default_loc: loc -> (unit -> 'a) -> 'a
     (** Set the [default_loc] within the scope of the execution
         of the provided function. *)
 
+val arr_flag_of_string: string -> arrow_flag
+
 (** {2 Core language} *)
 
 (** Type expressions *)

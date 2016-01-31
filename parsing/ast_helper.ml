@@ -23,6 +23,11 @@ type attrs = attribute list
 
 let default_loc = ref Location.none
 
+let arr_flag_of_string = function
+  | "" -> Parr_simple
+  | s when s.[0]='?' -> Parr_optional (String.sub s 1 (String.length s - 1))
+  | s -> Parr_labelled s
+
 let with_default_loc l f =
   let old = !default_loc in
   default_loc := l;
