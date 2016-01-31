@@ -31,6 +31,7 @@ val with_default_loc: loc -> (unit -> 'a) -> 'a
         of the provided function. *)
 
 val arr_flag_of_string: string -> arrow_flag
+val app_flag_of_string: string -> apply_flag
 
 (** {2 Core language} *)
 
