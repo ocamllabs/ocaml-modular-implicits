@@ -1889,6 +1889,13 @@ let enter_poly env univar_pairs t1 tl1 t2 tl2 f =
 
 let univar_pairs = ref []
 
+let univar_free t =
+  !univar_pairs = [] || (
+    (* Univars are not allowed when collecting equalities.
+       The list of free univars is not cached, but this should be computed
+       only once per node, hence not a problem. *)
+    TypeSet.is_empty (compute_univars t t)
+  )
 
                               (*****************)
                               (*  Unification  *)
@@ -3429,10 +3436,12 @@ let rec eqtype rename type_pairs subst env t1 t2 =
           | (Tunivar _, Tunivar _) ->
               unify_univar t1' t2' !univar_pairs
 
-          | Tconstr (p, _, _), t when is_flexible p ->
+          | Tconstr (p, _, _), t when is_flexible p
+                                   && univar_free t1' && univar_free t2' ->
               equalities_collect subst t1' t2'
 
-          | t, Tconstr (p, _, _) when is_flexible p ->
+          | t, Tconstr (p, _, _) when is_flexible p
+                                   && univar_free t1' && univar_free t2' ->
               equalities_collect subst t1' t2'
 
           | (_, _) ->
