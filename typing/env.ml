@@ -193,6 +193,7 @@ type t = {
   summary: summary;
   local_constraints: bool;
   gadt_instances: (int * TypeSet.t ref) list;
+  local_expansions: (Path.t, type_expr list * type_expr * int option) Tbl.t;
   flags: int;
   implicit_flags: implicit_flag Ident.tbl;
 }
@@ -240,6 +241,7 @@ let empty = {
   functor_args = Ident.empty;
   implicit_flags = Ident.empty;
   implicit_instances = [];
+  local_expansions = Tbl.empty;
  }
 
 let in_signature env =
@@ -614,10 +616,22 @@ let find_type_expansion path env =
   | _ ->
       (* another way to expand is to normalize the path itself *)
       let path' = normalize_path None env path in
-      if Path.same path path' then raise Not_found else
-      (decl.type_params,
-       newgenty (Tconstr (path', decl.type_params, ref Mnil)),
-       may_map snd decl.type_newtype_level)
+      if not (Path.same path path') then
+        (decl.type_params,
+         newgenty (Tconstr (path', decl.type_params, ref Mnil)),
+         may_map snd decl.type_newtype_level)
+      (* a last way to expand is to find a local expansion *)
+      else
+        Tbl.find path' env.local_expansions
+          (* this let a Not_found exception escape if no expansion exists *)
+
+let add_local_expansion path expansion env =
+  (* Well-formedness check: no expansion should already exist *)
+  match find_type_expansion path env with
+  | _ -> assert false
+  | exception Not_found ->
+      {env with local_expansions = Tbl.add path expansion env.local_expansions}
+
 
 (* Find the manifest type information associated to a type, i.e.
    the necessary information for the compiler's type-based optimisations.

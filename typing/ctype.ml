@@ -3270,22 +3270,69 @@ let matches env ty ty' =
                  (*  Equivalence between parameterized types  *)
                  (*********************************************)
 
-type equality_equation = {
-  eq_lhs : type_expr;
-  eq_lhs_params : type_expr list;
-  eq_lhs_path : Path.t;
-  eq_rhs : type_expr;
+type equalities = {
+  subst: (type_expr * type_expr) list;
+  (** Assuming these substitutions ... *)
+  equalities: (type_expr * type_expr) list;
+  (** these equalities should hold. *)
 }
 
-let equality_equations
-  : (Ident.t, equality_equation list ref) Tbl.t ref
+let equalities_flexible_idents
+  : (Ident.t, unit) Tbl.t ref
   = ref Tbl.empty
 
-let with_equality_equations tbl f =
-  let equality_equations' = !equality_equations in
-  equality_equations := tbl;
-  try_finally f
-    (fun () -> equality_equations := equality_equations')
+let equalities_collected
+  (* List of equalities with the subst under which they should be interpreted *)
+  : ((type_expr * type_expr) * (type_expr * type_expr) list ref) list ref
+  = ref []
+
+let equalities_collect subst t1 t2 =
+  (* At least one of t1 or t2 is abstract type constructor which path contains
+     one identifier appearing in equalities_flexible_idents *)
+  equalities_collected := ((t1, t2), subst) :: !equalities_collected
+
+let normalize_subst subst =
+  if List.exists
+      (function {desc=Tlink _}, _ | _, {desc=Tlink _} -> true | _ -> false)
+      !subst
+  then subst := List.map (fun (t1,t2) -> repr t1, repr t2) !subst
+
+let equalities_normalize () =
+  let make subst equalities =
+    normalize_subst subst;
+    { subst = !subst; equalities }
+  in
+  let rec aux subst acc = function
+    | (eqn, subst') :: xs ->
+        if subst == subst' then
+          aux subst (eqn :: acc) xs
+        else
+          let eq = make subst acc in
+          eq :: aux subst' [eqn] xs
+    | [] -> [make subst acc]
+  in
+  match !equalities_collected with
+  | (eqn, subst) :: xs -> aux subst [eqn] xs
+  | [] -> []
+
+let collect_equalities ~on f =
+  let flexible_idents' = !equalities_flexible_idents in
+  let collected' = !equalities_collected in
+  equalities_flexible_idents := on;
+  equalities_collected := [];
+  try_finally
+    (fun () ->
+       let r = f () in
+       r, equalities_normalize ())
+    (fun () ->
+       equalities_flexible_idents := flexible_idents';
+       equalities_collected := collected')
+
+let rec is_flexible = function
+  | Path.Pident id -> Tbl.mem id !equalities_flexible_idents
+  | Path.Pdot (p1, _, _) -> is_flexible p1
+  | Path.Papply (p1, p2, _) -> is_flexible p1 || is_flexible p2
+
 
 let rec get_object_row ty =
   match repr ty with
@@ -3297,12 +3344,6 @@ let expand_head_rigid env ty =
   rigid_variants := true;
   let ty' = expand_head env ty in
   rigid_variants := old; ty'
-
-let normalize_subst subst =
-  if List.exists
-      (function {desc=Tlink _}, _ | _, {desc=Tlink _} -> true | _ -> false)
-      !subst
-  then subst := List.map (fun (t1,t2) -> repr t1, repr t2) !subst
 
 let rec eqtype rename type_pairs subst env t1 t2 =
   (*Format.fprintf Format.err_formatter
@@ -3364,7 +3405,7 @@ let rec eqtype rename type_pairs subst env t1 t2 =
           | (Ttuple tl1, Ttuple tl2) ->
               eqtype_list rename type_pairs subst env tl1 tl2
           | (Tconstr (p1, tl1, _), Tconstr (p2, tl2, _))
-                when Path.same p1 p2 ->
+            when Path.same p1 p2 && not (is_flexible p1) ->
               eqtype_list rename type_pairs subst env tl1 tl2
           | (Tpackage (p1, n1, tl1), Tpackage (p2, n2, tl2)) ->
               begin try
@@ -3388,79 +3429,17 @@ let rec eqtype rename type_pairs subst env t1 t2 =
           | (Tunivar _, Tunivar _) ->
               unify_univar t1' t2' !univar_pairs
 
-          | Tconstr (p1, tl1, _), Tconstr (p2, tl2, _)
-            when (not (Path.is_application p1) && not (Path.is_application p2))
-              && Tbl.mem (Path.head p1) !equality_equations
-              && Tbl.mem (Path.head p2) !equality_equations ->
-              let (tl, tr) =
-                (* Base-kinded have priorities *)
-                if (tl1 = [] && tl2 <> []) then
-                  (t1', t2')
-                else if (tl2 = [] && tl1 <> []) then
-                  (t2', t1')
-                else if p1 < p2 then
-                  (t1', t2')
-                else
-                  (t2', t1') in
-              eqtype_modulo_equation rename type_pairs subst env tl tr
+          | Tconstr (p, _, _), t when is_flexible p ->
+              equalities_collect subst t1' t2'
 
-          | Tconstr (p, _, _), te
-            when not (Path.is_application p)
-              && Tbl.mem (Path.head p) !equality_equations ->
-              eqtype_modulo_equation rename type_pairs subst env t1' t2'
-
-          | te, Tconstr (p, _, _)
-            when not (Path.is_application p)
-              && Tbl.mem (Path.head p) !equality_equations ->
-              eqtype_modulo_equation rename type_pairs subst env t2' t1'
+          | t, Tconstr (p, _, _) when is_flexible p ->
+              equalities_collect subst t1' t2'
 
           | (_, _) ->
               raise (Unify [])
         end
   with Unify trace ->
     raise (Unify ((t1, t2)::trace))
-
-and eqtype_modulo_equation rename type_pairs subst env lhs rhs =
-  match lhs.desc with
-  (* Ground types *)
-  | Tconstr (path, [], _) ->
-    let equations =
-      try Tbl.find (Path.head path) !equality_equations
-      with Not_found -> assert false
-    in
-    begin try
-      let same { eq_lhs_path ; eq_lhs_params } =
-        let result = eq_lhs_path = path in
-        if result then assert (eq_lhs_params = []);
-        result
-      in
-      let ty = List.find same !equations in
-      (* An equation already apply to this path *)
-      eqtype rename type_pairs subst env ty.eq_rhs rhs
-    with Not_found ->
-      (* Not yet any equation on this path *)
-      let equation = {
-        eq_lhs = lhs;
-        eq_lhs_params = [];
-        eq_lhs_path = path;
-        eq_rhs = rhs;
-      } in
-      equations := equation :: !equations
-    end
-  (* Parametric types *)
-  | Tconstr (path, params, _) ->
-    let equations =
-      try Tbl.find (Path.head path) !equality_equations
-      with Not_found -> assert false
-    in
-    let equation = {
-      eq_lhs = lhs;
-      eq_lhs_params = params;
-      eq_lhs_path = path;
-      eq_rhs = rhs;
-    } in
-    equations := equation :: !equations
-  | _ -> assert false
 
 and eqtype_list rename type_pairs subst env tl1 tl2 =
   if List.length tl1 <> List.length tl2 then
@@ -3535,16 +3514,16 @@ and eqtype_row rename type_pairs subst env row1 row2 =
     pairs
 
 (* Two modes: with or without renaming of variables *)
-let equal env rename tyl1 tyl2 =
+let equal env ?(subst=[]) rename tyl1 tyl2 =
   try
     univar_pairs := [];
-    eqtype_list rename (TypePairs.create 11) (ref []) env tyl1 tyl2; true
+    eqtype_list rename (TypePairs.create 11) (ref subst) env tyl1 tyl2; true
   with
     Unify _ -> false
 
-let equal' env rename tyl1 tyl2 =
+let equal' env ?(subst=[]) rename tyl1 tyl2 =
   univar_pairs := [];
-  eqtype_list rename (TypePairs.create 11) (ref []) env tyl1 tyl2
+  eqtype_list rename (TypePairs.create 11) (ref subst) env tyl1 tyl2
 
 (* Must empty univar_pairs first *)
 let eqtype rename type_pairs subst env t1 t2 =

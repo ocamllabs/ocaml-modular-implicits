@@ -206,20 +206,24 @@ val match_class_types:
     ?trace:bool -> Env.t -> class_type -> class_type -> class_match_failure list
         (* Check if the first class type is more general than the second. *)
 
-type equality_equation = {
-  eq_lhs : type_expr;
-  eq_lhs_params : type_expr list;
-  eq_lhs_path : Path.t;
-  eq_rhs : type_expr;
+type equalities = {
+  subst: (type_expr * type_expr) list;
+  (** Assuming these substitutions ... *)
+  equalities: (type_expr * type_expr) list;
+  (** these equalities should hold. *)
 }
 
-val with_equality_equations: (Ident.t, equality_equation list ref) Tbl.t -> (unit -> 'a) -> 'a
+val collect_equalities:
+  on:(Ident.t, unit) Tbl.t ->
+  (unit -> 'a) -> 'a * equalities list
 
-val equal: Env.t -> bool -> type_expr list -> type_expr list -> bool
+val equal: Env.t -> ?subst:(type_expr * type_expr) list ->
+           bool -> type_expr list -> type_expr list -> bool
         (* [equal env [x1...xn] tau [y1...yn] sigma]
            checks whether the parameterized types
            [/\x1.../\xn.tau] and [/\y1.../\yn.sigma] are equivalent. *)
-val equal': Env.t -> bool -> type_expr list -> type_expr list -> unit
+val equal': Env.t -> ?subst:(type_expr * type_expr) list ->
+            bool -> type_expr list -> type_expr list -> unit
         (* [equal env [x1...xn] tau [y1...yn] sigma]
            checks whether the parameterized types
            [/\x1.../\xn.tau] and [/\y1.../\yn.sigma] are equivalent. *)
