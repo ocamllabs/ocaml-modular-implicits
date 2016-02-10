@@ -218,12 +218,12 @@ val collect_equalities:
   (unit -> 'a) -> 'a * equalities list
 
 val equal: Env.t -> ?subst:(type_expr * type_expr) list ->
-           bool -> type_expr list -> type_expr list -> bool
+           rename:bool -> type_expr list -> type_expr list -> bool
         (* [equal env [x1...xn] tau [y1...yn] sigma]
            checks whether the parameterized types
            [/\x1.../\xn.tau] and [/\y1.../\yn.sigma] are equivalent. *)
 val equal': Env.t -> ?subst:(type_expr * type_expr) list ->
-            bool -> type_expr list -> type_expr list -> unit
+           rename:bool -> type_expr list -> type_expr list -> unit
         (* [equal env [x1...xn] tau [y1...yn] sigma]
            checks whether the parameterized types
            [/\x1.../\xn.tau] and [/\y1.../\yn.sigma] are equivalent. *)
