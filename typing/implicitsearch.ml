@@ -34,14 +34,153 @@ let has_suffix ~suffix str =
   let l = String.length str and n = String.length suffix in
   l >= n &&
   try
-    for i = 0 to n - 1 do
-      if str.[l - n + i] <> suffix.[i] then
+    for i = 0 to n - 1 do if str.[l - n + i] <> suffix.[i] then
         raise Exit
     done;
     true
   with Exit -> false
 
+let push l t = l := t :: !l
+
 let papply path arg = Path.Papply (path, arg, Asttypes.Implicit)
+
+module Equalities = struct
+  type t = Ctype.equalities list
+
+  let classify_constraint flexible subst (t1,t2) =
+     let directly_flexible p =
+       not (Path.is_application p) &&
+       Tbl.mem (Path.head p) flexible
+     in
+     let assocl x =
+       let rec aux = function
+         | (x', y) :: _ when x == x' -> y
+         | _ :: l -> aux l
+         | [] -> raise Not_found
+       in
+       aux subst
+     and assocr y =
+       let rec aux = function
+         | (x, y') :: _ when y == y' -> x
+         | _ :: l -> aux l
+         | [] -> raise Not_found
+       in
+       aux subst
+     in
+     let defining assoc lhs rhs =
+       match lhs.desc with
+       | Tconstr (p, tl, _) when directly_flexible p ->
+           let tl =
+             try List.map assoc tl
+             with Not_found ->
+               (* All type variables should have been substituted by the time
+                  we reach constraints refinement *)
+               assert false
+           in
+           (* Check uniqueness *)
+           let rec uniq = function
+             | [] -> true
+             | x :: xs -> not (List.memq x xs) && uniq xs
+           in
+           (* FIXME: No type variable should occur in rhs but not in tl *)
+           if uniq tl then `Expansion (p, (tl, rhs, None)) else `None
+       | _ -> `None
+     in
+     let t1 = Ctype.repr t1 and t2 = Ctype.repr t2 in
+     let lhs = defining assocl t1 t2 and rhs = defining assocr t2 t1 in
+     match lhs, rhs with
+     | `Expansion e, `None | `None, `Expansion e ->
+         `Definition e
+     | `Expansion e1, `Expansion e2 ->
+         (* Check for trivial equalities *)
+         let (p, (tl, rhs, _)) = e1 in
+         begin match rhs.desc with
+         |  Tconstr (p', tl', _) ->
+             if Path.same p p' && List.for_all2 (==) tl tl' then
+               (* This can happen because Ctype.eqtype don't check equality
+                  on parameters of a flexible path, equation is just collected
+                  immediately. *)
+               `Trivial
+             else
+               `Equivalence (e1, e2)
+         | _ ->
+             (* cannot happen, equivalence are always between constr
+                representant *)
+             assert false
+         end
+     |  _ -> `Equality
+
+  let classify_constraints flexible eqs =
+    let classify_collected (def,equiv,equal) {Ctype.subst ; equalities} =
+      let rec aux def equiv equalities = function
+        | [] -> (def, equiv, equalities)
+        | tt :: tts ->
+            match classify_constraint flexible subst tt with
+            | `Definition d -> aux (d :: def) equiv equalities tts
+            | `Equivalence eq -> aux def (eq :: equiv) equalities tts
+            | `Equality -> aux def equiv (tt :: equalities) tts
+            | `Trivial -> aux def equiv equalities tts
+      in
+      let def, equiv, equalities = aux def equiv [] equalities in
+      if equalities = [] then (def, equiv, equal)
+      else (def, equiv, {Ctype. subst; equalities} :: equal)
+    in
+    List.fold_left classify_collected ([], [], []) eqs
+
+   let refine flexible env eqs =
+     (* Refine equalities, reinforce environnement, produce termination
+        equations *)
+     let (), eqs =
+       Ctype.collect_equalities ~on:flexible @@ fun () ->
+       let refine_equalities {Ctype. subst; equalities} =
+         let xs, ys = List.split equalities in
+         Ctype.equal' env ~subst ~rename:true xs ys
+       in
+       List.iter refine_equalities eqs
+     in
+     let definitions, equivalences, equalities =
+       classify_constraints flexible eqs in
+     let termination = ref [] in
+     let add_definition env (p, (tl, t, _ as def)) =
+       match Env.find_type_expansion p env with
+       | (tl', t', _) ->
+           Ctype.equal' env ~rename:true (t :: tl) (t' :: tl');
+           push termination (p, tl', t');
+           env
+       | exception Not_found ->
+           push termination (p, tl, t);
+           Env.add_local_expansion p def env
+
+     and add_equivalence env ((p1,def1), (p2,def2)) =
+       let (tl1, t1, _) = def1 and (tl2, t2, _) = def2 in
+       match Env.find_type_expansion p1 env with
+       | exception Not_found ->
+           begin match Env.find_type_expansion p2 env with
+           | exception Not_found ->
+               if Ident.binding_time (Path.head p1) <=
+                  Ident.binding_time (Path.head p2)
+               then Env.add_local_expansion p1 def1 env
+               else Env.add_local_expansion p2 def2 env
+           | (tl2', t2', _) ->
+               Ctype.equal' env ~rename:true (t2 :: tl2) (t2' :: tl2');
+               push termination (p1, tl1, t1);
+               Env.add_local_expansion p1 def1 env
+           end
+       | (tl1', t1', _) ->
+           Ctype.equal' env ~rename:true (t1 :: tl1) (t1' :: tl1');
+           begin match Env.find_type_expansion p2 env with
+           | exception Not_found ->
+               push termination (p2, tl2, t2);
+               Env.add_local_expansion p2 def2 env
+           | (tl2', t2', _) ->
+               Ctype.equal' env ~rename:true (t2 :: tl2) (t2' :: tl2');
+               env
+           end
+     in
+     let env = List.fold_left add_definition env definitions in
+     let env = List.fold_left add_equivalence env equivalences in
+     !termination, equalities, env
+end
 
 (** [goal] is the point from which a search starts *)
 type goal = {
@@ -73,265 +212,6 @@ type goal = {
   goal_termination_id : Ident.t;
 }
 
-(** Constraints are a list of equations of the form [path] = [type_expr].
-    The [Constraints] module apply those equations to a module type by
-    setting [type_expr] as a manifest for type at [path].
-
-    [Constraints.apply_abstract] expects all pointed types to be abstract (no
-    manifest), and fail if this is not the case.
-    [Constraints.apply] will try to unify those types.
-*)
-module Constraints = struct
-
-  (* Apply constraints to a module type.
-
-    1. Traverse the module type to substitute type declarations with
-      constraints and accumulate types to unify.
-
-      When constraining a type declaration, add the constraint as manifest.
-      If the type declaration already had a manifest, keep the original
-      manifest in a separate list to unify it in a later pass.
-
-      During traversal, we register module and submodule types in environment
-      because find_modtype_expansion might need them.
-
-     2. Do a second pass, rebuilding the environment and unifying constraints.
-
-      Environment is rebuilt with the types obtained after substitution.
-      For each type in the unify list, instantiate it in its local
-      environment and unify it with the constrained type.
-  *)
-  let name_match name (qname,_) = name = qname
-
-  (* A tree of constraints, sub levels correspond to constraints applied to sub
-     modules *)
-  type ('n,'cstr) t =
-    | Local of 'cstr
-    | Sub of ('n,'cstr) ts
-  and ('n,'cstr) ts = ('n * ('n,'cstr) t) list
-
-  let local_constraint = function
-    | Local cstr -> cstr
-    | Sub _ -> assert false
-
-  let sub_constraints = function
-    | Local _ -> assert false
-    | Sub cstrs -> cstrs
-
-  let rec add_constraint env acc = function
-    | [], _ ->
-        assert false
-    | [x], c ->
-        begin match (try Some (list_extract (name_match x) acc)
-                     with Not_found -> None)
-        with
-        | None -> (x, Local c) :: acc
-        | Some ((_x, c'), _) ->
-            unify env (local_constraint c') c;
-            acc
-        end
-    | (x :: xs), c ->
-        let (x, cstr), acc =
-          try list_extract (name_match x) acc
-          with Not_found -> (x, Sub []), acc
-        in
-        let cstr = sub_constraints cstr in
-        (x, Sub (add_constraint env cstr (xs, c))) :: acc
-
-  let split_constraints env l =
-    List.fold_left (add_constraint env) [] l
-
-  (* Register possibly recursive definitions in environment
-     (again, we need a populated environment because find_modtype_expansion
-      might need to lookup local definitions ) *)
-  let register_items env
-    : Types.signature_item list -> Env.t
-    = function
-    | Sig_type (id, ty, (Trec_not | Trec_first)) :: items ->
-        let rec aux env id ty items =
-          let env = Env.add_type ~check:false id ty env in
-          match items with
-          | Sig_type (id, ty, Trec_next) :: items ->
-              aux env id ty items
-          | _ -> env
-        in
-        aux env id ty items
-    | Sig_module (id, decl, (Trec_not | Trec_first)) :: items ->
-        let rec aux env id decl items =
-          let env = Env.add_module_declaration id decl env in
-          match items with
-          | Sig_module (id, decl, Trec_next) :: items ->
-              aux env id decl items
-          | _ -> env
-        in
-        aux env id decl items
-    | Sig_modtype (id,mtd) :: _ ->
-        Env.add_modtype id mtd env
-    | _ -> env
-
-  let rec prepare_mty
-    : Env.t -> (string, type_expr) ts -> Types.module_type ->
-      (Ident.t, type_expr) ts * Types.module_type
-    = fun env cstrs mty ->
-    if cstrs = [] then [], mty else
-      match mty with
-      | Mty_functor _ | Mty_alias _ -> assert false
-      | Mty_ident p ->
-          begin try
-            let mty = Env.find_modtype_expansion p env in
-            prepare_mty env cstrs mty
-          with Not_found ->
-            assert false
-          end
-      | Mty_signature sg ->
-          let to_unify, sg' = prepare_sig env cstrs sg in
-          to_unify, Mty_signature sg'
-
-  and prepare_sig_item env cstrs field =
-    match field with
-    | Sig_value _ | Sig_class _ | Sig_modtype _
-    | Sig_class_type _ | Sig_typext _ ->
-        [], cstrs, field
-    | Sig_type (id,decl,recst) ->
-        let name = Ident.name id in
-        begin try
-          let (_, cstr), cstrs = list_extract (name_match name) cstrs in
-          let ty = local_constraint cstr in
-          let to_unify =
-            match decl.type_manifest with
-            | None -> []
-            | Some ty' -> [(id, Local ty')]
-          in
-          to_unify, cstrs,
-          Sig_type (id,{decl with type_manifest = Some ty}, recst)
-        with Not_found ->
-          [], cstrs, field
-        end
-    | Sig_module (id,decl,recst) ->
-        let name = Ident.name id in
-        begin try
-          let (_, subs), cstrs = list_extract (name_match name) cstrs in
-          let subs = sub_constraints subs in
-          let subs, mty = prepare_mty env subs decl.md_type in
-          let to_unify = match subs with
-            | [] -> []
-            | subs -> [(id, Sub subs)]
-          in
-          to_unify, cstrs,
-          Sig_module (id,{decl with md_type = mty}, recst)
-        with Not_found ->
-          [], cstrs, field
-        end
-
-  and prepare_sig' env to_unify fields cstrs items =
-    let env = register_items env items in
-    match items, cstrs with
-    | items, [] ->
-        List.rev to_unify,
-        List.rev_append fields items
-    | [], cstrs ->
-        let txt = String.concat ", " (List.map fst cstrs) in
-        failwith ("constraints " ^ txt ^ " failed to apply")
-    | item :: items, cstrs ->
-        let to_unify', cstrs, item' = prepare_sig_item env cstrs item in
-        prepare_sig' env (to_unify' @ to_unify) (item' :: fields) cstrs items
-
-  and prepare_sig
-    : Env.t -> (string, type_expr) ts -> Types.signature ->
-      (Ident.t, type_expr) ts * Types.signature
-    = fun env cstrs sg ->
-    if cstrs = [] then
-      [], sg
-    else
-      prepare_sig' env [] [] cstrs sg
-
-  let rec constraint_mty env to_unify mty =
-    if to_unify <> [] then
-      match mty with
-      | Mty_functor _ | Mty_alias _ | Mty_ident _ -> assert false
-      | Mty_signature sg ->
-          constraint_sig env to_unify sg
-
-  and constraint_sig_item env cstrs field =
-    match field, cstrs with
-    | Sig_type (id,decl,recst),
-      ((id', Local ty') :: cstrs) when Ident.same id id' ->
-        let ty = match decl.type_manifest with
-          | None -> assert false (* filled in previous pass *)
-          | Some ty -> ty
-        in
-        let ty' = instance env ty' in
-        unify env ty ty';
-        cstrs
-
-    | Sig_module (id,decl,recst),
-      ((id', Sub subs) :: cstrs) when Ident.same id id' ->
-        constraint_mty env subs decl.md_type;
-        cstrs
-
-      | _ -> cstrs
-
-  and constraint_sig env cstrs items =
-    let env = register_items env items in
-    match items, cstrs with
-    | _, [] -> ()
-      (* generated constraints should all have been satisfied *)
-    | [], _ -> assert false
-    | item :: items, cstrs ->
-        let cstrs = constraint_sig_item env cstrs item in
-        constraint_sig env cstrs items
-
-  let apply env mty cstrs =
-    let cstrs = split_constraints env cstrs in
-    let to_unify, mty = prepare_mty env cstrs mty in
-    constraint_mty env to_unify mty;
-    mty
-
-  let apply_abstract env mty cstrs =
-    let cstrs = split_constraints env cstrs in
-    let to_unify, mty = prepare_mty env cstrs mty in
-    assert (to_unify = []);
-    mty
-
-  let flatten ~root cstrs =
-    let flatten_cstr (n,t) =
-      let id', dots = Path.flatten n in
-      assert (Ident.same root id');
-      assert (dots <> []);
-      List.map fst dots, t
-    in
-    List.map flatten_cstr cstrs
-
-  (* Apply a list of equations to a goal.
-     Types referred to by paths *must* be abstract. *)
-  let goal
-    : Env.t -> goal -> equality_equation list -> goal
-    = fun env goal eqns ->
-    (* [env] is needed only to expand module type names *)
-    let extract_constraint acc eqn =
-      let id, path = Path.flatten eqn.eq_lhs_path in
-      if not (Ident.same id goal.goal_var) then
-        acc
-      else
-        let path = List.map fst path in
-        let rec is_row = function
-          | [t] -> has_suffix ~suffix:"#row" t
-          | _ :: xs -> is_row xs
-          | [] -> assert false
-        in
-        let cstrs, hkt = acc in
-        if eqn.eq_lhs_params = [] && not (is_row path) then
-          ((path, eqn.eq_rhs) :: cstrs), hkt
-        else
-          cstrs, ((eqn.eq_lhs, eqn.eq_rhs) :: hkt) in
-    let cstrs, hkt = List.fold_left extract_constraint ([],[]) eqns in
-    let mty = apply_abstract env goal.goal_type cstrs in
-    let goal = {goal with goal_type = mty;
-                   goal_constraints = hkt @ goal.goal_constraints} in
-    goal
-
-end
-
 (* Various functions to preprocess pending implicit and implicit declarations
    when searching *)
 
@@ -360,20 +240,6 @@ let remove_type_variables () =
   let it = {type_iterators with it_type_expr} in
   variables, it
 
-(*let unify_equations env variables equations =
-  List.iter (fun (ty, id) ->
-           List.iter
-             (function
-          | Path.Pident id' as path, ty' when Ident.same id id' ->
-              printf "unifying %a with %a (= %a)\n%!"
-                Printtyp.type_expr ty
-                Printtyp.type_expr ty'
-                Printtyp.path path;
-              unify env ty ty'
-          | _ -> ())
-        equations
-  ) variables*)
-
 let goal_of_pending inst =
   let env = inst.implicit_env in
   let ident = inst.implicit_id in
@@ -384,41 +250,23 @@ let goal_of_pending inst =
                 | None -> assert false
                 | Some mty -> mty
   in
-  let basekinded (ty,_tyvar) = match (repr ty).desc with
-    | Tconstr (_, [], _) -> true
-    | Tconstr (_, (_ :: _), _) -> false
-    | _ -> assert false
-  in
-  let basepath (ty,tyvar) = match (repr ty).desc  with
-    | Tconstr (path, [], _) -> path, tyvar
-    | _ -> assert false
-  in
-  let bkt, hkt = List.partition basekinded inst.implicit_constraints in
-  let bkt = List.map basepath bkt in
-  let cstrs =
-    (* Constraints from package type *)
-    (List.map2 (fun n t -> Longident.flatten n, t) nl tl)
-    (* Constraints from implicit instance *) @
-    (Constraints.flatten ~root:ident bkt)
-  in
-  let mty = Constraints.apply env mty cstrs in
   let variables, it = remove_type_variables () in
   it.it_module_type it mty;
   List.iter (fun (ty,tyvar) ->
       it.it_type_expr it ty;
       it.it_type_expr it tyvar)
-    hkt;
+    inst.implicit_constraints;
   unmark_iterators.it_module_type unmark_iterators mty;
   List.iter (fun (ty,tyvar) ->
       unmark_type ty;
       unmark_type tyvar)
-    hkt;
+    inst.implicit_constraints;
   let id = inst.implicit_id in
   !variables,
   {goal_type = mty;
    goal_var = id;
    goal_termination_id = id;
-   goal_constraints = hkt}
+   goal_constraints = inst.implicit_constraints}
 
 (** Termination checking **)
 module Termination : sig
@@ -439,7 +287,7 @@ module Termination : sig
   (* [check env t state] ensures that termination criterion for [t] is
      satisfied in [state] and returns the stronger state.
      Otherwise, [Terminate] is raised *)
-  type eqns = (string list * (type_expr list * type_expr) list) list
+  type eqns = (string list * (type_expr list * type_expr)) list
   exception Terminate of (Ident.t * eqns * eqns)
   val explain : bool -> Format.formatter -> Ident.t * eqns * eqns -> unit
 
