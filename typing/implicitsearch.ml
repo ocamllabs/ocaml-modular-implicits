@@ -449,6 +449,8 @@ let report_error msg exn =
    This helps resuming search (e.g to search for ambiguity), explaining search
    state or errors, etc. *)
 
+exception Terminate of string
+
 module Search : sig
 
   type candidate = Path.t * goal list * Types.module_type
@@ -486,6 +488,7 @@ end = struct
 
       flexible: (Ident.t, unit) Tbl.t;
       equalities: Equalities.t;
+      termination: Termination.t;
     }
 
   type query =
@@ -527,6 +530,7 @@ end = struct
       debug_path = [];
 
       flexible; equalities = [];
+      termination = Termination.empty;
     }
 
   let make_candidate path params mty =
@@ -555,7 +559,7 @@ end = struct
   let all_candidates t =
     List.map make_candidate (Env.implicit_instances t.env)
 
-  (*exception Invalid_candidate*)
+  exception Invalid_candidate
 
   let step0 state (path, sub_goals, candidate_mty) =
     let rec print_paths ppf = function
@@ -578,11 +582,14 @@ end = struct
     let flexible = Tbl.remove goal.goal_var flexible in
     let env = Env.add_module goal.goal_var candidate_mty env in
     let (_ : module_coercion), eqs =
-      Ctype.collect_equalities ~on:flexible
-        (fun () -> Includemod.modtypes env candidate_mty goal.goal_type)
+      try Ctype.collect_equalities ~on:flexible
+            (fun () -> Includemod.modtypes env candidate_mty goal.goal_type)
+      with _ -> raise Invalid_candidate
     in
     let equalities, env =
-      Equalities.refine flexible env (eqs @ state.equalities) in
+      try Equalities.refine flexible env (eqs @ state.equalities)
+      with _ -> raise Invalid_candidate
+    in
 
     (* Keep new equations potentially added to top variables *)
     let state = {state with equalities; flexible; env} in
@@ -592,9 +599,10 @@ end = struct
     | goal :: sub_goals ->
       let debug_path = state.debug_path in
       let partial = {state with payload = (path, sub_goals)} in
-      (*let termination =
-        Termination.check_goal state.env goal eq_final state.termination in*)
-      let state = {state with goal; (*termination;*) debug_path = path :: debug_path} in
+      let termination = Termination.add_goal state.env goal state.termination in
+      if not (Termination.can_enter state.env goal termination) then
+        raise (Terminate (Termination.explain state.env goal termination));
+      let state = {state with goal; termination; debug_path = path :: debug_path} in
       `Step (partial, state)
 
   let rec step state = function
@@ -603,10 +611,10 @@ end = struct
       try
         step0 state candidate, candidates
       with
-      (*| Termination.Terminate eqns as exn ->
-        printf "%a\n%!" (Termination.explain false) eqns;
-        raise exn*)
-      (*| Invalid_candidate -> step state candidates*)
+      | Terminate msg as exn ->
+        printf "%s\n%!" msg;
+        raise exn
+      | Invalid_candidate -> step state candidates
       | exn ->
         report_error "Exception while testing candidate: " exn;
         step state candidates
@@ -622,19 +630,13 @@ end = struct
       let state = {partial with
                   (* We get the equations from the argument but keep
                       termination state from the parent *)
+                   env = arg.env;
                    payload = path; flexible; equalities} in
       `Done state
     | goal :: sub_goals ->
       let partial = {partial with payload = (path, sub_goals) } in
-      let md = Env.find_module path arg.env in
-      (* The original module declaration might be implicit, we want to avoid
-         rebinding implicit *)
-      let md = {md with md_implicit = Asttypes.Nonimplicit} in
-      (*let termination =
-        Termination.check_goal arg.env goal eq_initial partial.termination in*)
-      let env = Env.add_module_declaration goal.goal_var md arg.env in
       let debug_path = path :: partial.debug_path in
-      let arg = {arg with payload = (); goal; debug_path; (*termination;*) env} in
+      let arg = {arg with payload = (); goal; debug_path} in
       `Step (partial, arg)
 end
 
@@ -759,9 +761,9 @@ let find_pending_instance inst =
     Link.to_path inst path;
     true
   with
-  (*| Termination.Terminate eqns ->
-      printf "%a\n%!" (Termination.explain false) eqns;
-      raise Typecore.(Error (loc, env, Termination_fail inst))*)
+  | Terminate msg ->
+      printf "%s\n%!" msg;
+      raise Typecore.(Error (loc, env, Termination_fail inst))
   | Not_found ->
       false
 
