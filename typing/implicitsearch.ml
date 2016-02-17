@@ -47,7 +47,7 @@ let papply path arg = Path.Papply (path, arg, Asttypes.Implicit)
 module Equalities = struct
   type t = Ctype.equalities list
 
-  let classify_constraint flexible subst (t1,t2) =
+  let classify_constraint flexible env subst (t1,t2) =
      let directly_flexible p =
        not (Path.is_application p) &&
        Tbl.mem (Path.head p) flexible
@@ -70,20 +70,17 @@ module Equalities = struct
      let defining assoc lhs rhs =
        match lhs.desc with
        | Tconstr (p, tl, _) when directly_flexible p ->
-           let tl =
-             try List.map assoc tl
-             with Not_found ->
-               (* All type variables should have been substituted by the time
-                  we reach constraints refinement *)
-               assert false
-           in
-           (* Check uniqueness *)
-           let rec uniq = function
-             | [] -> true
-             | x :: xs -> not (List.memq x xs) && uniq xs
-           in
-           (* FIXME: No type variable should occur in rhs but not in tl *)
-           if uniq tl then `Expansion (p, (tl, rhs, None)) else `None
+           let tl = List.map (Ctype.expand_head env) tl in
+           begin match List.map assoc tl with
+           | exception Not_found -> `None (* Not a type variable *)
+           | tl' ->
+               (* Check uniqueness *)
+               let rec uniq = function
+                 | [] -> true
+                 | x :: xs -> not (List.memq x xs) && uniq xs
+               in
+               (* FIXME: No type variable should occur in rhs but not in tl *)
+               if uniq tl' then `Expansion (p, (tl', tl, rhs, None)) else `None
        | _ -> `None
      in
      let t1 = Ctype.repr t1 and t2 = Ctype.repr t2 in
@@ -93,29 +90,23 @@ module Equalities = struct
          `Definition e
      | `Expansion e1, `Expansion e2 ->
          (* Check for trivial equalities *)
-         let (p, (tl, rhs, _)) = e1 in
-         begin match rhs.desc with
-         |  Tconstr (p', tl', _) ->
-             if Path.same p p' && List.for_all2 (==) tl tl' then
-               (* This can happen because Ctype.eqtype don't check equality
+         let (p, (tl1, _, rhs, _)) = e1 in
+         let (_, (_, tl2, _, _)) = e2 in
+         if Path.same p p' && List.for_all2 (==) tl1 tl2 then
+           (* This can happen because Ctype.eqtype don't check equality
                   on parameters of a flexible path, equation is just collected
                   immediately. *)
-               `Trivial
-             else
-               `Equivalence (e1, e2)
-         | _ ->
-             (* cannot happen, equivalence are always between constr
-                representant *)
-             assert false
-         end
+           `Trivial
+         else
+           `Equivalence (e1, e2)
      |  _ -> `Equality
 
-  let classify_constraints flexible eqs =
+  let classify_constraints flexible env eqs =
     let classify_collected (def,equiv,equal) {Ctype.subst ; equalities} =
       let rec aux def equiv equalities = function
         | [] -> (def, equiv, equalities)
         | tt :: tts ->
-            match classify_constraint flexible subst tt with
+            match classify_constraint flexible env subst tt with
             | `Definition d -> aux (d :: def) equiv equalities tts
             | `Equivalence eq -> aux def (eq :: equiv) equalities tts
             | `Equality -> aux def equiv (tt :: equalities) tts
@@ -138,7 +129,7 @@ module Equalities = struct
        List.iter refine_equalities eqs
      in
      let definitions, equivalences, equalities =
-       classify_constraints flexible eqs in
+       classify_constraints flexible env eqs in
      let add_definition env (p, (tl, t, _ as def)) =
        match Env.find_type_expansion p env with
        | (tl', t', _) ->
