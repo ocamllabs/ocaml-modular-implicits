@@ -3527,7 +3527,7 @@ let equal' env ?(subst=[]) ~rename tyl1 tyl2 =
   univar_pairs := [];
   eqtype_list rename (TypePairs.create 11) (ref subst) env tyl1 tyl2
 
-let equal env ?(subst=[]) ~rename tyl1 tyl2 =
+let equal env ?subst ~rename tyl1 tyl2 =
   try
     equal' env ?subst ~rename tyl1 tyl2; true
   with
