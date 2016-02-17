@@ -3523,16 +3523,15 @@ and eqtype_row rename type_pairs subst env row1 row2 =
     pairs
 
 (* Two modes: with or without renaming of variables *)
-let equal env ?(subst=[]) ~rename tyl1 tyl2 =
-  try
-    univar_pairs := [];
-    eqtype_list rename (TypePairs.create 11) (ref subst) env tyl1 tyl2; true
-  with
-    Unify _ -> false
-
 let equal' env ?(subst=[]) ~rename tyl1 tyl2 =
   univar_pairs := [];
   eqtype_list rename (TypePairs.create 11) (ref subst) env tyl1 tyl2
+
+let equal env ?(subst=[]) ~rename tyl1 tyl2 =
+  try
+    equal' env ?subst ~rename tyl1 tyl2; true
+  with
+    Unify _ -> false
 
 (* Must empty univar_pairs first *)
 let eqtype rename type_pairs subst env t1 t2 =

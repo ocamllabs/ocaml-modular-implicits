@@ -127,9 +127,8 @@ module Equalities = struct
     in
     List.fold_left classify_collected ([], [], []) eqs
 
-   let refine flexible env eqs =
-     (* Refine equalities, reinforce environnement, produce termination
-        equations *)
+   let rec refine flexible env acc eqs =
+     (* Refine equalities, reinforce environnement *)
      let (), eqs =
        Ctype.collect_equalities ~on:flexible @@ fun () ->
        let refine_equalities {Ctype. subst; equalities} =
@@ -140,15 +139,12 @@ module Equalities = struct
      in
      let definitions, equivalences, equalities =
        classify_constraints flexible eqs in
-     let termination = ref [] in
      let add_definition env (p, (tl, t, _ as def)) =
        match Env.find_type_expansion p env with
        | (tl', t', _) ->
            Ctype.equal' env ~rename:true (t :: tl) (t' :: tl');
-           push termination (p, tl', t');
            env
        | exception Not_found ->
-           push termination (p, tl, t);
            Env.add_local_expansion p def env
 
      and add_equivalence env ((p1,def1), (p2,def2)) =
@@ -163,23 +159,32 @@ module Equalities = struct
                else Env.add_local_expansion p2 def2 env
            | (tl2', t2', _) ->
                Ctype.equal' env ~rename:true (t2 :: tl2) (t2' :: tl2');
-               push termination (p1, tl1, t1);
                Env.add_local_expansion p1 def1 env
            end
        | (tl1', t1', _) ->
            Ctype.equal' env ~rename:true (t1 :: tl1) (t1' :: tl1');
            begin match Env.find_type_expansion p2 env with
            | exception Not_found ->
-               push termination (p2, tl2, t2);
                Env.add_local_expansion p2 def2 env
            | (tl2', t2', _) ->
                Ctype.equal' env ~rename:true (t2 :: tl2) (t2' :: tl2');
                env
            end
      in
-     let env = List.fold_left add_definition env definitions in
-     let env = List.fold_left add_equivalence env equivalences in
-     !termination, equalities, env
+     let acc = equalities @ acc in
+     (* Equal definitions will introduce new equalities.
+        Repeat to mimic unification. *)
+     match
+       Ctype.collect_equalities ~on:flexible
+         (fun () ->
+            let env = List.fold_left add_definition env definitions in
+            let env = List.fold_left add_equivalence env equivalences in
+            env)
+     with
+     | env, [] -> acc, env
+     | env, eqs' -> refine flexible env acc eqs'
+
+   let refine flexible env eqs = refine flexible env [] eqs
 end
 
 (** [goal] is the point from which a search starts *)
@@ -211,6 +216,171 @@ type goal = {
      second arguments to Pair.  *)
   goal_termination_id : Ident.t;
 }
+
+module Termination : sig
+  (** The termination checker tracks all arguments to implicit functors.
+      For an environment env and a flexible argument M, it will decides
+      whether enough is known about M to allow searching for an instance. *)
+  type t
+
+  val empty : t
+
+  val add_goal : env -> goal -> t -> t
+
+  val can_enter : env -> goal -> t -> bool
+
+  val explain : env -> goal -> t -> string
+
+end = struct
+
+  type element = {
+    goal: goal;
+    decreasing: Path.t list;
+  }
+
+  type chain = element list
+
+  type t = (Ident.t, chain) Tbl.t
+
+  (* Checking that an individial type is smaller than another one.
+     The exception never escapes. *)
+  exception Type_is_smaller
+  let smaller ?subst env t1 t2 : [`Smaller | `Equal | `Different] =
+    let rec check_ty t =
+      if equal ?subst env true [t1] [t] then
+        raise Type_is_smaller;
+      iter_type_expr check_ty t
+    in
+    try if equal ?subst env true [t1] [t2]
+      then `Equal
+      else (iter_type_expr check_ty t2; `Different)
+    with Type_is_smaller ->
+      `Smaller
+
+  let smaller env p1 p2 : [`Smaller | `Equal | `Different] =
+    match Env.find_type_expansion p2 env with
+    | exception Not_found ->
+        begin match Env.find_type_expansion p1 env with
+        | exception Not_found -> `Equal
+        | _ -> `Different
+        end
+    | (tyl2, ty2, _) ->
+        match Env.find_type_expansion p1 env with
+        | exception Not_found -> `Smaller
+        | (tyl1, ty1, _) ->
+            let subst = List.combine tyl1 tyl2 in
+            match smaller ?subst env t1 t2 with
+            | (`Equal | `Different) as r -> r
+            | `Smaller ->
+                match smaller ?subst env t2 t1 with
+                | `Smaller -> `Different (* t1 < t2 && t2 < t1 *)
+                | _ -> `Smaller
+
+  let initial env goal =
+    let rec collect_mty acc path = function
+      | Mty_signature sg -> collect_sig acc path sg
+      | Mty_functor _ -> ()
+      | Mty_alias p ->
+          collect_mty acc path (Env.find_module p env).md_type
+      | Mty_ident p ->
+          begin match (Env.find_modtype p env).mtd_type with
+          | None -> ()
+          | Some mty -> collect_mty acc path mty
+          end
+
+    and collect_sig acc path = function
+      | [] -> acc
+      | x :: xs ->
+          let acc = match x with
+            | Sig_type (id, {type_kind = Type_abstract; type_manifest = None}, _) ->
+                Path.Pdot (path, Ident.name id, 0) :: acc
+            | Sig_module (id, md, _) ->
+                collect_mty acc (Path.Pdot (path, Ident.name id, 0)) md.md_type
+            | _ -> acc
+          in
+          collect_sig acc path xs
+    in
+    let types = collect_mty [] (Path.Pident goal.goal_var) goal.goal_type in
+    { goal; decreasing = types }
+
+  let rec rewrite_path id = function
+    | Pident _ -> Pident id
+    | Papply _ -> assert false
+    | Pdot (p, s, x) -> Pdot (rewrite_path id p, s, x)
+
+  let refine env element goal =
+    let decreased p1 =
+      let p2 = rewrite_path goal.goal_var p1 in
+      match smaller env p1 p2 with
+      | `Smaller -> Some p2
+      | _ -> None
+    in
+    {goal; decreasing = list_filtermap decreased element.decreasing}
+
+  let add_goal env goal t =
+    let chain =
+      match Tbl.find goal.goal_termination_id t with
+      | exception Not_found -> [initial env goal]
+      | x :: xs -> refine env x goal :: xs
+    in
+    Tbl.add goal.goal_termination_id chain t
+
+  let rec retry_chain env = function
+    | [] -> assert false
+    | [x] -> x
+    | x :: xs ->
+        let x' = retry_chain env xs in
+        refine env x' x.goal
+
+  let can_enter env goal t =
+    match Tbl.find goal.goal_termination_id t with
+    | (x :: _) as xs when (x.goal == goal) ->
+        x.decreasing = [] || (retry_chain env xs).decreasing = []
+    | exception Not_found -> assert false
+    | _ -> assert false
+
+  let explain env goal t =
+    let xs =
+      try Tbl.find goal.goal_termination_id t
+      with Not_found -> assert false
+    in
+    let rec drop = function
+      | x :: xs when x.goal != goal -> drop xs
+      | xs -> xs
+    in
+    match drop xs with
+    | [x] -> "Termination succeeds: no nested call"
+    | (x :: x' :: _) as xs ->
+        let decreasing =
+          if x.decreasing = [] then
+            (retry_chain env xs).decreasing
+          else
+            x.decreasing
+        in
+        let print x = Format.fprintf Format.str_formatter x in
+        begin match decreasing with
+        | [] ->
+            print
+              "Cannot ensure termination: %a is not structurally decreasing, "
+              Printtyp.path (List.hd x'.decreasing);
+            begin match Env.find_type_expansion path env with
+            | exception Not_found ->
+                print "nested occurrence is not constrained."
+            | (_, ty2, _) ->
+                let _, ty1, _ = Env.find_type_expansion path env in
+                print "%a is not smaller than %a."
+                  Printtyp.type_expr ty2
+                  Printtyp.type_expr ty1
+            end
+        | x :: xs ->
+            print
+              "Termination succeeds: %a is structurally decreasing"
+              Printtyp.path x
+        end;
+        Format.flush_str_formatter ()
+    | _ -> assert false
+
+end
 
 (* Various functions to preprocess pending implicit and implicit declarations
    when searching *)
@@ -268,216 +438,6 @@ let goal_of_pending inst =
    goal_termination_id = id;
    goal_constraints = inst.implicit_constraints}
 
-(** Termination checking **)
-module Termination : sig
-
-  (* A termination criterion is a set of constraints applying on a
-     goal_termination_id.
-     It's satisfied in a search state iff its constraints are stronger than
-     those found the search state. *)
-  type t
-  type state
-  val initial : state
-
-  (* From a goal and an initial list of constraints,
-     build a termination criterion *)
-  val normalize_equations
-    : goal -> equality_equation list -> t
-
-  (* [check env t state] ensures that termination criterion for [t] is
-     satisfied in [state] and returns the stronger state.
-     Otherwise, [Terminate] is raised *)
-  type eqns = (string list * (type_expr list * type_expr)) list
-  exception Terminate of (Ident.t * eqns * eqns)
-  val explain : bool -> Format.formatter -> Ident.t * eqns * eqns -> unit
-
-  val check : Env.t -> t -> state -> state
-
-  val check_goal : Env.t -> goal -> equality_equation list -> state -> state
-end = struct
-
-  (* Set of equations used for computing termination criterion.
-     The list of equations is sorted by path, and each path is unique. *)
-  type eqns = (string list * (type_expr list * type_expr) list) list
-
-  let rec merge_eqns = function
-    | (path1, args) :: (path2, args') :: tail when path1 = path2 ->
-      merge_eqns ((path1, args' @ args) :: tail)
-    | head :: tail ->
-      head :: merge_eqns tail
-    | [] -> []
-
-  let rec wellformed_eqns = function
-    | (path1, args) :: ((path2, _) :: _ as tail) ->
-      (path1 < path2) &&
-      (match args with
-      (* One base-kinded *)
-      | [[], _] -> true
-      (* Or one-or-more higher-kinded, same arity *)
-      | (((_ :: _), _ as first) :: rest) ->
-        let arity (params,_path) = List.length params in
-        let a0 = arity first in
-        assert (List.for_all (fun t -> arity t = a0) rest);
-        true
-      | _ -> false) &&
-      wellformed_eqns tail
-    | _ -> true
-
-  (* Checking that an individial type is smaller than another one.
-     The exception never escapes. *)
-  exception Type_is_smaller
-  let smaller env t1 t2 : [`Smaller | `Equal | `Different] =
-    let rec check_ty t =
-      if equal env true [t1] [t] then
-        raise Type_is_smaller;
-      iter_type_expr check_ty t
-    in
-    try if equal env true [t1] [t2]
-      then `Equal
-      else (iter_type_expr check_ty t2; `Different)
-    with Type_is_smaller ->
-      `Smaller
-
-  let smaller env t1 t2 : [`Smaller | `Equal | `Different] =
-    match smaller env t1 t2 with
-    | (`Equal | `Different) as r -> r
-    | `Smaller ->
-      match smaller env t2 t1 with
-      | `Smaller -> `Different (* t1 < t2 && t2 < t1 *)
-      | _ -> `Smaller
-
-  let smallers env t1s t2s : [`Smaller | `Equal | `Different] =
-    try
-      let rec aux t2s acc = function
-        | [] -> acc
-        | (params, t1) :: t1s ->
-          let (params', t2), t2s = list_extract
-              (fun (params', t2) -> equal env true params params')
-              t2s in
-          match smaller env t1 t2 with
-          | `Different -> raise Not_found
-          | `Equal -> aux t2s acc t1s
-          | `Smaller -> aux t2s `Smaller t1s
-      in
-      aux t2s `Equal t1s
-    with Not_found ->
-      `Different
-
-  (* Check that a set of equations is stronger than another one.
-     [stronger env neqns oeqns] returns true iff
-     - all equations from oeqns must be smaller or equal in neqns, AND
-     - one equation must be strictly smaller or neqns must contain more
-       equations. *)
-  let rec stronger env acc (neqns : eqns) (oeqns : eqns) =
-    let is_base_kinded = function
-      | _, [[], _] -> true
-      | _, _ -> false in
-    match neqns, oeqns with
-      (* Equation on same path, check inclusion of type *)
-      (* Base-kinded *)
-    | (n, [[], nt]) :: neqns, (o, [[], ot]) :: oeqns when n = o ->
-        begin match smaller env nt ot with
-        | `Equal -> stronger env acc neqns oeqns
-        | `Smaller -> stronger env true neqns oeqns
-        | `Different -> false
-        end
-      (* Higher-kinded *)
-    | (n, nt) :: neqns, (o, ot) :: oeqns when n = o ->
-        begin match smallers env nt ot with
-        | `Equal -> stronger env acc neqns oeqns
-        | `Smaller -> stronger env true neqns oeqns
-        | `Different -> false
-        end
-      (* Same number of equations, at least one must have been stronger *)
-    | [], [] -> acc
-      (* More equations, stronger if base-kinded *)
-    | _, [] -> List.exists is_base_kinded neqns
-    | (n, _ as neqn) :: neqns, (o, _) :: _ when n < o && is_base_kinded neqn ->
-      stronger env true neqns oeqns
-      (* Less equations, always weaker *)
-    | [], _ -> false
-    | (n, _) :: neqns, (o, _) :: _  ->
-      assert (n > o);
-      false
-
-  let stronger env neqns oeqns = stronger env false neqns oeqns
-
-  (* Checking for termination starts from a target uid and a list of equations.
-     A state is table mapping uids to the strongest set of equations seen so
-     far. *)
-  type t = Ident.t * eqns
-  type state = eqns Ident.tbl
-  let initial = Ident.empty
-
-  let normalize_equations
-      (* Goal *)
-      (goal : goal)
-      (* All path must refer to some goal_var *)
-      (eqns : equality_equation list)
-      (* List of equations applying to goal *)
-    : t =
-    (* Add equations to goal_var *)
-    let eqns = list_filtermap
-        (fun eqn ->
-          let id, path = Path.flatten eqn.eq_lhs_path in
-          if not (Ident.same goal.goal_var id) then
-            None
-          else
-            let path = List.map fst path in
-            Some (path, [eqn.eq_lhs_params, eqn.eq_rhs]))
-        eqns in
-    let eqns = List.sort (fun (a,_) (b,_) -> compare a b) eqns in
-    let eqns = merge_eqns eqns in
-    assert (wellformed_eqns eqns);
-    (goal.goal_termination_id, eqns)
-
-  let explain success ppf (id,eqns,eqns') =
-    let print_ppath ppf (path,params) = match params with
-      | [] -> Format.pp_print_string ppf path
-      | [p] -> Format.fprintf ppf "%a %s" Printtyp.type_expr p path
-      | (p::ps) -> Format.fprintf ppf "(%a%a) %s"
-                     Printtyp.type_expr p
-                     (fun ppf -> List.iter (fun ty ->
-                         Format.fprintf ppf ", %a" Printtyp.type_expr ty))
-                     ps
-                     path in
-    let print_eqn ppf path (params,ty) =
-      Format.fprintf ppf "\t%a = %a\n"
-        print_ppath (path,params)
-        Printtyp.type_expr ty in
-    let print_eqns_at_path ppf (path,eqns) =
-      let path = String.concat "." path in
-      List.iter (print_eqn ppf path) eqns in
-    let print_eqns ppf peqns = List.iter (print_eqns_at_path ppf) peqns in
-    if eqns' = [] && success then
-      Format.fprintf ppf
-        "Termination of %a: introducing equation set [\n%a]\n%!"
-        Printtyp.ident id
-        print_eqns eqns
-    else
-      Format.fprintf ppf
-        "Termination of %a: equation set [\n%a] is %sstronger than [\n%a]\n%!"
-        Printtyp.ident id
-        print_eqns eqns
-        (if success then "" else "not ")
-        print_eqns eqns'
-
-  exception Terminate of (Ident.t * eqns * eqns)
-  let check env (uid, eqns) stack =
-    begin try
-      let eqns' = Ident.find_same uid stack in
-      if not (stronger env eqns eqns') then raise (Terminate (uid, eqns, eqns'));
-      explain true printf_output (uid,eqns,eqns')
-    with Not_found ->
-      explain true printf_output (uid,eqns,[])
-    end;
-    Ident.add uid eqns stack
-
-  let check_goal env goal eqns stack =
-    let t = normalize_equations goal eqns in
-    check env t stack
-end
-
 let report_error msg exn =
   try
     Location.report_exception printf_output exn
@@ -498,7 +458,7 @@ module Search : sig
   type result
 
   val get : result -> Path.t
-  val equations : result -> equality_equation list
+  val equations : result -> Ctype.equalities list
 
   val all_candidates : query -> candidate list
 
@@ -519,7 +479,6 @@ end = struct
   type 'a state =
     {
       payload: 'a;
-      termination: Termination.state;
       goal: goal;
       env: Env.t;
 
@@ -533,9 +492,9 @@ end = struct
 
          [eq_var] is referenced in [eq_table], so new equations valid in this
          branch of the search will be added to [eq_var]. *)
-      eq_initial: equality_equation list;
-      eq_var: equality_equation list ref;
-      eq_table: (Ident.t, equality_equation list ref) Tbl.t;
+      eq_initial: Ctype.equalities list;
+      eq_var: Ctype.equalities list ref;
+      eq_table: (Ident.t, Ctype.equalities list ref) Tbl.t;
     }
 
   type query =
@@ -574,7 +533,6 @@ end = struct
     in
     {
       payload = ();
-      termination = Termination.initial;
       goal = goal;
       env = env;
 
@@ -729,9 +687,9 @@ end = struct
       let debug_path = state.debug_path in
       let partial = {state with payload = (path, sub_goals)} in
       let goal = Constraints.goal state.env goal eq_final in
-      let termination =
-        Termination.check_goal state.env goal eq_final state.termination in
-      let state = {state with goal; termination; debug_path = path :: debug_path} in
+      (*let termination =
+        Termination.check_goal state.env goal eq_final state.termination in*)
+      let state = {state with goal; (*termination;*) debug_path = path :: debug_path} in
       `Step (partial, state)
 
   let rec step state = function
@@ -740,9 +698,9 @@ end = struct
       try
         step0 state candidate, candidates
       with
-      | Termination.Terminate eqns as exn ->
+      (*| Termination.Terminate eqns as exn ->
         printf "%a\n%!" (Termination.explain false) eqns;
-        raise exn
+        raise exn*)
       | Invalid_candidate -> step state candidates
       | exn ->
         report_error "Exception while testing candidate: " exn;
@@ -767,11 +725,11 @@ end = struct
          rebinding implicit *)
       let md = {md with md_implicit = Asttypes.Nonimplicit} in
       let goal = Constraints.goal arg.env goal eq_initial in
-      let termination =
-        Termination.check_goal arg.env goal eq_initial partial.termination in
+      (*let termination =
+        Termination.check_goal arg.env goal eq_initial partial.termination in*)
       let env = Env.add_module_declaration goal.goal_var md arg.env in
       let debug_path = path :: partial.debug_path in
-      let arg = {arg with payload = (); goal; debug_path; termination; env} in
+      let arg = {arg with payload = (); goal; debug_path; (*termination;*) env} in
       `Step (partial, arg)
 end
 
@@ -896,9 +854,9 @@ let find_pending_instance inst =
     Link.to_path inst path;
     true
   with
-  | Termination.Terminate eqns ->
+  (*| Termination.Terminate eqns ->
       printf "%a\n%!" (Termination.explain false) eqns;
-      raise Typecore.(Error (loc, env, Termination_fail inst))
+      raise Typecore.(Error (loc, env, Termination_fail inst))*)
   | Not_found ->
       false
 
