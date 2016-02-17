@@ -329,8 +329,9 @@ end = struct
 
   let can_enter env goal t =
     match Tbl.find goal.goal_termination_id t with
+    | [_] -> true
     | (x :: _) as xs when (x.goal == goal) ->
-        x.decreasing = [] || (retry_chain env xs).decreasing = []
+        x.decreasing <> [] || (retry_chain env xs).decreasing <> []
     | exception Not_found -> assert false
     | _ -> assert false
 
@@ -586,8 +587,29 @@ end = struct
             (fun () -> Includemod.modtypes env candidate_mty goal.goal_type)
       with _ -> raise Invalid_candidate
     in
+    printf "Flexible =%a\n%!"
+      (fun _ -> Tbl.iter (fun i () -> printf " %a" Printtyp.ident i))
+      flexible;
+    printf "New equations =\n%a%!"
+      (fun _ -> List.iter (fun eq ->
+           List.iter (fun (t1,t2) ->
+               printf "\t%a = %a\n%!"
+                 Printtyp.type_expr t1
+                 Printtyp.type_expr t2;
+             ) eq.Ctype.equalities;
+         ))
+      eqs;
+    printf "Inherited equations =\n%a%!"
+      (fun _ -> List.iter (fun eq ->
+           List.iter (fun (t1,t2) ->
+               printf "\t%a = %a\n%!"
+                 Printtyp.type_expr t1
+                 Printtyp.type_expr t2;
+             ) eq.Ctype.equalities;
+         ))
+      (goal.goal_constraints @ state.equalities);
     let equalities, env =
-      try Equalities.refine flexible env (eqs @ state.equalities)
+      try Equalities.refine flexible env (eqs @ goal.goal_constraints @ state.equalities)
       with _ -> raise Invalid_candidate
     in
 
