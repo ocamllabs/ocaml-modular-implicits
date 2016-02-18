@@ -1390,6 +1390,8 @@ let rec final_subexpression sexp =
 
 (* Generalization criterion for expressions *)
 
+let allow_eval = ref true
+
 let rec is_nonexpansive exp =
   match exp.exp_desc with
     Texp_ident(_,_,_) -> true
@@ -1457,14 +1459,15 @@ and is_nonexpansive_mod mexp =
   | Tmod_structure str ->
       List.for_all
         (fun item -> match item.str_desc with
-          | Tstr_eval _ | Tstr_primitive _ | Tstr_type _
+          | Tstr_eval _ -> !allow_eval (*|| is_nonexpansive exp *)
+          | Tstr_primitive _ | Tstr_type _
           | Tstr_modtype _ | Tstr_open _ | Tstr_class_type _  -> true
           | Tstr_value (_, pat_exp_list) ->
               List.for_all (fun vb -> is_nonexpansive vb.vb_expr) pat_exp_list
           | Tstr_module {mb_expr=m;_}
           | Tstr_include {incl_mod=m;_} -> is_nonexpansive_mod m
           | Tstr_recmodule id_mod_list ->
-              List.for_all (fun {mb_expr=m;_} -> is_nonexpansive_mod m)
+              List.for_all (fun m -> is_nonexpansive_mod m.mb_expr)
                 id_mod_list
           | Tstr_exception {ext_kind = Text_decl _} ->
               false (* true would be unsound *)
@@ -1478,11 +1481,19 @@ and is_nonexpansive_mod mexp =
           | Tstr_attribute _ -> true
         )
         str.str_items
+  | Tmod_apply (ma, Tmarg_implicit (mb,_)) ->
+      is_nonexpansive_mod ma && is_nonexpansive_mod mb
   | Tmod_apply _ -> false
 
 and is_nonexpansive_opt = function
     None -> true
   | Some e -> is_nonexpansive e
+
+let is_pure_module md =
+  allow_eval := false;
+  try_finally
+    (fun () -> is_nonexpansive_mod md)
+    (fun () -> allow_eval := true)
 
 (* Helpers for packaged modules. *)
 let create_package_type loc env (p, l) =

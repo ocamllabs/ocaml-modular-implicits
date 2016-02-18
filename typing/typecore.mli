@@ -18,6 +18,8 @@ open Format
 
 val is_nonexpansive: Typedtree.expression -> bool
 
+val is_pure_module: Typedtree.module_expr -> bool
+
 val type_binding:
         Env.t -> rec_flag ->
           Parsetree.value_binding list ->
