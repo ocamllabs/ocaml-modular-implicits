@@ -39,6 +39,9 @@ type error =
   | Scoping_pack of Longident.t * type_expr
   | Recursive_module_require_explicit_type
   | Argument_mismatch of module_parameter * module_argument
+  | Implicit_body_is_not_pure
+  | Implicit_name_escaping
+  | Illformed_virtual_parameter
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -280,6 +283,47 @@ let merge_constraint initial_env loc sg constr =
   with Includemod.Error explanation ->
     raise(Error(loc, initial_env, With_mismatch(lid.txt, explanation)))
 
+let wellformed_virtual env loc =
+  let rec module_type = function
+    | Mty_ident p ->
+        begin match Env.find_modtype_expansion p env with
+        | exception Not_found ->
+            raise (Error (loc, env, Illformed_virtual_parameter))
+        | mty -> module_type mty
+        end
+    | Mty_signature sg -> List.iter signature_item sg
+    | Mty_functor _ -> raise (Error (loc, env, Illformed_virtual_parameter))
+    | Mty_alias _ -> () (* Singleton... Should be ok? *)
+
+  and signature_item = function
+    | Sig_type _ -> ()
+    | Sig_module (_, md, _) -> module_type md.md_type
+    | Sig_typext _ | Sig_value _ | Sig_modtype _ | Sig_class _
+    | Sig_class_type _ -> raise (Error (loc, env, Illformed_virtual_parameter))
+  in
+  module_type
+
+let no_implicit_escape env loc id sg =
+  let rec it_path = function
+    | Pident id' ->
+        if Ident.same id id' then
+          raise (Error (loc, env, Implicit_name_escaping))
+    | Pdot (p, _, _) -> it_path p
+    | Papply (p1, p2, _) -> it_path p2; it_path p1
+  in
+  let it_type_declaration _ _ = () in
+  let it = {Btype.type_iterators with Btype.it_path; it_type_declaration} in
+  it.Btype.it_module_type it sg
+
+let wellformed_functor env loc param res =
+  begin match param with
+  | Mpar_implicit(virt, id, mty) ->
+      if virt = Virtual then wellformed_virtual env loc mty;
+      no_implicit_escape env loc id res
+  | _ -> ()
+  end;
+  Mty_functor(param, res)
+
 (* Add recursion flags on declarations arising from a mutually recursive
    block. *)
 
@@ -360,7 +404,7 @@ let rec approx_modtype env smty =
             Mpar_implicit(virt, id, arg), newenv
       in
       let res = approx_modtype newenv sres in
-      Mty_functor(param, res)
+      wellformed_functor env smty.pmty_loc param res
   | Pmty_with(sbody, constraints) ->
       approx_modtype env sbody
   | Pmty_typeof smod ->
@@ -575,7 +619,7 @@ let rec transl_modtype env smty =
       Ctype.init_def(Ident.current_time()); (* PR#6513 *)
       let res = transl_modtype newenv sres in
       mkmty (Tmty_functor (tparam, res))
-      (Mty_functor(param, res.mty_type)) env loc
+      (wellformed_functor env loc param res.mty_type) env loc
         smty.pmty_attributes
   | Pmty_with(sbody, constraints) ->
       let body = transl_modtype env sbody in
@@ -1208,8 +1252,15 @@ let rec type_module ?(alias=false) sttn funct_body anchor env smod =
               tparam, param, newenv, true
       in
       let body = type_module sttn funct_body None newenv sbody in
+      begin match sparam with
+      | Pmpar_implicit _ ->
+          (* FIXME: Body has to be pure *)
+          if not (Typecore.is_pure_module body) then
+            raise (Error(smod.pmod_loc, env, Implicit_body_is_not_pure))
+      | _ -> ()
+      end;
       rm { mod_desc = Tmod_functor(tparam, body);
-           mod_type = Mty_functor(param, body.mod_type);
+           mod_type = wellformed_functor env smod.pmod_loc param body.mod_type;
            mod_env = env;
            mod_attributes = smod.pmod_attributes;
            mod_loc = smod.pmod_loc }
@@ -1991,6 +2042,12 @@ let report_error ppf = function
       | Mpar_applicative _, Pmarg_applicative _ -> assert false
       | Mpar_implicit _, Pmarg_implicit _ -> assert false
     end
+  | Implicit_body_is_not_pure ->
+      fprintf ppf "Body of a implicit functor should be pure."
+  | Implicit_name_escaping ->
+      fprintf ppf "Types of values cannot depend on an implicit parameter."
+  | Illformed_virtual_parameter ->
+      fprintf ppf "Virtual parameters can only contain types."
 
 
 let report_error env ppf err =

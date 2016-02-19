@@ -68,6 +68,9 @@ type error =
   | Scoping_pack of Longident.t * type_expr
   | Recursive_module_require_explicit_type
   | Argument_mismatch of Types.module_parameter * Parsetree.module_argument
+  | Implicit_body_is_not_pure
+  | Implicit_name_escaping
+  | Illformed_virtual_parameter
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
