@@ -137,6 +137,8 @@ module Equalities = struct
            Ctype.equal' env ~rename:true (t :: tl) (t' :: tl');
            env
        | exception Not_found ->
+           printf "defining %a = %a\n"
+             Printtyp.path p Printtyp.type_expr t;
            Env.add_local_expansion p def env
 
      and add_equivalence env ((p1,def1,_), (p2,def2,_)) =
@@ -145,11 +147,15 @@ module Equalities = struct
        | exception Not_found ->
            begin match Env.find_type_expansion p2 env with
            | exception Not_found ->
+               printf "equivalent %a = %a\n"
+                 Printtyp.path p1 Printtyp.path p2;
                if Ident.binding_time (Path.head p1) <=
                   Ident.binding_time (Path.head p2)
                then Env.add_local_expansion p1 def1 env
                else Env.add_local_expansion p2 def2 env
            | (tl2', t2', _) ->
+               printf "arbitrary equality %a = %a\n"
+                 Printtyp.type_expr t1 Printtyp.type_expr t2;
                Ctype.equal' env ~rename:true (t2 :: tl2) (t2' :: tl2');
                Env.add_local_expansion p1 def1 env
            end
@@ -157,6 +163,8 @@ module Equalities = struct
            Ctype.equal' env ~rename:true (t1 :: tl1) (t1' :: tl1');
            begin match Env.find_type_expansion p2 env with
            | exception Not_found ->
+               printf "defining %a = %a\n"
+                 Printtyp.path p2 Printtyp.type_expr t1;
                Env.add_local_expansion p2 def2 env
            | (tl2', t2', _) ->
                Ctype.equal' env ~rename:true (t2 :: tl2) (t2' :: tl2');
@@ -219,9 +227,9 @@ module Termination : sig
 
   val add_goal : Env.t -> goal -> t -> t
 
-  val can_enter : Env.t -> goal -> t -> bool
+  val can_enter : Env.t -> (Ident.t, unit) Tbl.t -> goal -> t -> bool
 
-  val explain : Env.t -> goal -> t -> string
+  val explain : Env.t -> (Ident.t, unit) Tbl.t -> goal -> t -> string
 
 end = struct
 
@@ -315,7 +323,7 @@ end = struct
     let chain =
       match Tbl.find goal.goal_termination_id t with
       | exception Not_found -> [initial env goal]
-      | x :: xs -> refine env x goal :: xs
+      | (x :: _) as xs -> refine env x goal :: xs
       | [] -> assert false
     in
     Tbl.add goal.goal_termination_id chain t
@@ -327,55 +335,80 @@ end = struct
         let x' = retry_chain env xs in
         refine env x' x.goal
 
-  let can_enter env goal t =
-    match Tbl.find goal.goal_termination_id t with
-    | [_] -> true
-    | (x :: _) as xs when (x.goal == goal) ->
-        x.decreasing <> [] || (retry_chain env xs).decreasing <> []
+  (* Raise Exit if a flexible type is found *)
+  let non_flexible env flexible =
+    let rec aux = function
+      | Path.Pident id ->
+          if Tbl.mem id flexible then raise Exit
+      | Path.Papply (p1, p2, _) ->
+          aux p1; aux p2
+      | Path.Pdot (p, _, _) ->
+          aux p
+    in
+    let it_path = function
+      | Path.Pident _ -> ()
+      | p -> aux p
+    in
+    let it = {Btype.type_iterators with Btype.it_path} in
+    fun path ->
+    match Env.find_type_expansion path env with
     | exception Not_found -> assert false
-    | _ -> assert false
+    | (_, ty, _) ->
+        try
+          it.Btype.it_type_expr it ty;
+          Btype.unmark_type ty;
+          true
+        with Exit ->
+          Btype.unmark_type ty;
+          false
 
-  let explain env goal t =
-    let xs =
-      try Tbl.find goal.goal_termination_id t
-      with Not_found -> assert false
-    in
-    let rec drop = function
-      | x :: xs when x.goal != goal -> drop xs
-      | xs -> xs
-    in
-    match drop xs with
-    | [x] -> "Termination succeeds: no nested call"
-    | (x :: x' :: _) as xs ->
-        let decreasing =
-          if x.decreasing = [] then
-            (retry_chain env xs).decreasing
-          else
-            x.decreasing
+  let find_decreasing env flexible goal t =
+    match Tbl.find goal.goal_termination_id t with
+    | [] -> assert false
+    | exception Not_found -> assert false
+    | [_] -> None
+    | (x :: _) as xs  ->
+        assert (x.goal == goal);
+        let non_flexible = non_flexible env flexible in
+        let path =
+          try List.find non_flexible x.decreasing
+          with Not_found ->
+            List.find non_flexible (retry_chain env xs).decreasing
         in
-        let print x = Format.fprintf Format.str_formatter x in
-        begin match decreasing with
-        | [] ->
-            let path = rewrite_path x.goal.goal_var (List.hd x'.decreasing) in
-            print
-              "Cannot ensure termination: %a is not structurally decreasing, "
-              Printtyp.path path;
-            begin match Env.find_type_expansion path env with
-            | exception Not_found ->
-                print "nested occurrence is not constrained."
-            | (_, ty2, _) ->
-                let _, ty1, _ = Env.find_type_expansion path env in
-                print "%a is not smaller than %a."
-                  Printtyp.type_expr ty2
-                  Printtyp.type_expr ty1
-            end
-        | x :: xs ->
-            print
-              "Termination succeeds: %a is structurally decreasing"
-              Printtyp.path x
-        end;
-        Format.flush_str_formatter ()
-    | _ -> assert false
+        Some path
+
+  let can_enter env flexible goal t =
+    match find_decreasing env flexible goal t with
+    | exception Not_found -> false
+    | _ -> true
+
+  let explain env flexible goal t =
+    let print x = Format.fprintf Format.str_formatter x in
+    begin match find_decreasing env flexible goal t with
+    | None -> print "Termination succeeds: no nested call"
+    | Some x ->
+        print "Termination succeeds: %a is structurally decreasing"
+          Printtyp.path x
+    | exception Not_found ->
+        let x, x' =
+          match Tbl.find goal.goal_termination_id t with
+          | x :: x' :: _ -> x, x'
+          | [] | [_] -> assert false
+        in
+        let path = rewrite_path x.goal.goal_var (List.hd x'.decreasing) in
+        print "Cannot ensure termination: %a is not structurally decreasing, "
+          Printtyp.path path;
+        begin match Env.find_type_expansion path env with
+        | exception Not_found ->
+            print "nested occurrence is not constrained."
+        | (_, ty2, _) ->
+            let _, ty1, _ = Env.find_type_expansion path env in
+            print "%a is not smaller than %a."
+              Printtyp.type_expr ty2
+              Printtyp.type_expr ty1
+        end
+    end;
+    Format.flush_str_formatter ()
 
 end
 
@@ -570,7 +603,6 @@ end = struct
     let print_paths ppf ps = print_paths ppf (List.rev ps) in
     printf "%a <- %a\n" print_paths state.debug_path Printtyp.path path;
     let goal = state.goal in
-    (* Generate coercion. if this succeeds this produce equations in eq_var *)
     let flexible, env = List.fold_left
         (fun (flexible, env) sub_goal ->
           printf "Binding %a with type %a\n%!"
@@ -581,16 +613,20 @@ end = struct
         (state.flexible, state.env) sub_goals
     in
     let flexible = Tbl.remove goal.goal_var flexible in
-    let env = Env.add_module goal.goal_var candidate_mty env in
-    let (_ : module_coercion), eqs =
-      try Ctype.collect_equalities ~on:flexible
-            (fun () -> Includemod.modtypes env candidate_mty goal.goal_type)
-      with _ -> raise Invalid_candidate
-    in
-    printf "Flexible =%a\n%!"
+    printf "Flexible {%a}\n%!"
       (fun _ -> Tbl.iter (fun i () -> printf " %a" Printtyp.ident i))
       flexible;
-    printf "New equations =\n%a%!"
+    let goal_type = Mtype.strengthen env goal.goal_type (Path.Pident goal.goal_var) in
+    printf "Inclusion:\n%a <: %a\n"
+      Printtyp.modtype candidate_mty Printtyp.modtype goal_type;
+    let (_ : module_coercion), eqs =
+      try Ctype.collect_equalities ~on:flexible
+            (fun () -> Includemod.modtypes env candidate_mty goal_type)
+      with _ ->
+        printf "Inclusion failed\n";
+        raise Invalid_candidate
+    in
+    printf "New equations {\n%a}\n%!"
       (fun _ -> List.iter (fun eq ->
            List.iter (fun (t1,t2) ->
                printf "\t%a = %a\n%!"
@@ -599,7 +635,7 @@ end = struct
              ) eq.Ctype.equalities;
          ))
       eqs;
-    printf "Inherited equations =\n%a%!"
+    printf "Inherited equations {\n%a}\n%!"
       (fun _ -> List.iter (fun eq ->
            List.iter (fun (t1,t2) ->
                printf "\t%a = %a\n%!"
@@ -608,6 +644,7 @@ end = struct
              ) eq.Ctype.equalities;
          ))
       (goal.goal_constraints @ state.equalities);
+    let env = Env.add_module goal.goal_var candidate_mty env in
     let equalities, env =
       try Equalities.refine flexible env (eqs @ goal.goal_constraints @ state.equalities)
       with _ -> raise Invalid_candidate
@@ -622,8 +659,10 @@ end = struct
       let debug_path = state.debug_path in
       let partial = {state with payload = (path, sub_goals)} in
       let termination = Termination.add_goal state.env goal state.termination in
-      if not (Termination.can_enter state.env goal termination) then
-        raise (Terminate (Termination.explain state.env goal termination));
+      printf "Termination: %s\n%!"
+        (Termination.explain state.env flexible goal termination);
+      if not (Termination.can_enter state.env flexible goal termination) then
+        raise (Terminate (Termination.explain state.env flexible goal termination));
       let state = {state with goal; termination; debug_path = path :: debug_path} in
       `Step (partial, state)
 
@@ -636,7 +675,9 @@ end = struct
       | Terminate msg as exn ->
         printf "%s\n%!" msg;
         raise exn
-      | Invalid_candidate -> step state candidates
+      | Invalid_candidate ->
+          printf "Skipping candidate\n%!";
+          step state candidates
       | exn ->
         report_error "Exception while testing candidate: " exn;
         step state candidates

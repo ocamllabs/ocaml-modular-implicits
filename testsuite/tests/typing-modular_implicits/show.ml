@@ -25,12 +25,12 @@ print 5;;
 
 implicit module StringifyPair {A : Show} {B : Show} = struct
   type t = A.t * B.t
-  let show (a,b) = "(" ^ A.show a ^ "," ^ B.show b ^ ")"
+  let show (a,b : t) = "(" ^ A.show a ^ "," ^ B.show b ^ ")"
 end;;
 
 implicit module StringifyList {X : Show} = struct
   type t = X.t list
-  let show xs = "[" ^ String.concat "; " (List.map X.show xs) ^ "]"
+  let show (xs : t) = "[" ^ String.concat "; " (List.map X.show xs) ^ "]"
 end
 
 let () = print [("hello", 1); ("world", 2)];;
