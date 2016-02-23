@@ -149,12 +149,82 @@ let instantiate_one_implicit loc env id ty_arg ty_res =
 
   inst
 
-let pack_implicit_ref
-  : (pending_implicit -> Path.t -> Typedtree.expression) ref
-  = ref (fun _ _ -> assert false)
-
+(* Pack module at given path to match a given implicit instance and
+   update the instance to point to this module.
+   Return the correct package if any.
+*)
 let pack_implicit inst path =
-  !pack_implicit_ref inst path
+  let { implicit_type = p,nl,tl;
+        implicit_env  = env;
+        implicit_loc  = loc } = inst in
+  let rec translpath = function
+    | Path.Pident _ | Path.Pdot _ as path ->
+        let md = Env.find_module path env in
+        let lident = Location.mkloc (Path.to_longident path) loc in
+        {
+          mod_desc = Tmod_ident (path, lident);
+          mod_loc = loc;
+          mod_type = md.md_type;
+          mod_env = env;
+          mod_attributes = [];
+        }
+    | Path.Papply (p1, p2, i) ->
+        let mfun = translpath p1 and marg = translpath p2 in
+        let rec loop acc mty =
+          match mty with
+          | Mty_functor (param, mty_res) ->
+              let param, mty_param =
+                match param with
+                | Mpar_generative -> assert false
+                | Mpar_applicative(param, mty_param)
+                | Mpar_implicit(_, param, mty_param) ->
+                    param, mty_param
+              in
+              let coercion = Includemod.modtypes env marg.mod_type mty_param in
+              let mty_appl =
+                Subst.modtype
+                  (Subst.add_module param p2 Subst.identity) mty_res
+              in
+              let marg =
+                match i with
+                | Asttypes.Nonimplicit -> Tmarg_applicative(marg, coercion)
+                | Asttypes.Implicit -> Tmarg_implicit(marg, coercion)
+              in
+              { mod_desc = Tmod_apply(acc, marg);
+                mod_type = mty_appl;
+                mod_env = env;
+                mod_attributes = [];
+                mod_loc = loc;
+              }
+          | Mty_ident path ->
+              let mty = Includemod.expand_module_path env [] path in
+              loop acc mty
+          | Mty_alias path ->
+              let path = Env.normalize_path (Some loc) env path in
+              let mty = Includemod.expand_module_alias env [] path in
+              let acc =
+                { mod_desc = Tmod_constraint (acc, mty, Tmodtype_implicit,
+                                 Tcoerce_alias (path, Tcoerce_none));
+                  mod_type = mty;
+                  mod_env = env;
+                  mod_attributes = [];
+                  mod_loc = loc;
+                }
+              in
+                loop acc mty
+          | _ -> assert false
+        in
+          loop mfun mfun.mod_type
+  in
+  let modl = translpath path in
+  let (modl, tl') = !type_implicit_instance env modl p nl tl in
+  {
+    exp_desc = Texp_pack modl;
+    exp_loc = loc; exp_extra = [];
+    exp_type = newty (Tpackage (p, nl, tl'));
+    exp_attributes = [];
+    exp_env = env;
+  }
 
 module Link = struct
   (* Link a pending implicit to the module at specified path.
