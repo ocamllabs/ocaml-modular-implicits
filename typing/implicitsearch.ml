@@ -724,13 +724,21 @@ let canonical_candidates env =
 let find_pending_instance inst =
   let snapshot = Btype.snapshot () in
   let env, flexible, var, mty, cstrs = Pending.prepare inst in
-  (*let loc = inst.implicit_loc in*)
+  let loc = inst.implicit_loc in
   let goal = Search.make env flexible [var, mty] cstrs in
+  let goal_path solution =
+    List.assoc var (Search.construct_paths solution)
+  in
   let candidates = canonical_candidates env in
   let solution = Backtrack.search candidates goal [var]
       (fun solution solutions ->
          match solutions with
-         | solution' :: _ -> failwith "Ambiguous_implicit"
+         | solution' :: _ ->
+             let open Typecore in
+             raise (Error (loc, inst.implicit_env,
+                           Ambiguous_implicit (inst,
+                                               goal_path solution,
+                                               goal_path solution')))
          | [] -> [solution])
       []
   in
