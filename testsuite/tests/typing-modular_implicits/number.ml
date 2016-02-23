@@ -7,11 +7,11 @@ module type Num = sig
   val (~- ) : t -> t
 end;;
 
-let ( + ) (implicit N : Num) = N.( + );;
-let ( - ) (implicit N : Num) = N.( - );;
-let ( * ) (implicit N : Num) = N.( * );;
-let ( / ) (implicit N : Num) = N.( / );;
-let (~- ) (implicit N : Num) = N.(~- );;
+let ( + ) {N : Num} = N.( + );;
+let ( - ) {N : Num} = N.( - );;
+let ( * ) {N : Num} = N.( * );;
+let ( / ) {N : Num} = N.( / );;
+let (~- ) {N : Num} = N.(~- );;
 
 implicit module Int = struct
   type t = int

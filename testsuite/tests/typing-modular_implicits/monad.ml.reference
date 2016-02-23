@@ -1,0 +1,39 @@
+
+#         module type Monad =
+  sig
+    type 'a t
+    val return : 'a -> 'a t
+    val bind : 'a t -> ('a -> 'b t) -> 'b t
+  end
+#   val return : {M : Monad} -> 'a -> 'a M.t = <fun>
+#   val ( >>= ) : {M : Monad} -> 'a M.t -> ('a -> 'b M.t) -> 'b M.t = <fun>
+#                   implicit module ListMonad :
+  sig
+    type 'a t = 'a list
+    val return : 'a -> 'a list
+    val bind : 'a list -> ('a -> 'b list) -> 'b list
+  end
+#               implicit module OptionMonad :
+  sig
+    type 'a t = 'a option
+    val return : 'a -> 'a option
+    val bind : 'a option -> ('a -> 'b option) -> 'b option
+  end
+#     Characters 36-39:
+  let a = (return 5) >>= fun x -> return x;;
+                     ^^^
+Error: Ambiguous implicit M: OptionMonad and ListMonad
+are both solutions.
+#   val l : int list = [5]
+#   val o : int option = Some 5
+#   val m : int ListMonad.t = [1; 2; 3]
+#   val n : int list = [5; 2; 3]
+#                   val sequence : {M : Monad} -> 'a M.t list -> 'a list M.t = <fun>
+#                 val sequence : {M : Monad} -> 'a M.t list -> 'a list M.t = <fun>
+#                 val sequence : {M : Monad} -> 'a M.t list -> 'a list M.t = <fun>
+#                 val sequence : {M : Monad} -> 'a M.t list -> 'a list M.t = <fun>
+#                 val sequence : {M : Monad} -> 'a M.t list -> 'a list M.t = <fun>
+#                 val sequence : {M : Monad} -> 'a M.t list -> 'a list M.t = <fun>
+#                 val sequence : {M : Monad} -> 'a M.t list -> 'a list M.t = <fun>
+#                 val sequence : {M : Monad} -> 'a M.t list -> 'a list M.t = <fun>
+# 

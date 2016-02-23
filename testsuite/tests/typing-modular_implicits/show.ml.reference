@@ -1,0 +1,20 @@
+
+#       module type Show = sig type t val show : t -> string end
+#   val show : {S : Show} -> S.t -> string = <fun>
+#     val print : {S : Show} -> S.t -> unit = <fun>
+#         implicit module ShowString :
+  sig type t = string val show : string -> string end
+#         implicit module ShowInt : sig type t = int val show : int -> string end
+#   "4"
+- : unit = ()
+#   5
+- : unit = ()
+#           implicit module StringifyPair :
+  functor {A : Show} {B : Show} ->
+    sig type t = A.t * B.t val show : t -> string end
+#             [("hello",1); ("world",2)]
+implicit module StringifyList :
+  functor {X : Show} -> sig type t = X.t list val show : t -> string end
+#             val g : float -> string = <fun>
+#     5.5
+# 

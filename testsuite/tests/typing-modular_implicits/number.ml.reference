@@ -1,0 +1,39 @@
+
+#               module type Num =
+  sig
+    type t
+    val ( + ) : t -> t -> t
+    val ( - ) : t -> t -> t
+    val ( * ) : t -> t -> t
+    val ( / ) : t -> t -> t
+    val ( ~- ) : t -> t
+  end
+#   val ( + ) : {N : Num} -> N.t -> N.t -> N.t = <fun>
+# val ( - ) : {N : Num} -> N.t -> N.t -> N.t = <fun>
+# val ( * ) : {N : Num} -> N.t -> N.t -> N.t = <fun>
+# val ( / ) : {N : Num} -> N.t -> N.t -> N.t = <fun>
+# val ( ~- ) : {N : Num} -> N.t -> N.t = <fun>
+#             implicit module Int :
+  sig
+    type t = int
+    val ( + ) : int -> int -> int
+    val ( - ) : int -> int -> int
+    val ( * ) : int -> int -> int
+    val ( / ) : int -> int -> int
+    val ( ~- ) : int -> int
+  end
+#           implicit module Float :
+  sig
+    type t = float
+    val ( + ) : float -> float -> float
+    val ( - ) : float -> float -> float
+    val ( * ) : float -> float -> float
+    val ( / ) : float -> float -> float
+    val ( ~- ) : float -> float
+  end
+#   val x : int = 6
+#   val y : float = 6.55161290322580747
+#   val sq : {N : Num} -> N.t -> N.t = <fun>
+#   val a : float = 24.0100000000000051
+#   val b : int = 36
+# 

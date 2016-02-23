@@ -43,3 +43,4 @@ let g (x : float) =
   show x;;
 
 let () = print_endline (g 5.5)
+;;

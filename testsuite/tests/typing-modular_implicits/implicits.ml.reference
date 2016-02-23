@@ -1,0 +1,34 @@
+
+#   module type T = sig type t val x : t end
+#           Characters 69-72:
+    let g {M : T} () = x := [M.x] in
+                             ^^^
+Error: This expression has type M.t but an expression was expected of type
+         M.t
+       The type constructor M.t would escape its scope
+#         Characters 39-40:
+    (x : M.t);
+     ^
+Error: This expression has type M.t but an expression was expected of type
+         M.t
+       The type constructor M.t would escape its scope
+#         Characters 40-49:
+    (y : M.t);
+    ^^^^^^^^^
+Warning 10: this expression should have type unit.
+val f : {M : T} -> M.t -> M.t -> unit = <fun>
+#     val f : {M : T} -> M.t -> unit = <fun>
+#         Characters 44-53:
+    (y : M.t);
+    ^^^^^^^^^
+Warning 10: this expression should have type unit.
+val f : {M : T} -> M.t -> M.t -> unit = <fun>
+#       Characters 57-66:
+    fun {M : T} (x : M.t) -> ();;
+                ^^^^^^^^^
+Error: This pattern matches values of type M.t
+       but a pattern was expected which matches values of type M.t
+       The type constructor M.t would escape its scope
+#     val f : ({M : T} -> M.t -> unit) -> unit -> unit = <fun>
+#     val f : {M : T} -> {N : T} -> N.t = <fun>
+# 

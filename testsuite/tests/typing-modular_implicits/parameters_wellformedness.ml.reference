@@ -1,0 +1,134 @@
+
+#       module Pure1_ok : functor {X : Map.OrderedType} -> sig val test : string end
+#       Characters 17-75:
+  ................{X : Map.OrderedType} = struct
+    let test = ref "test"
+  end..
+Error: Body of a implicit functor should be pure.
+#       module Pure2_ok :
+  functor {X : Map.OrderedType} ->
+    sig
+      module M :
+        functor () ->
+          sig
+            type key = X.t
+            type 'a t = 'a Map.Make(X).t
+            val empty : '_a t
+            val is_empty : '_a t -> bool
+            val mem : key -> '_a t -> bool
+            val add : key -> '_a -> '_a t -> '_a t
+            val singleton : key -> '_a -> '_a t
+            val remove : key -> '_a t -> '_a t
+            val merge :
+              (key -> '_a option -> '_b option -> '_c option) ->
+              '_a t -> '_b t -> '_c t
+            val compare : ('_a -> '_a -> int) -> '_a t -> '_a t -> int
+            val equal : ('_a -> '_a -> bool) -> '_a t -> '_a t -> bool
+            val iter : (key -> '_a -> unit) -> '_a t -> unit
+            val fold : (key -> '_a -> '_b -> '_b) -> '_a t -> '_b -> '_b
+            val for_all : (key -> '_a -> bool) -> '_a t -> bool
+            val exists : (key -> '_a -> bool) -> '_a t -> bool
+            val filter : (key -> '_a -> bool) -> '_a t -> '_a t
+            val partition : (key -> '_a -> bool) -> '_a t -> '_a t * '_a t
+            val cardinal : '_a t -> int
+            val bindings : '_a t -> (key * '_a) list
+            val min_binding : '_a t -> key * '_a
+            val max_binding : '_a t -> key * '_a
+            val choose : '_a t -> key * '_a
+            val split : key -> '_a t -> '_a t * '_a option * '_a t
+            val find : key -> '_a t -> '_a
+            val map : ('_a -> '_b) -> '_a t -> '_b t
+            val mapi : (key -> '_a -> '_b) -> '_a t -> '_b t
+          end
+    end
+#       Characters 17-76:
+  ................{X : Map.OrderedType} = struct
+    module M = Map.Make(X)
+  end..
+Error: Body of a implicit functor should be pure.
+#         module Pure3_ok :
+  functor {X : Map.OrderedType} ->
+    sig
+      module P :
+        sig
+          module M :
+            functor () ->
+              sig
+                type key = X.t
+                type 'a t = 'a Map.Make(X).t
+                val empty : '_a t
+                val is_empty : '_a t -> bool
+                val mem : key -> '_a t -> bool
+                val add : key -> '_a -> '_a t -> '_a t
+                val singleton : key -> '_a -> '_a t
+                val remove : key -> '_a t -> '_a t
+                val merge :
+                  (key -> '_a option -> '_b option -> '_c option) ->
+                  '_a t -> '_b t -> '_c t
+                val compare : ('_a -> '_a -> int) -> '_a t -> '_a t -> int
+                val equal : ('_a -> '_a -> bool) -> '_a t -> '_a t -> bool
+                val iter : (key -> '_a -> unit) -> '_a t -> unit
+                val fold : (key -> '_a -> '_b -> '_b) -> '_a t -> '_b -> '_b
+                val for_all : (key -> '_a -> bool) -> '_a t -> bool
+                val exists : (key -> '_a -> bool) -> '_a t -> bool
+                val filter : (key -> '_a -> bool) -> '_a t -> '_a t
+                val partition :
+                  (key -> '_a -> bool) -> '_a t -> '_a t * '_a t
+                val cardinal : '_a t -> int
+                val bindings : '_a t -> (key * '_a) list
+                val min_binding : '_a t -> key * '_a
+                val max_binding : '_a t -> key * '_a
+                val choose : '_a t -> key * '_a
+                val split : key -> '_a t -> '_a t * '_a option * '_a t
+                val find : key -> '_a t -> '_a
+                val map : ('_a -> '_b) -> '_a t -> '_b t
+                val mapi : (key -> '_a -> '_b) -> '_a t -> '_b t
+              end
+        end
+      module M = P.M
+    end
+#         Characters 17-95:
+  ................{X : Map.OrderedType} = struct
+    module P = Pure2_ok{X}
+    module M = P.M()
+  end..
+Error: Body of a implicit functor should be pure.
+#           module Escape1_ok :
+  functor {X : sig type t val x : t end} -> sig type t = X.t val x : t end
+#       Characters 19-76:
+  ..................{X : sig type t val x : t end} = struct
+    let x = X.x
+  end..
+Error: Types of values cannot depend on an implicit parameter.
+#       module Virtual0_ok : functor {virtual X : sig  end} -> sig  end
+#   module Virtual1_ok : functor {virtual X : sig type t end} -> sig  end
+#   Characters 20-66:
+  module Virtual1_ko {virtual X : sig val x : int end} = struct end;;
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: Virtual parameters can only contain types.
+#   module Virtual2_ok :
+  functor {virtual X : sig module X : sig  end end} -> sig  end
+#   module Virtual3_ok :
+  functor {virtual X : sig module X : sig type t end end} -> sig  end
+#   Characters 20-85:
+  module Virtual3_ko {virtual X : sig module X : sig val x : int end end} = struct end;;
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: Virtual parameters can only contain types.
+#                   Characters 157-218:
+    functor {X : sig type t val x : t end} -> sig val x : X.t end
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: Types of values cannot depend on an implicit parameter.
+#   module type Virtual1_ok = functor {virtual X : sig type t end} -> sig  end
+#   Characters 27-79:
+  module type Virtual1_ko = functor {virtual X : sig val x : int end} -> sig end;;
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: Virtual parameters can only contain types.
+#   module type Virtual2_ok =
+  functor {virtual X : sig module X : sig  end end} -> sig  end
+#   module type Virtual3_ok =
+  functor {virtual X : sig module X : sig type t end end} -> sig  end
+#   Characters 27-98:
+  module type Virtual3_ko = functor {virtual X : sig module X : sig val x : int end end} -> sig end;;
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: Virtual parameters can only contain types.
+# 
