@@ -4,7 +4,7 @@ open Types
 open Typedtree
 open Typeimplicit
 
-(** Misc functions *)
+(** Misc definitions *)
 
 let rec list_extract f acc = function
   | x :: xs when f x -> x, List.rev_append acc xs
@@ -40,9 +40,17 @@ let has_suffix ~suffix str =
     true
   with Exit -> false
 
-let push l t = l := t :: !l
-
 let papply path arg = Path.Papply (path, arg, Asttypes.Implicit)
+
+let safe_report_exn ppf exn =
+  match Location.error_of_exn exn with
+  | None -> Format.fprintf ppf "%s" (Printexc.to_string exn)
+  | Some error -> Location.report_error ppf error
+
+type identset = (Ident.t, unit) Tbl.t
+
+let add_ident set id = Tbl.add id () set
+
 
 module Equalities = struct
   type t = Ctype.equalities list
@@ -412,423 +420,324 @@ end = struct
 
 end
 
-(* Various functions to preprocess pending implicit and implicit declarations
-   when searching *)
+module Pending = struct
+  (* Various functions to preprocess pending implicit and implicit declarations
+     when searching *)
 
-let remove_type_variables () =
-  let k = ref 0 in
-  let variables = ref [] in
-  let it_type_expr it ty =
-    let ty = repr ty in
-    if ty.level >= lowest_level then begin
-      match ty.desc with
-      | Tvar name when ty.level < generic_level ->
-          let name = match name with
-            | None -> "ex" ^ string_of_int (incr k; !k)
-            | Some name -> name
-          in
-          let ident = Ident.create name in
-          variables := (ty, ident) :: !variables;
-          let ty' = newgenty (Tconstr (Path.Pident ident, [], ref Mnil)) in
-          link_type ty ty';
-          mark_type_node ty
-      | _ ->
-          mark_type_node ty;
-          type_iterators.it_do_type_expr it ty;
-    end
-  in
-  let it = {type_iterators with it_type_expr} in
-  variables, it
+  let variables_reifier () =
+    let k = ref 0 in
+    let variables = ref [] in
+    let it_type_expr it ty =
+      let ty = repr ty in
+      if ty.level >= lowest_level then begin
+        match ty.desc with
+        | Tvar name when ty.level < generic_level ->
+            let name = match name with
+              | None -> "ex" ^ string_of_int (incr k; !k)
+              | Some name -> name
+            in
+            let ident = Ident.create name in
+            variables := (ty, ident) :: !variables;
+            let ty' = newgenty (Tconstr (Path.Pident ident, [], ref Mnil)) in
+            link_type ty ty';
+            mark_type_node ty
+        | _ ->
+            mark_type_node ty;
+            type_iterators.it_do_type_expr it ty;
+      end
+    in
+    let it = {type_iterators with it_type_expr} in
+    variables, it
 
-let goal_of_pending inst =
-  let env = inst.implicit_env in
-  let ident = inst.implicit_id in
-  let path, nl, tl = inst.implicit_type in
-  (* Extract base module type *)
-  let mtd = Env.find_modtype path env in
-  let mty = match mtd.mtd_type with
-                | None -> assert false
-                | Some mty -> mty
-  in
-  let variables, it = remove_type_variables () in
-  it.it_module_type it mty;
-  List.iter (fun (ty,tyvar) ->
-      it.it_type_expr it ty;
-      it.it_type_expr it tyvar)
-    inst.implicit_constraints;
-  unmark_iterators.it_module_type unmark_iterators mty;
-  List.iter (fun (ty,tyvar) ->
-      unmark_type ty;
-      unmark_type tyvar)
-    inst.implicit_constraints;
-  !variables,
-  {goal_type = mty;
-   goal_var = ident;
-   goal_termination_id = ident;
-   goal_constraints =
-     [{Ctype.
-       subst = [];
-       equalities = inst.implicit_constraints
-      }];
-  }
+  let reify_variables mty tl constraints =
+    let variables, it = variables_reifier () in
+    it.it_module_type it mty;
+    List.iter (it.it_type_expr it) tl;
+    List.iter (fun (ty,tyvar) ->
+        it.it_type_expr it ty;
+        it.it_type_expr it tyvar)
+      constraints;
+    unmark_iterators.it_module_type unmark_iterators mty;
+    List.iter unmark_type tl;
+    List.iter (fun (ty,tyvar) ->
+        unmark_type ty;
+        unmark_type tyvar)
+      constraints;
+    !variables
 
-let report_error msg exn =
-  try
-    Location.report_exception printf_output exn
-  with exn ->
-    printf "%s%s\n%!" msg (Printexc.to_string exn)
-
-(* Make the search stack explicit.
-
-   This helps resuming search (e.g to search for ambiguity), explaining search
-   state or errors, etc. *)
-
-exception Terminate of string
-
-module Search : sig
-
-  type candidate = Path.t * goal list * Types.module_type
-
-  type query
-  type partial
-  type result
-
-  val get : result -> Path.t
-
-  val all_candidates : query -> candidate list
-
-  val start : Env.t -> Ident.t list -> goal -> query
-
-  type outcome = [
-    | `Done of result
-    | `Step of partial * query
-  ]
-
-  val step : query -> candidate list -> outcome * candidate list
-  val apply : partial -> result -> outcome
-
-end = struct
-
-  type candidate = Path.t * goal list * Types.module_type
-
-  type 'a state =
-    {
-      payload: 'a;
-      goal: goal;
-      env: Env.t;
-
-      (* List of partials paths being constructed, only for debug purpose *)
-      debug_path: Path.t list;
-
-      flexible: (Ident.t, unit) Tbl.t;
-      equalities: Equalities.t;
-      termination: Termination.t;
-    }
-
-  type query =
-    (* Start point for a search, a state without other information attached *)
-    unit state
-
-  type partial =
-    (* Intermediate result: a path has been found, but some arguments are
-       missing and need to be applied *)
-    (Path.t * goal list) state
-
-  type result =
-    (* Final result: the path points to a module with the desired type *)
-    Path.t state
-
-  let get t = t.payload
-
-  type outcome = [
-    | `Done of result
-    | `Step of partial * query
-  ]
-
-  let start env vars goal =
+  let add_variable env (_, ident) =
+    (* Create a fake abstract type declaration for name. *)
     let level = get_current_level () in
-    let env = List.fold_left (fun env variable ->
-        Env.add_type ~check:false variable
-          (new_declaration (Some (level, level)) None) env)
-        env vars
-    in
-    let flexible = List.fold_left
-        (fun tbl id -> Tbl.add id () tbl)
-        Tbl.empty vars
-    in
-    {
-      payload = ();
-      goal = goal;
-      env = env;
-
-      debug_path = [];
-
-      flexible; equalities = [];
-      termination = Termination.empty;
+    let decl = {
+      type_params = [];
+      type_arity = 0;
+      type_kind = Type_abstract;
+      type_private = Asttypes.Public;
+      type_manifest = None;
+      type_variance = [];
+      type_newtype_level = Some (level, level);
+      type_loc = Location.none;
+      type_attributes = [];
     }
-
-  let make_candidate path params mty =
-    let rec loop path res s acc = function
-      | [] -> path, List.rev acc, Subst.modtype s res
-      | (id, param) :: rest ->
-          let param' = Subst.modtype s param in
-          let id' = Ident.rename id in
-          let s' = Subst.add_module id (Path.Pident id') s in
-          let goal = {
-            goal_var = id';
-            goal_type = param';
-            goal_constraints = [];
-            goal_termination_id = id;
-          } in
-          let acc' = goal :: acc in
-            loop path res s' acc' rest
     in
-      loop path mty Subst.identity [] params
+    Env.add_type ~check:false ident decl env
 
-  let make_candidate (path, params, mty) =
-    match params with
-    | [] -> (path, [], mty)
-    | params -> make_candidate path params mty
-
-  let all_candidates t =
-    List.map make_candidate (Env.implicit_instances t.env)
-
-  exception Invalid_candidate
-
-  let step0 state (path, sub_goals, candidate_mty) =
-    let rec print_paths ppf = function
-      | [] -> Format.pp_print_string ppf "_";
-      | p :: ps -> Format.fprintf ppf "%a (%a)" Printtyp.path p print_paths ps
+  let prepare inst =
+    let env = inst.implicit_env in
+    let var = inst.implicit_id in
+    let path, nl, tl = inst.implicit_type in
+    let constraints = inst.implicit_constraints in
+    (* Extract base module type *)
+    let mty =
+      let mtd = Env.find_modtype path env in
+      match mtd.mtd_type with
+      | None -> assert false
+      | Some mty -> mty
     in
-    let print_paths ppf ps = print_paths ppf (List.rev ps) in
-    printf "%a <- %a\n" print_paths state.debug_path Printtyp.path path;
-    let goal = state.goal in
-    let flexible, env = List.fold_left
-        (fun (flexible, env) sub_goal ->
-          printf "Binding %a with type %a\n%!"
-            Printtyp.ident sub_goal.goal_var
-            Printtyp.modtype sub_goal.goal_type;
-          Tbl.add sub_goal.goal_var () flexible,
-          Env.add_module sub_goal.goal_var sub_goal.goal_type env)
-        (state.flexible, state.env) sub_goals
+    (* Turn with constraints into equality constraints *)
+    let with_cstrs = List.map2 (fun li ty ->
+        let rec path = function
+          | Longident.Lident s -> Path.Pdot (Path.Pident var, s, 0)
+          | Longident.Ldot (l, s) -> Path.Pdot (path l, s, 0)
+          | Longident.Lapply _ -> assert false
+        in
+        Ctype.newconstr (path li) [], ty
+      ) nl tl
     in
-    let flexible = Tbl.remove goal.goal_var flexible in
-    printf "Flexible {%a}\n%!"
-      (fun _ -> Tbl.iter (fun i () -> printf " %a" Printtyp.ident i))
-      flexible;
-    let goal_type = Mtype.strengthen env goal.goal_type (Path.Pident goal.goal_var) in
-    printf "Inclusion:\n%a <: %a\n"
-      Printtyp.modtype candidate_mty Printtyp.modtype goal_type;
-    let (_ : module_coercion), eqs =
-      try Ctype.collect_equalities ~on:flexible
-            (fun () -> Includemod.modtypes env candidate_mty goal_type)
-      with _ ->
-        printf "Inclusion failed\n";
-        raise Invalid_candidate
+    (* Reify variables *)
+    let variables = reify_variables mty tl constraints in
+    let env = List.fold_left add_variable env variables in
+    let flexible =
+      List.fold_left (fun set (_,id) -> add_ident set id) Tbl.empty variables
     in
-    printf "New equations {\n%a}\n%!"
-      (fun _ -> List.iter (fun eq ->
-           List.iter (fun (t1,t2) ->
-               printf "\t%a = %a\n%!"
-                 Printtyp.type_expr t1
-                 Printtyp.type_expr t2;
-             ) eq.Ctype.equalities;
-         ))
-      eqs;
-    printf "Inherited equations {\n%a}\n%!"
-      (fun _ -> List.iter (fun eq ->
-           List.iter (fun (t1,t2) ->
-               printf "\t%a = %a\n%!"
-                 Printtyp.type_expr t1
-                 Printtyp.type_expr t2;
-             ) eq.Ctype.equalities;
-         ))
-      (goal.goal_constraints @ state.equalities);
-    let env = Env.add_module goal.goal_var candidate_mty env in
-    let equalities, env =
-      try Equalities.refine flexible env (eqs @ goal.goal_constraints @ state.equalities)
-      with _ -> raise Invalid_candidate
-    in
+    env, flexible, var, mty, (with_cstrs @ constraints)
 
-    (* Keep new equations potentially added to top variables *)
-    let state = {state with equalities; flexible; env} in
-    match sub_goals with
-    | [] ->
-      `Done {state with payload = path}
-    | goal :: sub_goals ->
-      let debug_path = state.debug_path in
-      let partial = {state with payload = (path, sub_goals)} in
-      let termination = Termination.add_goal state.env goal state.termination in
-      printf "Termination: %s\n%!"
-        (Termination.explain state.env flexible goal termination);
-      if not (Termination.can_enter state.env flexible goal termination) then
-        raise (Terminate (Termination.explain state.env flexible goal termination));
-      let state = {state with goal; termination; debug_path = path :: debug_path} in
-      `Step (partial, state)
-
-  let rec step state = function
-    | [] -> raise Not_found
-    | candidate :: candidates ->
-      try
-        step0 state candidate, candidates
-      with
-      | Terminate msg as exn ->
-        printf "%s\n%!" msg;
-        raise exn
-      | Invalid_candidate ->
-          printf "Skipping candidate\n%!";
-          step state candidates
-      | exn ->
-        report_error "Exception while testing candidate: " exn;
-        step state candidates
-
-  let apply partial arg =
-    let partial_path, sub_goals = partial.payload in
-    let arg_path = arg.payload in
-    let flexible = arg.flexible in
-    let equalities = arg.equalities in
-    let path = papply partial_path arg_path in
-    match sub_goals with
-    | [] ->
-      let state = {partial with
-                  (* We get the equations from the argument but keep
-                      termination state from the parent *)
-                   env = arg.env;
-                   payload = path; flexible; equalities} in
-      `Done state
-    | goal :: sub_goals ->
-      let partial = {partial with payload = (path, sub_goals) } in
-      let debug_path = path :: partial.debug_path in
-      let arg = {arg with payload = (); goal; debug_path} in
-      `Step (partial, arg)
 end
 
-module Solution = struct
+type candidate =
+  (Path.t * (Ident.t * Types.module_type) list * Types.module_type)
+
+module Search = struct
 
   type t = {
-    (* The original query *)
-    query: Search.query;
+    (** {2 Variables} *)
 
-    (* If we want to resume search, start from these candidates *)
-    next: Search.candidate list;
+    (*vars : Ident.t list;*)
+    (* Flexible modules for which we want to find a concrete instance.
+       At the beginning of the search, these are bound to abstract modules in
+       [env].  In a successful search, they get bound to concrete modules. *)
 
-    (* Intermediate steps with solutions to subqueries *)
-    steps: (Search.partial * t) list;
+    blocked: Ident.t list;
 
-    result: Search.result;
+    flexible : identset;
+    (* All paths on which new constraints can be introduced. *)
+
+    (* Invariant: flexible is a superset of vars & blocked *)
+
+    (** {2 Context & constraints} *)
+
+    env : Env.t;
+    (* Environment in which they should be satisfied.
+       All [vars] are bound to abstract modules at this stage *)
+
+    constraints : Equalities.t;
+    (* Constraints that should be satisfied by a solution.  That is when all
+       vars are bound to concrete modules, equalities in constraints
+       should hold.  *)
+
+    (* Invariant: [constraints] and [env] must be refined (Equalities.refine). *)
+
+    (** {2 Result} *)
+
+    bound : (Ident.t, Path.t) Tbl.t;
+    (* Progression of the search is expressed as a mapping from variables
+       variables to the path they were bound to.
+       When all flexibles variables are bound, the paths are closed. *)
+
+    roots : Ident.t list;
+    (* Variables the search started from, used to display results and construct
+       final paths. *)
   }
 
-  let rec search query =
-    search_candidates query (Search.all_candidates query)
+  let introduce_var env (var, mty) =
+    Env.add_module var mty env
 
-  and search_candidates query candidates =
-    let step, next = Search.step query candidates in
-    try search_arguments query next [] step
-    with Not_found ->
-      search_candidates query next
+  let make env flexible vars equalities =
+    let env = List.fold_left introduce_var env vars in
+    let roots = List.map fst vars in
+    (*let vars = List.fold_left add_ident Tbl.empty roots in*)
+    let flexible = List.fold_left add_ident flexible roots in
+    let constraints, env =
+      Equalities.refine flexible env [{Ctype. subst = []; equalities}] in
+    { (*vars;*) env; constraints; roots; flexible;
+      bound = Tbl.empty; blocked = []; }
 
-  and search_arguments query next steps = function
-    | `Done result ->
-      {query; next; steps; result}
-    | `Step (partial,subquery) ->
-      apply_argument query next steps partial (search subquery)
+  let instantiate_parameters (path, params, mty) =
+    match params with
+    | [] -> path, [], Mty_alias path
+    | params ->
+        let rec loop res ~subst ~path ~params = function
+          | [] -> path, List.rev params, Subst.modtype subst res
+          | (id, param) :: rest ->
+              let param' = Subst.modtype subst param in
+              let id' = Ident.rename id in
+              let path' = Path.Pident id' in
+              loop res
+                ~subst:(Subst.add_module id path' subst)
+                ~path:(papply path path')
+                ~params:((id', param') :: params)
+                rest
+        in
+        loop mty ~subst:Subst.identity ~path ~params:[] params
 
-  and apply_argument query next steps partial solution =
-    search_arguments query next
-      ((partial, solution) :: steps)
-      (Search.apply partial solution.result)
+  (* Reference implementation:
+     - bind one variable to a candidate.
+     - if succeeds, update the goal.
+     - raises an exception if candidate is not compatible
+  *)
+  let bind_candidate goal var candidate =
+    (* Instantiate implicit parameters *)
+    let path, params, mty = instantiate_parameters candidate in
+    let newvars = List.map fst params in
+    (* Update environment *)
+    let env = List.fold_left introduce_var goal.env params in
+    (* Update set of flexible variables *)
+    assert (Tbl.mem var goal.flexible);
+    let flexible = Tbl.remove var goal.flexible in
+    let flexible = List.fold_left add_ident flexible newvars in
+    (* Check inclusion relation, collect constraints on parameters *)
+    let (_ : module_coercion), equalities =
+      let mty1 = Env.scrape_alias env mty in
+      let mty2 = Env.scrape_alias env (Mty_alias (Path.Pident var)) in
+      Ctype.collect_equalities ~on:flexible
+        (fun () -> Includemod.modtypes env mty1 mty2)
+    in
+    (* Bind concrete module *)
+    let env = Env.add_module var mty env in
+    (* Propagate constraints *)
+    let constraints, env =
+      Equalities.refine flexible env (equalities @ goal.constraints) in
+    newvars,
+    {
+      (* Variables *)
+      flexible; blocked = goal.blocked;
 
-  let rec search_next_steps solution = function
-    | ((partial, step) :: steps) ->
-      begin try
-        let {query; next; _} = solution in
-        apply_argument query next steps partial (search_next step)
-      with Not_found ->
-        search_next_steps solution steps
-      end
-    | [] ->
-      search_candidates solution.query solution.next
+      (* Constraints *)
+      env; constraints;
 
-  and search_next solution = search_next_steps solution solution.steps
+      (* Result *)
+      bound = Tbl.add var path goal.bound;
+      roots = goal.roots;
+    }
 
-  let get {result} = Search.get result
+  let construct_paths goal =
+    let rec mk_spine = function
+      | Path.Pident v -> Path.Pident v
+      | Path.Pdot (p', s, x) -> Path.Pdot (mk_spine p', s, x)
+      | Path.Papply (p1, Path.Pident var, Asttypes.Implicit) ->
+          Path.Papply (mk_spine p1, mk_var var, Asttypes.Implicit)
+      | Path.Papply (_, _, _) -> assert false
+    and mk_var var =
+      match Tbl.find var goal.bound with
+      | exception Not_found -> Path.Pident var
+      | path -> mk_spine path
+    in
+    List.map (fun root -> root, mk_var root) goal.roots
+
+  let print_roots ppf goal =
+    let open Format in
+    let rec print_spine ppf = function
+      | Path.Pident var -> Printtyp.ident ppf var
+      | Path.Pdot (p', s, _) -> fprintf ppf "%a.%s" print_spine p' s
+      | Path.Papply (p1, Path.Pident var, Asttypes.Implicit) ->
+          fprintf ppf "%a{%a}" print_spine p1 print_var var
+      | Path.Papply (p1, _, _) -> assert false
+    and print_var ppf var =
+      match Tbl.find var goal.bound with
+      | exception Not_found -> fprintf ppf "?%a" Printtyp.ident var
+      | path -> print_spine ppf path
+    in
+    let print_binding root =
+      fprintf ppf "@[%a = %a@]\n" Printtyp.ident root print_var root in
+    List.iter print_binding goal.roots
+
+  let print_candidate ppf (path, params, _) =
+    Printtyp.path ppf path;
+    List.iter (fun _param -> Format.fprintf ppf "{_}") params
+
+  let rec bind_candidates acc goal var = function
+    | [] -> List.rev acc
+    | candidate :: candidates ->
+        let acc = match bind_candidate goal var candidate with
+          | goal' -> goal' :: acc
+          | exception exn ->
+              printf "Cannot bind @[%a <- %a@]: %a\n"
+                Printtyp.ident var
+                print_candidate candidate
+                safe_report_exn exn;
+              acc
+        in
+        bind_candidates acc goal var candidates
 end
 
-let rec canonical_path env path =
-  try
-    let md = Env.find_module path env in
-    match md.Types.md_type with
-    | Mty_alias path -> canonical_path env path
-    | _ -> match path with
-      | Path.Pident _ -> path
-      | Path.Pdot (p1,s,pos) ->
-          let p1' = canonical_path env p1 in
-          if p1 == p1' then
-            path
-          else
-            Path.Pdot (p1', s, pos)
-      | Path.Papply (p1, p2, i) ->
-          let p1' = canonical_path env p1
-          and p2' = canonical_path env p2 in
-          if p1' == p1 && p2 == p2' then
-            path
-          else
-            Path.Papply (p1', p2', i)
-  with Not_found ->
-    (*?!*)
-    path
+module Backtrack = struct
+
+  let search candidates goal vars fold acc =
+    let rec conjunction acc goal = function
+      | [] -> fold goal acc
+      | var :: vars ->
+          disjunction vars acc
+            (Search.bind_candidates [] goal var candidates)
+
+    and disjunction vars acc = function
+      | [] -> acc
+      | (newvars, goal) :: alternatives ->
+          disjunction vars
+            (conjunction acc goal (newvars @ vars))
+            alternatives
+
+    in
+    conjunction acc goal vars
+
+end
+
+let canonical_candidates env =
+  let seen = Hashtbl.create 7 in
+  let rec aux acc = function
+    | [] -> acc
+    | (path, params, mty) :: xs ->
+        let path = Env.normalize_path None env path in
+        let acc =
+          if Hashtbl.mem seen path then acc else (
+            Hashtbl.add seen path ();
+            (path, params, mty) :: acc
+          )
+        in
+        aux acc xs
+  in
+  aux [] (Env.implicit_instances env)
 
 let find_pending_instance inst =
   let snapshot = Btype.snapshot () in
-  let vars, goal = goal_of_pending inst in
-  let env = inst.implicit_env in
-  let env = List.fold_left (fun env (_ty,ident) ->
-      (* Create a fake abstract type declaration for name. *)
-      let level = get_current_level () in
-      let decl = {
-        type_params = [];
-        type_arity = 0;
-        type_kind = Type_abstract;
-        type_private = Asttypes.Public;
-        type_manifest = None;
-        type_variance = [];
-        type_newtype_level = Some (level, level);
-        type_loc = Location.none;
-        type_attributes = [];
-      }
-      in
-      Env.add_type ~check:false ident decl env
-    ) env vars
+  let env, flexible, var, mty, cstrs = Pending.prepare inst in
+  (*let loc = inst.implicit_loc in*)
+  let goal = Search.make env flexible [var, mty] cstrs in
+  let candidates = canonical_candidates env in
+  let solution = Backtrack.search candidates goal [var]
+      (fun solution solutions ->
+         match solutions with
+         | solution' :: _ -> failwith "Ambiguous_implicit"
+         | [] -> [solution])
+      []
   in
-  let loc = inst.implicit_loc in
-  let query = Search.start env (List.map snd vars) goal in
-  try
-    let solution = Solution.search query in
-    let path = Solution.get solution in
-    let reference = canonical_path env path in
-    let rec check_alternatives solution =
-      match (try Some (Solution.search_next solution)
-             with _ -> None)
-      with
-      | Some alternative ->
-        let path' = Solution.get alternative in
-        let reference' = canonical_path env (Solution.get alternative) in
-        if reference = reference' then
-          check_alternatives alternative
-        else
-          raise Typecore.(Error (loc, env, Ambiguous_implicit (inst,path,path')))
-      | None -> ()
-    in
-    check_alternatives solution;
-    Btype.backtrack snapshot;
-    Link.to_path inst path;
-    true
-  with
-  | Terminate msg ->
-      printf "%s\n%!" msg;
-      raise Typecore.(Error (loc, env, Termination_fail inst))
-  | Not_found ->
-      false
+  Btype.backtrack snapshot;
+  match solution with
+  | [] -> false
+  | [solution] ->
+      let path = List.assoc var (Search.construct_paths solution) in
+      Link.to_path inst path;
+      true
+  | _ -> assert false
 
 (* Pack module at given path to match a given implicit instance and
    update the instance to point to this module.
