@@ -602,8 +602,8 @@ module Search = struct
     (* Update environment *)
     let env = List.fold_left introduce_var goal.env params in
     (* Update set of flexible variables *)
-    assert (Tbl.mem var goal.flexible);
-    let flexible = Tbl.remove var goal.flexible in
+    let flexible = goal.flexible in
+    assert (Tbl.mem var flexible);
     let flexible = List.fold_left add_ident flexible newvars in
     (* Check inclusion relation, collect constraints on parameters *)
     let (_ : module_coercion), equalities =
@@ -612,6 +612,10 @@ module Search = struct
       Ctype.collect_equalities ~on:flexible
         (fun () -> Includemod.modtypes env mty1 mty2)
     in
+    (* Rigidify module after inclusion check: inclusion can introduce new
+       constraints on the module itself, e.g. when discovering associated
+       types. *)
+    let flexible = Tbl.remove var flexible in
     (* Bind concrete module *)
     let env = Env.add_module var mty env in
     (* Propagate constraints *)
