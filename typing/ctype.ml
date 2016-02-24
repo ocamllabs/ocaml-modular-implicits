@@ -3191,6 +3191,13 @@ let moregen inst_nongen type_pairs subst env patt subj =
   univar_pairs := [];
   moregen inst_nongen type_pairs subst env patt subj
 
+let disabled_moregeneral = ref false
+
+let without_moregeneral f =
+  let disabled_moregeneral' = !disabled_moregeneral in
+  disabled_moregeneral := true;
+  try_finally f
+    (fun () -> disabled_moregeneral := disabled_moregeneral')
 (*
    Non-generic variable can be instanciated only if [inst_nongen] is
    true. So, [inst_nongen] should be set to false if the subject might
@@ -3200,25 +3207,26 @@ let moregen inst_nongen type_pairs subst env patt subj =
    is unimportant.  So, no need to propagate abbreviations.
 *)
 let moregeneral env inst_nongen pat_sch subj_sch =
-  let old_level = !current_level in
-  current_level := generic_level - 1;
+  if !disabled_moregeneral then true else begin
+    let old_level = !current_level in
+    current_level := generic_level - 1;
   (*
      Generic variables are first duplicated with [instance].  So,
      their levels are lowered to [generic_level - 1].  The subject is
      then copied with [duplicate_type].  That way, its levels won't be
      changed.
   *)
-  let subj = duplicate_type (instance env subj_sch) in
-  current_level := generic_level;
-  (* Duplicate generic variables *)
-  let patt = instance env pat_sch in
-  let res =
-    try moregen inst_nongen (TypePairs.create 13) Subst.identity env patt subj; true with
-      Unify _ -> false
-  in
-  current_level := old_level;
-  res
-
+    let subj = duplicate_type (instance env subj_sch) in
+    current_level := generic_level;
+    (* Duplicate generic variables *)
+    let patt = instance env pat_sch in
+    let res =
+      try moregen inst_nongen (TypePairs.create 13) Subst.identity env patt subj; true with
+        Unify _ -> false
+    in
+    current_level := old_level;
+    res
+  end
 
 (* Alternative approach: "rigidify" a type scheme,
    and check validity after unification *)

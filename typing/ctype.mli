@@ -177,6 +177,8 @@ val filter_implicit: Env.t -> type_expr -> (Ident.t * type_expr * type_expr) opt
 val moregeneral: Env.t -> bool -> type_expr -> type_expr -> bool
         (* Check if the first type scheme is more general than the second. *)
 
+val without_moregeneral: (unit -> 'a) -> 'a
+
 val rigidify: type_expr -> type_expr list
         (* "Rigidify" a type and return its type variable *)
 val all_distinct_vars: Env.t -> type_expr list -> bool

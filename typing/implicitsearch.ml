@@ -627,8 +627,9 @@ module Search = struct
     let (_ : module_coercion), equalities =
       let mty1 = Env.scrape_alias env mty in
       let mty2 = Env.scrape_alias env (Mty_alias (Path.Pident var)) in
-      Ctype.collect_equalities ~on:flexible
-        (fun () -> Includemod.modtypes env mty1 mty2)
+      Ctype.collect_equalities ~on:flexible @@ fun () ->
+      Ctype.without_moregeneral @@ fun () ->
+      Includemod.modtypes env mty1 mty2
     in
     (* Rigidify module after inclusion check: inclusion can introduce new
        constraints on the module itself, e.g. when discovering associated
