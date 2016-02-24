@@ -49,6 +49,9 @@ let safe_report_exn ppf exn =
 
 type identset = (Ident.t, unit) Tbl.t
 
+type candidate =
+  (Path.t * (Ident.t * Types.module_type) list * Types.module_type)
+
 let add_ident set id = Tbl.add id () set
 
 
@@ -87,7 +90,9 @@ module Equalities = struct
                  | [] -> true
                  | x :: xs -> not (List.memq x xs) && uniq xs
                in
-               (* FIXME: No type variable should occur in rhs but not in tl *)
+               (* FIXME: No type variable should occur in rhs but not in tl.
+                  Check Ctype.freevars inclusion
+               *)
                if uniq tl' then `Expansion (p, (tl', rhs, None), tl) else `None
            end
        | _ -> `None
@@ -195,65 +200,27 @@ module Equalities = struct
    let refine flexible env eqs = refine flexible env [] eqs
 end
 
-(** [goal] is the point from which a search starts *)
-type goal = {
-  (* The module type we try to find an instance for *)
-  goal_type : Types.module_type;
-  (* The identifier to which the result of the search will be bound.
-     E.g we are trying to fill the hole in:
-       module %goal_id : %goal_type = _ *)
-  goal_var : Ident.t;
-
-  (* Constraints that should be satisfied by a solution.  That is when a
-     concrete module is bound to goal_var, equalities in goal_constraints
-     should be true. *)
-  goal_constraints : Equalities.t;
-
-  (* A unique identifier that will be used for termination checking.  When the
-     goal is the argument to a functor instantiation, if this functor is
-     instantiated multiple times we enforce that the constraints on the
-     argument are stronger.
-
-     Pair (Arg_1) (Pair (Arg_1') (Arg_2))
-
-     Arg_1 and Arg_1' targets will have a different goal_var but the same
-     goal_uid.  We check that constraints on Arg_1' are stronger than those
-     on Arg_1'.
-
-     Note: This is also true of (Pair (Arg_1') (Arg_2)) and Arg_2, used as
-     second arguments to Pair.  *)
-  goal_termination_id : Ident.t;
-}
-
 module Termination : sig
   (** The termination checker tracks all arguments to implicit functors.
       For an environment env and a flexible argument M, it will decides
       whether enough is known about M to allow searching for an instance. *)
-  type t
 
+  type symbol
+  val index : Env.t -> candidate -> symbol
+
+  type t
   val empty : t
 
-  val add_goal : Env.t -> goal -> t -> t
-
-  val can_enter : Env.t -> (Ident.t, unit) Tbl.t -> goal -> t -> bool
-
-  val explain : Env.t -> (Ident.t, unit) Tbl.t -> goal -> t -> string
+  val enter : Env.t -> symbol -> Ident.t list -> t -> t
+  val blocked : Env.t -> flexible:identset -> symbol -> t -> bool
+  val explain : Env.t -> flexible:identset -> symbol -> t -> string
 
 end = struct
 
-  type element = {
-    goal: goal;
-    decreasing: Path.t list;
-  }
+  (* Helpers *)
 
-  type chain = element list
+  (* Structural ordering of types. *)
 
-  type t = (Ident.t, chain) Tbl.t
-
-  let empty = Tbl.empty
-
-  (* Checking that an individial type is smaller than another one.
-     The exception never escapes. *)
   exception Type_is_smaller
   let smaller ?subst env t1 t2 : [`Smaller | `Equal | `Different] =
     let rec check_ty t =
@@ -286,7 +253,9 @@ end = struct
                 | `Smaller -> `Different (* t1 < t2 && t2 < t1 *)
                 | _ -> `Smaller
 
-  let initial env goal =
+  (* Collection of paths in a module type *)
+
+  let collect_type_paths env id mty =
     let rec collect_mty acc path = function
       | Mty_signature sg -> collect_sig acc path sg
       | Mty_functor _ -> acc
@@ -297,7 +266,6 @@ end = struct
           | None -> acc
           | Some mty -> collect_mty acc path mty
           end
-
     and collect_sig acc path = function
       | [] -> acc
       | x :: xs ->
@@ -310,40 +278,74 @@ end = struct
           in
           collect_sig acc path xs
     in
-    let types = collect_mty [] (Path.Pident goal.goal_var) goal.goal_type in
-    { goal; decreasing = types }
+    collect_mty [] (Path.Pident id) mty
 
   let rec rewrite_path id = function
     | Path.Pident _ -> Path.Pident id
     | Path.Papply _ -> assert false
     | Path.Pdot (p, s, x) -> Path.Pdot (rewrite_path id p, s, x)
 
-  let refine env element goal =
+  (** Termination checker *)
+
+  type symbol = {
+    (* UID *)
+    path: Path.t;
+    parameters: (Ident.t * Path.t list) list;
+  }
+
+  let index env (path, params, _) =
+    let parameter (id, mty) = (id, collect_type_paths env id mty) in
+    { path; parameters = List.map parameter params }
+
+  type instance = {
+    arguments: Ident.t list;
+    decreasing: (Path.t list) list;
+  }
+
+  type chain = instance list
+
+  let initial env symbol arguments =
+    let rewrite_paths argument (_id,paths) =
+      List.map (rewrite_path argument) paths
+    in
+    let decreasing = List.map2 rewrite_paths arguments symbol.parameters in
+    { arguments; decreasing }
+
+  let refine_parameter env decreasing argument =
     let decreased p1 =
-      let p2 = rewrite_path goal.goal_var p1 in
+      let p2 = rewrite_path argument p1 in
       match smaller env p1 p2 with
       | `Smaller -> Some p2
       | _ -> None
     in
-    {goal; decreasing = list_filtermap decreased element.decreasing}
+    list_filtermap decreased decreasing
 
-  let add_goal env goal t =
-    let chain =
-      match Tbl.find goal.goal_termination_id t with
-      | exception Not_found -> [initial env goal]
-      | (x :: _) as xs -> refine env x goal :: xs
-      | [] -> assert false
-    in
-    Tbl.add goal.goal_termination_id chain t
+  let refine_parameters env inst arguments =
+    let decreasing =
+      List.map2 (refine_parameter env) inst.decreasing arguments in
+    { arguments; decreasing }
+
+  type t = (Path.t, chain) Tbl.t
+
+  let empty = Tbl.empty
+
+  let enter env symbol arguments t =
+    if symbol.parameters = [] then t else
+      let chain =
+        match Tbl.find symbol.path t with
+        | exception Not_found -> [initial env symbol arguments]
+        | (x :: _) as xs -> refine_parameters env x arguments :: xs
+        | [] -> assert false
+      in
+      Tbl.add symbol.path chain t
 
   let rec retry_chain env = function
     | [] -> assert false
     | [x] -> x
     | x :: xs ->
         let x' = retry_chain env xs in
-        refine env x' x.goal
+        refine_parameters env x' x.arguments
 
-  (* Raise Exit if a flexible type is found *)
   let non_flexible env flexible =
     let rec aux = function
       | Path.Pident id ->
@@ -359,62 +361,82 @@ end = struct
     in
     let it = {Btype.type_iterators with Btype.it_path} in
     fun path ->
-    match Env.find_type_expansion path env with
-    | exception Not_found -> assert false
-    | (_, ty, _) ->
-        try
-          it.Btype.it_type_expr it ty;
-          Btype.unmark_type ty;
-          true
-        with Exit ->
-          Btype.unmark_type ty;
-          false
+      match Env.find_type_expansion path env with
+      | exception Not_found -> assert false
+      | (_, ty, _) ->
+          try
+            it.Btype.it_type_expr it ty;
+            Btype.unmark_type ty;
+            true
+          with Exit ->
+            Btype.unmark_type ty;
+            false
 
-  let find_decreasing env flexible goal t =
-    match Tbl.find goal.goal_termination_id t with
+  exception Decreasing of Path.t
+
+  let find_decreasing env flexible symbol t =
+    match Tbl.find symbol.path t with
     | [] -> assert false
     | exception Not_found -> assert false
-    | [_] -> None
+    | [_] -> `Root
     | (x :: _) as xs  ->
-        assert (x.goal == goal);
         let non_flexible = non_flexible env flexible in
-        let path =
-          try List.find non_flexible x.decreasing
-          with Not_found ->
-            List.find non_flexible (retry_chain env xs).decreasing
+        let try_instance inst =
+          try
+            List.iter
+              (List.iter (fun path ->
+                   if non_flexible path then
+                     raise (Decreasing path)
+                 ))
+              inst.decreasing;
+            `None
+          with Decreasing p ->
+            `Decreasing p
         in
-        Some path
+        match try_instance x with
+        | `None -> try_instance (retry_chain env xs)
+        | x -> x
 
-  let can_enter env flexible goal t =
-    match find_decreasing env flexible goal t with
-    | exception Not_found -> false
-    | _ -> true
+  let blocked env ~flexible symbol t =
+    if symbol.parameters = [] then false else
+    match find_decreasing env flexible symbol t with
+    | `None -> true
+    | _ -> false
 
-  let explain env flexible goal t =
+  let explain env ~flexible symbol t =
     let print x = Format.fprintf Format.str_formatter x in
-    begin match find_decreasing env flexible goal t with
-    | None -> print "Termination succeeds: no nested call"
-    | Some x ->
-        print "Termination succeeds: %a is structurally decreasing"
-          Printtyp.path x
-    | exception Not_found ->
-        let x, x' =
-          match Tbl.find goal.goal_termination_id t with
-          | x :: x' :: _ -> x, x'
-          | [] | [_] -> assert false
-        in
-        let path = rewrite_path x.goal.goal_var (List.hd x'.decreasing) in
-        print "Cannot ensure termination: %a is not structurally decreasing, "
-          Printtyp.path path;
-        begin match Env.find_type_expansion path env with
-        | exception Not_found ->
-            print "nested occurrence is not constrained."
-        | (_, ty2, _) ->
-            let _, ty1, _ = Env.find_type_expansion path env in
-            print "%a is not smaller than %a."
-              Printtyp.type_expr ty2
-              Printtyp.type_expr ty1
-        end
+    if symbol.parameters = [] then
+      print "Termination succeeds: this is a ground module"
+    else begin
+      match find_decreasing env flexible symbol t with
+      | `Root -> print "Termination succeeds: no nested call"
+      | `Decreasing x ->
+          print "Termination succeeds: %a is structurally decreasing"
+            Printtyp.path x
+      | `None ->
+          let x, x' =
+            match Tbl.find symbol.path t with
+            | x :: x' :: _ -> x, x'
+            | [] | [_] -> assert false
+          in
+          let rec path arguments decreasing =
+            match arguments, decreasing with
+            | (id :: _), ((p :: _) :: _) -> rewrite_path id p
+            | (_ :: arguments), (_ :: decreasing) -> path arguments decreasing
+            | _ -> assert false
+          in
+          let path = path x.arguments x'.decreasing in
+          print "Cannot ensure termination: %a is not structurally decreasing, "
+            Printtyp.path path;
+          begin match Env.find_type_expansion path env with
+          | exception Not_found ->
+              print "nested occurrence is not constrained."
+          | (_, ty2, _) ->
+              let _, ty1, _ = Env.find_type_expansion path env in
+              print "%a is not smaller than %a."
+                Printtyp.type_expr ty2
+                Printtyp.type_expr ty1
+          end
     end;
     Format.flush_str_formatter ()
 
@@ -514,9 +536,6 @@ module Pending = struct
 
 end
 
-type candidate =
-  (Path.t * (Ident.t * Types.module_type) list * Types.module_type)
-
 module Search = struct
 
   type t = {
@@ -527,7 +546,7 @@ module Search = struct
        At the beginning of the search, these are bound to abstract modules in
        [env].  In a successful search, they get bound to concrete modules. *)
 
-    blocked: Ident.t list;
+    blocked: (Termination.t * Termination.symbol * Ident.t list) list;
 
     flexible : identset;
     (* All paths on which new constraints can be introduced. *)
@@ -565,11 +584,10 @@ module Search = struct
   let make env flexible vars equalities =
     let env = List.fold_left introduce_var env vars in
     let roots = List.map fst vars in
-    (*let vars = List.fold_left add_ident Tbl.empty roots in*)
     let flexible = List.fold_left add_ident flexible roots in
     let constraints, env =
       Equalities.refine flexible env [{Ctype. subst = []; equalities}] in
-    { (*vars;*) env; constraints; roots; flexible;
+    { env; constraints; roots; flexible;
       bound = Tbl.empty; blocked = []; }
 
   let instantiate_parameters (path, params, mty) =
@@ -595,7 +613,7 @@ module Search = struct
      - if succeeds, update the goal.
      - raises an exception if candidate is not compatible
   *)
-  let bind_candidate goal var candidate =
+  let bind_candidate goal (term, var) (symbol, candidate) =
     (* Instantiate implicit parameters *)
     let path, params, mty = instantiate_parameters candidate in
     let newvars = List.map fst params in
@@ -621,10 +639,17 @@ module Search = struct
     (* Propagate constraints *)
     let constraints, env =
       Equalities.refine flexible env (equalities @ goal.constraints) in
+    let term = Termination.enter env symbol newvars term in
+    let newvars, blocked =
+      if Termination.blocked env ~flexible symbol term then
+        [], ((term, symbol, newvars) :: goal.blocked)
+      else
+        List.map (fun var -> (term, var)) newvars, goal.blocked
+    in
     newvars,
     {
       (* Variables *)
-      flexible; blocked = goal.blocked;
+      flexible; blocked;
 
       (* Constraints *)
       env; constraints;
@@ -633,6 +658,18 @@ module Search = struct
       bound = Tbl.add var path goal.bound;
       roots = goal.roots;
     }
+
+  let unblock t =
+    let is_blocked (term, sym, _) =
+      Termination.blocked t.env ~flexible:t.flexible sym term in
+    let blocked, unblocked = List.partition is_blocked t.blocked in
+    {t with blocked},
+    let unblocked = List.map
+        (fun (term, _sym, vars) ->
+           List.map (fun var -> (term, var)) vars)
+        unblocked
+    in
+    List.flatten unblocked
 
   let construct_paths goal =
     let rec mk_spine = function
@@ -665,18 +702,18 @@ module Search = struct
       fprintf ppf "@[%a = %a@]\n" Printtyp.ident root print_var root in
     List.iter print_binding goal.roots
 
-  let print_candidate ppf (path, params, _) =
+  let print_candidate ppf (_, (path, params, _)) =
     Printtyp.path ppf path;
     List.iter (fun _param -> Format.fprintf ppf "{_}") params
 
-  let rec bind_candidates acc goal var = function
+  let rec bind_candidates acc goal (_, id as var) = function
     | [] -> List.rev acc
     | candidate :: candidates ->
         let acc = match bind_candidate goal var candidate with
           | goal' -> goal' :: acc
           | exception exn ->
               printf "Cannot bind @[%a <- %a@]: %a\n"
-                Printtyp.ident var
+                Printtyp.ident id
                 print_candidate candidate
                 safe_report_exn exn;
               acc
@@ -688,7 +725,10 @@ module Backtrack = struct
 
   let search candidates goal vars fold acc =
     let rec conjunction acc goal = function
-      | [] -> fold goal acc
+      | [] ->
+          let goal, newvars = Search.unblock goal in
+          if newvars = [] then fold goal acc
+          else conjunction acc goal newvars
       | var :: vars ->
           disjunction vars acc
             (Search.bind_candidates [] goal var candidates)
@@ -714,7 +754,9 @@ let canonical_candidates env =
         let acc =
           if Hashtbl.mem seen path then acc else (
             Hashtbl.add seen path ();
-            (path, params, mty) :: acc
+            let candidate = (path, params, mty) in
+            let symbol = Termination.index env candidate in
+            (symbol, candidate) :: acc
           )
         in
         aux acc xs
@@ -730,11 +772,14 @@ let find_pending_instance inst =
     List.assoc var (Search.construct_paths solution)
   in
   let candidates = canonical_candidates env in
-  let solution = Backtrack.search candidates goal [var]
+  let solution = Backtrack.search candidates goal [Termination.empty, var]
       (fun solution solutions ->
+         let open Typecore in
+         if solution.Search.blocked <> [] then
+           raise (Error (loc, inst.implicit_env,
+                         Termination_fail inst));
          match solutions with
          | solution' :: _ ->
-             let open Typecore in
              raise (Error (loc, inst.implicit_env,
                            Ambiguous_implicit (inst,
                                                goal_path solution,
