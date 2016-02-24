@@ -90,10 +90,12 @@ module Equalities = struct
                  | [] -> true
                  | x :: xs -> not (List.memq x xs) && uniq xs
                in
-               (* FIXME: No type variable should occur in rhs but not in tl.
-                  Check Ctype.freevars inclusion
-               *)
-               if uniq tl' then `Expansion (p, (tl', rhs, None), tl) else `None
+               let freevars = Ctype.free_variables ~env rhs in
+               if uniq tl' &&
+                  List.for_all (fun var -> List.memq (Ctype.repr var) tl')
+                    freevars
+               then `Expansion (p, (tl', rhs, None), tl)
+               else `None
            end
        | _ -> `None
      in
