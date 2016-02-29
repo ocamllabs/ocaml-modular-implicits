@@ -1,0 +1,17 @@
+
+#                         module type Show = sig type t val show : t -> string end
+val show : {M : Show} -> M.t -> string = <fun>
+implicit module ShowObj :
+  functor {X : sig type x = private < show : string; .. > end} ->
+    sig type t = X.x val show : t -> string end
+implicit module X : sig type x = < show : string > end
+#     val obj : < show : string > = <obj>
+#     - : string = "show"
+#     class type show = object method show : string end
+#       val f : show -> unit = <fun>
+#       val g : show -> unit = <fun>
+#   show
+- : unit = ()
+# show
+- : unit = ()
+# 
