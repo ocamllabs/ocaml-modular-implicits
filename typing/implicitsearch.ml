@@ -628,7 +628,9 @@ module Search = struct
     (* Check inclusion relation, collect constraints on parameters *)
     let (_ : module_coercion), equalities =
       let mty1 = Env.scrape_alias env mty in
-      let mty2 = Env.scrape_alias env (Mty_alias (Path.Pident var)) in
+      let path = Path.Pident var in
+      let mty2 = (Env.find_module path env).md_type in
+      let mty2 = Mtype.strengthen_except_rows env mty2 path in
       Ctype.collect_equalities ~on:flexible @@ fun () ->
       Ctype.without_moregeneral @@ fun () ->
       Includemod.modtypes env mty1 mty2

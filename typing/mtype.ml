@@ -30,6 +30,17 @@ let rec scrape env mty =
 let freshen mty =
   Subst.modtype Subst.identity mty
 
+let skip_row = ref false
+
+let is_row id1 id2 =
+  let s = Ident.name id1 in
+  let l = String.length s in
+  l = (String.length (Ident.name id2) + 4)
+  && s.[l - 4] = '#'
+  && s.[l - 3] = 'r'
+  && s.[l - 2] = 'o'
+  && s.[l - 1] = 'w'
+
 let rec strengthen env mty p =
   match scrape env mty with
     Mty_signature sg ->
@@ -50,6 +61,8 @@ and strengthen_sig env sg p =
     [] -> []
   | (Sig_value(id, desc) as sigelt) :: rem ->
       sigelt :: strengthen_sig env rem p
+  | (Sig_type(id1, _, _) as elt1) :: (Sig_type(id2, _, _) as elt2) :: rem
+    when !skip_row && is_row id1 id2 -> elt1 :: elt2 :: rem
   | Sig_type(id, decl, rs) :: rem ->
       let newdecl =
         match decl.type_manifest, decl.type_private, decl.type_kind with
@@ -90,6 +103,13 @@ and strengthen_sig env sg p =
 
 and strengthen_decl env md p =
   {md with md_type = strengthen env md.md_type p}
+
+let strengthen_except_rows env mty p =
+  let skip_row' = !skip_row in
+  skip_row := true;
+  Misc.try_finally
+    (fun () -> strengthen env mty p)
+    (fun () -> skip_row := skip_row')
 
 let () = Env.strengthen := strengthen
 
