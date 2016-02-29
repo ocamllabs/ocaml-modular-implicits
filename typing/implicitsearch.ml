@@ -731,11 +731,14 @@ end
 
 module Backtrack = struct
 
-  let search candidates goal0 vars0 fold acc0 =
+  let search candidates goal0 vars0 termination_fail found_solution acc0 =
     let rec conjunction acc goal = function
       | [] ->
           let goal, newvars = Search.unblock goal in
-          if newvars = [] then fold goal acc
+          if newvars = [] then
+            if goal.Search.blocked = []
+            then found_solution goal acc0
+            else termination_fail goal acc0
           else conjunction acc goal newvars
       | var :: vars ->
           disjunction vars acc
@@ -781,13 +784,15 @@ module Local_progress = struct
   let bind_candidates goal var candidates =
     bind_candidates None goal var candidates
 
-  let search candidates goal0 vars0 fold acc0 =
+  let search candidates goal0 vars0 termination_fail found_solution acc0 =
     let rec conjunction blocked goal = function
       | [] ->
           let goal, newvars = Search.unblock goal in
           if newvars = [] then
             if blocked = [] then
-              fold goal acc0
+              if goal.Search.blocked = []
+              then found_solution goal acc0
+              else termination_fail goal acc0
             else unblock goal blocked
           else conjunction blocked goal newvars
       | var :: vars ->
@@ -800,7 +805,7 @@ module Local_progress = struct
 
     and unblock goal blocked0 =
       let rec resume blocked' = function
-        | [] -> failwith "local search is stuck"
+        | [] -> termination_fail goal acc0
         | (var, candidates) :: blocked ->
             match bind_candidates goal var candidates with
             | `None -> acc0
@@ -847,12 +852,13 @@ let find_pending_instance inst =
     then Backtrack.search
     else Local_progress.search
   in
-  let solution = search_fun candidates goal [Termination.empty, var]
+  let solution =
+    let open Typecore in
+    search_fun candidates goal [Termination.empty, var]
+      (fun _ _ ->
+         raise (Error (loc, inst.implicit_env,
+                       Termination_fail inst)))
       (fun solution solutions ->
-         let open Typecore in
-         if solution.Search.blocked <> [] then
-           raise (Error (loc, inst.implicit_env,
-                         Termination_fail inst));
          match solutions with
          | solution' :: _ ->
              raise (Error (loc, inst.implicit_env,
