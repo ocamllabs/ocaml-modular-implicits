@@ -79,6 +79,7 @@ module Options = Main_args.Make_bytetop_options (struct
   let _ppx s = first_ppx := s :: !first_ppx
   let _principal = set principal
   let _rectypes = set recursive_types
+  let _backtrack = set backtracking_implicits
   let _safe_string = clear unsafe_string
   let _short_paths = clear real_paths
   let _stdin () = file_argument ""

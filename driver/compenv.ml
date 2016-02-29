@@ -169,6 +169,7 @@ let read_OCAMLPARAM ppf position =
       | "nolabels" -> set "nolabels" [ classic ] v
       | "principal" -> set "principal"  [ principal ] v
       | "rectypes" -> set "rectypes" [ recursive_types ] v
+      | "backtrack" -> set "backtrack" [ backtracking_implicits ] v
       | "safe-string" -> clear "safe-string" [ unsafe_string ] v
       | "strict-sequence" -> set "strict-sequence" [ strict_sequence ] v
       | "strict-formats" -> set "strict-formats" [ strict_formats ] v

@@ -207,6 +207,7 @@ module Options = Main_args.Make_ocamldoc_options(struct
   let _ppx s = Clflags.all_ppx := s :: !Clflags.all_ppx
   let _principal = set Clflags.principal
   let _rectypes = set Clflags.recursive_types
+  let _backtrack = set Clflags.backtracking_implicits
   let _safe_string = unset Clflags.unsafe_string
   let _short_paths = unset Clflags.real_paths
   let _strict_sequence = set Clflags.strict_sequence

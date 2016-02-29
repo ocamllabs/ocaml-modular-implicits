@@ -82,6 +82,7 @@ module Options = Main_args.Make_bytecomp_options (struct
   let _ppx _s = incompatible "-ppx"
   let _principal = option "-principal"
   let _rectypes = option "-rectypes"
+  let _backtrack = option "-backtrack"
   let _runtime_variant s = option_with_arg "-runtime-variant" s
   let _safe_string = option "-safe-string"
   let _short_paths = option "-short-paths"

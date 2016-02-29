@@ -261,6 +261,11 @@ let mk_rectypes f =
   "-rectypes", Arg.Unit f, " Allow arbitrary recursive types"
 ;;
 
+let mk_backtrack f =
+  "-backtrack", Arg.Unit f,
+  " Allow backtracking during resolution of "
+;;
+
 let mk_runtime_variant f =
   "-runtime-variant", Arg.String f,
   "<str>  Use the <str> variant of the run-time system"
@@ -493,6 +498,7 @@ module type Common_options = sig
   val _ppx : string -> unit
   val _principal : unit -> unit
   val _rectypes : unit -> unit
+  val _backtrack : unit -> unit
   val _safe_string : unit -> unit
   val _short_paths : unit -> unit
   val _strict_sequence : unit -> unit
@@ -540,6 +546,7 @@ module type Compiler_options = sig
   val _pp : string -> unit
   val _principal : unit -> unit
   val _rectypes : unit -> unit
+  val _backtrack : unit -> unit
   val _runtime_variant : string -> unit
   val _safe_string : unit -> unit
   val _short_paths : unit -> unit
@@ -693,6 +700,7 @@ struct
     mk_ppx F._ppx;
     mk_principal F._principal;
     mk_rectypes F._rectypes;
+    mk_backtrack F._backtrack;
     mk_runtime_variant F._runtime_variant;
     mk_safe_string F._safe_string;
     mk_short_paths F._short_paths;
@@ -744,6 +752,7 @@ struct
     mk_ppx F._ppx;
     mk_principal F._principal;
     mk_rectypes F._rectypes;
+    mk_backtrack F._backtrack;
     mk_safe_string F._safe_string;
     mk_short_paths F._short_paths;
     mk_stdin F._stdin;
@@ -811,6 +820,7 @@ struct
     mk_ppx F._ppx;
     mk_principal F._principal;
     mk_rectypes F._rectypes;
+    mk_backtrack F._backtrack;
     mk_runtime_variant F._runtime_variant;
     mk_S F._S;
     mk_safe_string F._safe_string;
@@ -876,6 +886,7 @@ module Make_opttop_options (F : Opttop_options) = struct
     mk_ppx F._ppx;
     mk_principal F._principal;
     mk_rectypes F._rectypes;
+    mk_backtrack F._backtrack;
     mk_S F._S;
     mk_safe_string F._safe_string;
     mk_short_paths F._short_paths;
