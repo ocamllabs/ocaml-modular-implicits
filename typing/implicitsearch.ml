@@ -722,11 +722,14 @@ module Search = struct
               acc
         in
         bind_candidates acc goal var candidates
+
+  let bind_candidates goal var candidates =
+    bind_candidates [] goal var candidates
 end
 
 module Backtrack = struct
 
-  let search candidates goal vars fold acc =
+  let search candidates goal0 vars0 fold acc0 =
     let rec conjunction acc goal = function
       | [] ->
           let goal, newvars = Search.unblock goal in
@@ -734,7 +737,7 @@ module Backtrack = struct
           else conjunction acc goal newvars
       | var :: vars ->
           disjunction vars acc
-            (Search.bind_candidates [] goal var candidates)
+            (Search.bind_candidates goal var candidates)
 
     and disjunction vars acc = function
       | [] -> acc
@@ -744,7 +747,69 @@ module Backtrack = struct
             alternatives
 
     in
-    conjunction acc goal vars
+    conjunction acc0 goal0 vars0
+
+end
+
+module Local_progress = struct
+
+  let rec bind_candidates acc goal (_, id as var) = function
+    | [] ->
+        begin match acc with
+        | None -> `None
+        | Some (candidate, goal') -> `Some goal'
+        end
+    | candidate :: candidates ->
+        begin match Search.bind_candidate goal var candidate with
+        | exception exn ->
+            printf "Cannot bind @[%a <- %a@]: %a\n"
+              Printtyp.ident id
+              Search.print_candidate candidate
+              safe_report_exn exn;
+            bind_candidates acc goal var candidates
+        | goal' ->
+            begin match acc with
+            | None ->
+                bind_candidates (Some (candidate, goal')) goal var candidates
+            | Some (candidate', _) ->
+                `Ambiguous (var, candidate' :: candidate :: candidates)
+            end
+        end
+
+  let bind_candidates goal var candidates =
+    bind_candidates None goal var candidates
+
+  let search candidates goal0 vars0 fold acc0 =
+    let rec conjunction blocked goal = function
+      | [] ->
+          let goal, newvars = Search.unblock goal in
+          if newvars = [] then
+            if blocked = [] then
+              fold goal acc0
+            else unblock goal blocked
+          else conjunction blocked goal newvars
+      | var :: vars ->
+          match bind_candidates goal var candidates with
+          | `None -> acc0
+          | `Some (newvars, goal) ->
+              conjunction blocked goal (newvars @ vars)
+          | `Ambiguous var_candidates ->
+              conjunction (var_candidates :: blocked) goal vars
+
+    and unblock goal blocked0 =
+      let rec resume blocked' = function
+        | [] -> failwith "local search is stuck"
+        | (var, candidates) :: blocked ->
+            match bind_candidates goal var candidates with
+            | `None -> acc0
+            | `Some (newvars, goal) ->
+                conjunction (blocked' @ blocked) goal newvars
+            | `Ambiguous var_candidates ->
+                resume (var_candidates :: blocked') blocked
+      in
+      resume [] blocked0
+    in
+    conjunction [] goal0 vars0
 
 end
 
@@ -775,7 +840,12 @@ let find_pending_instance inst =
     List.assoc var (Search.construct_paths solution)
   in
   let candidates = canonical_candidates env in
-  let solution = Backtrack.search candidates goal [Termination.empty, var]
+  let search_fun =
+    if !Clflags.backtracking_implicits
+    then Backtrack.search
+    else Local_progress.search
+  in
+  let solution = search_fun candidates goal [Termination.empty, var]
       (fun solution solutions ->
          let open Typecore in
          if solution.Search.blocked <> [] then
