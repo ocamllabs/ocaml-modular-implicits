@@ -48,3 +48,12 @@ end
    Resolved code: add (implicit AddS(Z)(Z)(AddZ(Z))) (S Z) Z *)
 add (S Z) Z
 ;;
+
+(* Subtraction *)
+
+let sub {Add : ADD} (c : Add.c) (a : Add.a) : Add.b = Add.b
+;;
+
+sub (S Z) (S Z);;
+sub (S Z) Z;;
+

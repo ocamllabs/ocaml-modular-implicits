@@ -28,4 +28,7 @@ implicit module AddS :
       val c : c
     end
 #   *     - : AddS{Z}{Z}{AddZ{Z}}.c = S Z
-# 
+#         val sub : {Add : ADD} -> Add.c -> Add.a -> Add.b = <fun>
+#   - : AddS{Z}{Z}{AddZ{Z}}.b = Z
+# - : AddZ{S{Z}}.b = S Z
+#   
