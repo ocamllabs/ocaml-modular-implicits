@@ -506,35 +506,40 @@ module Pending = struct
     in
     Env.add_type ~check:false ident decl env
 
-  let prepare inst =
-    let env = inst.implicit_env in
-    let var = inst.implicit_id in
-    let path, nl, tl = inst.implicit_type in
-    let constraints = inst.implicit_constraints in
-    (* Extract base module type *)
-    let mty =
-      let mtd = Env.find_modtype path env in
-      match mtd.mtd_type with
-      | None -> assert false
-      | Some mty -> mty
+  let prepare env insts =
+    let prepare_one (env,flexible,vars,constraints) inst =
+      let var = inst.implicit_id in
+      let path, nl, tl = inst.implicit_type in
+      let new_constraints = inst.implicit_constraints in
+      (* Extract base module type *)
+      let mty =
+        let mtd = Env.find_modtype path env in
+        match mtd.mtd_type with
+        | None -> assert false
+        | Some mty -> mty
+      in
+      (* Turn with constraints into equality constraints *)
+      let with_cstrs = List.map2 (fun li ty ->
+          let rec path = function
+            | Longident.Lident s -> Path.Pdot (Path.Pident var, s, 0)
+            | Longident.Ldot (l, s) -> Path.Pdot (path l, s, 0)
+            | Longident.Lapply _ -> assert false
+          in
+          Ctype.newconstr (path li) [], ty
+        ) nl tl
+      in
+      (* Reify variables *)
+      let variables = reify_variables mty tl new_constraints in
+      let env = List.fold_left add_variable env variables in
+      let flexible = List.fold_left
+          (fun set (_,id) -> add_ident set id)
+          flexible variables
+      in
+      (env, flexible,
+       (var, mty) :: vars,
+       (with_cstrs @ new_constraints @ constraints))
     in
-    (* Turn with constraints into equality constraints *)
-    let with_cstrs = List.map2 (fun li ty ->
-        let rec path = function
-          | Longident.Lident s -> Path.Pdot (Path.Pident var, s, 0)
-          | Longident.Ldot (l, s) -> Path.Pdot (path l, s, 0)
-          | Longident.Lapply _ -> assert false
-        in
-        Ctype.newconstr (path li) [], ty
-      ) nl tl
-    in
-    (* Reify variables *)
-    let variables = reify_variables mty tl constraints in
-    let env = List.fold_left add_variable env variables in
-    let flexible =
-      List.fold_left (fun set (_,id) -> add_ident set id) Tbl.empty variables
-    in
-    env, flexible, var, mty, (with_cstrs @ constraints)
+    List.fold_left prepare_one (env, Tbl.empty, [], []) insts
 
 end
 
@@ -676,19 +681,22 @@ module Search = struct
     in
     List.flatten unblocked
 
-  let construct_paths goal =
-    let rec mk_spine = function
+  let construct_paths
+      ?(unbound=fun ~root var -> Path.Pident var)
+      goal
+    =
+    let rec mk_spine root = function
       | Path.Pident v -> Path.Pident v
-      | Path.Pdot (p', s, x) -> Path.Pdot (mk_spine p', s, x)
+      | Path.Pdot (p', s, x) -> Path.Pdot (mk_spine root p', s, x)
       | Path.Papply (p1, Path.Pident var, Asttypes.Implicit) ->
-          Path.Papply (mk_spine p1, mk_var var, Asttypes.Implicit)
+          Path.Papply (mk_spine root p1, mk_var root var, Asttypes.Implicit)
       | Path.Papply (_, _, _) -> assert false
-    and mk_var var =
+    and mk_var root var =
       match Tbl.find var goal.bound with
-      | exception Not_found -> Path.Pident var
-      | path -> mk_spine path
+      | exception Not_found -> unbound ~root var
+      | path -> mk_spine root path
     in
-    List.map (fun root -> root, mk_var root) goal.roots
+    List.map (fun root -> root, mk_var root root) goal.roots
 
   let print_roots ppf goal =
     let open Format in
@@ -838,43 +846,68 @@ let canonical_candidates env =
   in
   aux [] (Env.implicit_instances env)
 
-let find_pending_instance inst =
-  let snapshot = Btype.snapshot () in
-  let env, flexible, var, mty, cstrs = Pending.prepare inst in
-  let loc = inst.implicit_loc in
-  let goal = Search.make env flexible [var, mty] cstrs in
-  let goal_path solution =
-    List.assoc var (Search.construct_paths solution)
+let implicit_env_representative inst =
+  let rec summary = function
+    | Env.Env_value (s', _, _) | Env.Env_extension (s', _, _) -> summary s'
+    | s -> s
   in
+  let env = inst.implicit_env in
+  (summary (Env.summary env), Env.implicit_instances env)
+
+let find_compatible_environments inst insts =
+  let repr = implicit_env_representative inst in
+  List.partition
+    (fun inst' -> implicit_env_representative inst' = repr)
+    insts
+
+let rec find_pending_instances = function [] -> () | inst :: rest ->
+  let snapshot = Btype.snapshot () in
+  let insts, rest = find_compatible_environments inst rest in
+  let insts = inst :: insts in
+  let env, flexible, vars, cstrs = Pending.prepare inst.implicit_env insts in
+  let goal = Search.make env flexible vars cstrs in
   let candidates = canonical_candidates env in
   let search_fun =
     if !Clflags.backtracking_implicits
     then Backtrack.search
     else Local_progress.search
   in
-  let solution =
-    let open Typecore in
-    search_fun candidates goal [Termination.empty, var]
-      (fun _ _ ->
-         raise (Error (loc, inst.implicit_env,
-                       Termination_fail inst)))
-      (fun solution solutions ->
-         match solutions with
-         | solution' :: _ ->
-             raise (Error (loc, inst.implicit_env,
-                           Ambiguous_implicit (inst,
-                                               goal_path solution,
-                                               goal_path solution')))
-         | [] -> [solution])
+  let termination_fail _ _ =
+    (* FIXME: report appropriate instance for the error *)
+    raise (Typecore.Error (inst.implicit_loc, inst.implicit_env,
+                           Typecore.Termination_fail inst))
+  in
+  let add_solution solution solutions =
+    match solutions with
+    | solution' :: _ ->
+        (* FIXME: report appropriate instance for the error *)
+        let paths = Search.construct_paths solution in
+        let paths' = Search.construct_paths solution' in
+        raise (Typecore.Error (inst.implicit_loc, inst.implicit_env,
+                               Typecore.Ambiguous_implicit
+                                 (inst,
+                                  List.assoc inst.implicit_id paths,
+                                  List.assoc inst.implicit_id paths')))
+    | [] -> [solution]
+  in
+  let solution = search_fun candidates goal
+      (List.map (fun (v,_) -> Termination.empty, v) vars)
+      termination_fail
+      add_solution
       []
   in
   Btype.backtrack snapshot;
   match solution with
-  | [] -> false
+  | [] ->
+      raise (Typecore.Error (inst.implicit_loc, inst.implicit_env,
+                             Typecore.No_instance_found inst))
   | [solution] ->
-      let path = List.assoc var (Search.construct_paths solution) in
-      Link.to_path inst path;
-      true
+      let paths = Search.construct_paths solution in
+      List.iter (fun inst ->
+          let path = List.assoc inst.implicit_id paths in
+          Link.to_path inst path;
+        ) insts;
+      find_pending_instances rest
   | _ -> assert false
 
 let generalize_implicits () =
@@ -902,13 +935,7 @@ let generalize_implicits () =
   (* The reversal is important to ensure we search from the outer most
      to the inner most implicits *)
   let to_generalize = List.flatten (List.rev to_generalize) in
-  try
-    let not_instantiable inst = not (find_pending_instance inst) in
-    let inst = List.find not_instantiable to_generalize in
-    let loc = inst.implicit_loc in
-    let env = inst.implicit_env in
-    raise Typecore.(Error (loc, env, No_instance_found inst))
-  with Not_found -> ()
+  find_pending_instances to_generalize
 
 let () =
   Typeimplicit.generalize_implicits_ref := generalize_implicits
