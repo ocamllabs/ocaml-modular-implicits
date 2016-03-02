@@ -184,8 +184,11 @@ let rec typexp s ty =
           end
       | Tfield(label, kind, t1, t2) when field_kind_repr kind = Fabsent ->
           Tlink (typexp s t2)
-      | Tarrow(Tarr_implicit id, _, _, _) when Tbl.mem id s.modules ->
-          assert false
+      | Tarrow(Tarr_implicit id, lhs, rhs, commu) ->
+          assert (not (Tbl.mem id s.modules));
+          let id' = Ident.rename id in
+          let s = add_module id (Pident id') s in
+          copy_type_desc (typexp s) (Tarrow(Tarr_implicit id', lhs, rhs, commu))
       | _ -> copy_type_desc (typexp s) desc
       end;
     ty'
