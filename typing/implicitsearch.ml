@@ -357,21 +357,30 @@ end = struct
       | Path.Pdot (p, _, _) ->
           aux p
     in
-    let it_path = function
+    let rec it_path = function
       | Path.Pident _ -> ()
-      | p -> aux p
-    in
-    let it = {Btype.type_iterators with Btype.it_path} in
+      | p ->
+          match Env.find_type_expansion p env with
+          | exception Not_found -> aux p
+          | (_, ty, _) -> it.Btype.it_type_expr it ty;
+    and it = {Btype.type_iterators with Btype.it_path} in
+    let rec unmark_path = function
+      | Path.Pident _ -> ()
+      | p ->
+          match Env.find_type_expansion p env with
+          | exception Not_found -> aux p
+          | (_, ty, _) -> unmark.Btype.it_type_expr unmark ty;
+    and unmark = {Btype.unmark_iterators with Btype.it_path = unmark_path} in
     fun path ->
       match Env.find_type_expansion path env with
       | exception Not_found -> assert false
       | (_, ty, _) ->
           try
             it.Btype.it_type_expr it ty;
-            Btype.unmark_type ty;
+            unmark.Btype.it_type_expr unmark ty;
             true
           with Exit ->
-            Btype.unmark_type ty;
+            unmark.Btype.it_type_expr unmark ty;
             false
 
   exception Decreasing of Path.t
