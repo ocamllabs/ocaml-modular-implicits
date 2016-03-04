@@ -273,9 +273,9 @@ end = struct
       | x :: xs ->
           let acc = match x with
             | Sig_type (id, {type_kind = Type_abstract; type_manifest = None}, _) ->
-                Path.Pdot (path, Ident.name id, 0) :: acc
+                Path.Pdot (path, Ident.name id, -1) :: acc
             | Sig_module (id, md, _) ->
-                collect_mty acc (Path.Pdot (path, Ident.name id, 0)) md.md_type
+                collect_mty acc (Path.Pdot (path, Ident.name id, -1)) md.md_type
             | _ -> acc
           in
           collect_sig acc path xs
@@ -316,7 +316,7 @@ end = struct
   let refine_parameter env decreasing argument =
     let decreased p1 =
       let p2 = rewrite_path argument p1 in
-      match smaller env p1 p2 with
+      match smaller env p2 p1 with
       | `Smaller -> Some p2
       | _ -> None
     in
@@ -423,20 +423,22 @@ end = struct
           in
           let rec path arguments decreasing =
             match arguments, decreasing with
-            | (id :: _), ((p :: _) :: _) -> rewrite_path id p
+            | (id :: _), ((p :: _) :: _) -> rewrite_path id p, p
             | (_ :: arguments), (_ :: decreasing) -> path arguments decreasing
             | _ -> assert false
           in
-          let path = path x.arguments x'.decreasing in
+          let path, path' = path x.arguments x'.decreasing in
           print "Cannot ensure termination: %a is not structurally decreasing, "
             Printtyp.path path;
           begin match Env.find_type_expansion path env with
           | exception Not_found ->
               print "nested occurrence is not constrained."
           | (_, ty2, _) ->
-              let _, ty1, _ = Env.find_type_expansion path env in
-              print "%a is not smaller than %a."
+              let _, ty1, _ = Env.find_type_expansion path' env in
+              print "%a = %a is not smaller than %a = %a."
+                Printtyp.path path
                 Printtyp.type_expr ty2
+                Printtyp.path path'
                 Printtyp.type_expr ty1
           end
     end;
@@ -521,8 +523,8 @@ module Pending = struct
       (* Turn with constraints into equality constraints *)
       let with_cstrs = List.map2 (fun li ty ->
           let rec path = function
-            | Longident.Lident s -> Path.Pdot (Path.Pident var, s, 0)
-            | Longident.Ldot (l, s) -> Path.Pdot (path l, s, 0)
+            | Longident.Lident s -> Path.Pdot (Path.Pident var, s, -1)
+            | Longident.Ldot (l, s) -> Path.Pdot (path l, s, -1)
             | Longident.Lapply _ -> assert false
           in
           Ctype.newconstr (path li) [], ty
