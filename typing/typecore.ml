@@ -70,6 +70,8 @@ type error =
   | Apply_unexpected_implicit of type_expr
   | No_instance_found of Typeimplicit.pending_implicit
   | Ambiguous_implicit of Typeimplicit.pending_implicit * Path.t * Path.t
+  | Locally_ambiguous_implicit of
+      Typeimplicit.pending_implicit * Path.t * Ident.t * Path.t * Path.t
   | Termination_fail of Typeimplicit.pending_implicit
 
 exception Error of Location.t * Env.t * error
@@ -4301,6 +4303,19 @@ let report_error env ppf = function
       fprintf ppf "Ambiguous implicit %s:@ %a@ and %a@ are both solutions."
         (Ident.name inst.Typeimplicit.implicit_id)
         path p1 path p2
+  | Locally_ambiguous_implicit (inst, p, v, c1, c2) ->
+      let path =
+        if Path.to_longident c1 = Path.to_longident c2
+        then stamped_path
+        else path in
+      if inst.Typeimplicit.implicit_id = v then
+        fprintf ppf "Ambiguous implicit %s:@ %a@ and %a@ are both solutions."
+          (Ident.name v) path c1 path c2
+      else
+        fprintf ppf "Locally ambiguous solutions for implicit %s:@ in %a@, \
+                     %s <- %a@ and %s <- %a@ are both valid."
+          (Ident.name inst.Typeimplicit.implicit_id)
+          path p (Ident.name v) path c1 (Ident.name v) path c2
   | Termination_fail inst ->
       fprintf ppf "Termination check failed when searching for implicit %s."
         (Ident.name inst.Typeimplicit.implicit_id)

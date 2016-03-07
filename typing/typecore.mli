@@ -118,6 +118,8 @@ type error =
   | Apply_unexpected_implicit of type_expr
   | No_instance_found of Typeimplicit.pending_implicit
   | Ambiguous_implicit of Typeimplicit.pending_implicit * Path.t * Path.t
+  | Locally_ambiguous_implicit of
+      Typeimplicit.pending_implicit * Path.t * Ident.t * Path.t * Path.t
   | Termination_fail of Typeimplicit.pending_implicit
 
 exception Error of Location.t * Env.t * error

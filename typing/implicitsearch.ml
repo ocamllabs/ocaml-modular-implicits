@@ -692,10 +692,7 @@ module Search = struct
     in
     List.flatten unblocked
 
-  let construct_paths
-      ?(unbound=fun ~root var -> Path.Pident var)
-      goal
-    =
+  let construct_path ?(unbound=fun var -> Path.Pident var) goal root =
     let rec mk_spine root = function
       | Path.Pident v -> Path.Pident v
       | Path.Pdot (p', s, x) -> Path.Pdot (mk_spine root p', s, x)
@@ -704,10 +701,32 @@ module Search = struct
       | Path.Papply (_, _, _) -> assert false
     and mk_var root var =
       match Tbl.find var goal.bound with
-      | exception Not_found -> unbound ~root var
+      | exception Not_found -> unbound var
       | path -> mk_spine root path
     in
-    List.map (fun root -> root, mk_var root root) goal.roots
+    mk_var root root
+
+  let construct_paths goal =
+    List.map (fun root -> root, construct_path goal root) goal.roots
+
+  let find_root goal var =
+    let rec visit_path = function
+      | Path.Pident _ -> ()
+      | Path.Pdot (p, _, _) -> visit_path p
+      | Path.Papply (p, Path.Pident v, Asttypes.Implicit) ->
+          visit_var v;
+          visit_path p
+      | Path.Papply (_, _, _) -> assert false
+    and visit_var v =
+      if Ident.same var v then raise Exit;
+      match Tbl.find v goal.bound with
+      | exception Not_found -> ()
+      | path -> visit_path path
+    in
+    List.find (fun root ->
+        try visit_var root; false
+        with Exit -> true
+      ) goal.roots
 
   let print_roots ppf goal =
     let open Format in
@@ -755,9 +774,9 @@ module Backtrack = struct
       | [] ->
           let goal, newvars = Search.unblock goal in
           if newvars = [] then
-            if goal.Search.blocked = []
-            then found_solution goal acc0
-            else termination_fail goal acc0
+            match goal.Search.blocked with
+            | [] -> found_solution goal acc0
+            | blocked -> termination_fail (`Termination blocked) goal acc0
           else conjunction acc goal newvars
       | var :: vars ->
           disjunction vars acc
@@ -809,9 +828,9 @@ module Local_progress = struct
           let goal, newvars = Search.unblock goal in
           if newvars = [] then
             if blocked = [] then
-              if goal.Search.blocked = []
-              then found_solution goal acc0
-              else termination_fail goal acc0
+              match goal.Search.blocked with
+              | [] -> found_solution goal acc0
+              | blocked -> termination_fail (`Termination blocked) goal acc0
             else unblock goal blocked
           else conjunction blocked goal newvars
       | var :: vars ->
@@ -824,7 +843,7 @@ module Local_progress = struct
 
     and unblock goal blocked0 =
       let rec resume blocked' = function
-        | [] -> termination_fail goal acc0
+        | [] -> termination_fail (`Locally_ambiguous blocked') goal acc0
         | (var, candidates) :: blocked ->
             match bind_candidates goal var candidates with
             | `None -> acc0
@@ -883,27 +902,58 @@ let rec find_pending_instances = function [] -> () | inst :: rest ->
     then Backtrack.search
     else Local_progress.search
   in
-  let termination_fail _ _ =
-    (* FIXME: report appropriate instance for the error *)
-    raise (Typecore.Error (inst.implicit_loc, inst.implicit_env,
-                           Typecore.Termination_fail inst))
+  let is_inst_of root inst = Ident.same inst.implicit_id root in
+  let path_of_candidate (p, args, _) =
+    let wild = Path.Pident (Ident.create_persistent "_") in
+    List.fold_left (fun p _arg -> papply p wild) p args
+  in
+  let raise_error inst err =
+    raise (Typecore.Error (inst.implicit_loc, inst.implicit_env, err)) in
+  let failure reason partial_solution _ =
+    match reason with
+    | `Termination blocked ->
+        begin match blocked with
+        | (_, _, (var :: _)) :: _ ->
+            let root = Search.find_root partial_solution var in
+            let inst = List.find (is_inst_of root) insts in
+            raise_error inst (Typecore.Termination_fail inst)
+        | _ -> assert false
+        end
+    | `Locally_ambiguous blocked ->
+        begin match blocked with
+        | ((_, var), ((_, c1) :: (_, c2) :: _)) :: _ ->
+            let root = Search.find_root partial_solution var in
+            let inst = List.find (is_inst_of root) insts in
+            let p= Search.construct_path
+                ~unbound:(fun v ->
+                    if Ident.same v var then Path.Pident var
+                    else Path.Pident (Ident.create_persistent "_"))
+                partial_solution root
+            in
+            let c1 = path_of_candidate c1 and c2 = path_of_candidate c2 in
+            raise_error inst
+              (Typecore.Locally_ambiguous_implicit (inst, p, var, c1, c2))
+        | _ -> assert false
+        end
+    | `Ambiguous solution' ->
+        List.iter (fun (root, path) ->
+            let path' = Search.construct_path solution' root in
+            if not (Path.same path path') then
+              let inst = List.find (is_inst_of root) insts in
+              raise_error inst
+                (Typecore.Ambiguous_implicit (inst, path, path'))
+          ) (Search.construct_paths partial_solution);
+        assert false
   in
   let add_solution solution solutions =
     match solutions with
     | solution' :: _ ->
-        (* FIXME: report appropriate instance for the error *)
-        let paths = Search.construct_paths solution in
-        let paths' = Search.construct_paths solution' in
-        raise (Typecore.Error (inst.implicit_loc, inst.implicit_env,
-                               Typecore.Ambiguous_implicit
-                                 (inst,
-                                  List.assoc inst.implicit_id paths,
-                                  List.assoc inst.implicit_id paths')))
+        failure (`Ambiguous solution') solution ()
     | [] -> [solution]
   in
   let solution = search_fun candidates goal
       (List.map (fun (v,_) -> Termination.empty, v) vars)
-      termination_fail
+      failure
       add_solution
       []
   in
