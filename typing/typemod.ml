@@ -319,7 +319,7 @@ let wellformed_functor env loc param res =
   begin match param with
   | Mpar_implicit(virt, id, mty) ->
       if virt = Virtual then wellformed_virtual env loc mty;
-      no_implicit_escape env loc id res
+      (*no_implicit_escape env loc id res*)
   | _ -> ()
   end;
   Mty_functor(param, res)
