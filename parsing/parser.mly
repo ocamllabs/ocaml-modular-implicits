@@ -913,6 +913,9 @@ module_declaration:
     MODULE UIDENT module_declaration_body post_item_attributes
       { Md.mk (mkrhs $2 2) $3 ~attrs:$4
           ~loc:(symbol_rloc()) ~docs:(symbol_docs ()) }
+  | IMPLICIT MODULE UIDENT module_declaration_body post_item_attributes
+      { Md.mk (mkrhs $3 2) $4 ~attrs:$5 ~implicit_:Implicit
+          ~loc:(symbol_rloc()) ~docs:(symbol_docs ()) }
 ;
 module_alias:
     MODULE UIDENT EQUAL mod_longident post_item_attributes
