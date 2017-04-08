@@ -603,24 +603,28 @@ let get_variance ty visited =
   try TypeMap.find ty !visited with Not_found -> Variance.null
 
 let compute_variance env visited vari ty =
-  let rec compute_variance_rec vari ty =
+  let rec compute_variance_rec env vari ty =
     (* Format.eprintf "%a: %x@." Printtyp.type_expr ty (Obj.magic vari); *)
     let ty = Ctype.repr ty in
     let vari' = get_variance ty visited in
     if Variance.subset vari vari' then () else
     let vari = Variance.union vari vari' in
     visited := TypeMap.add ty vari !visited;
-    let compute_same = compute_variance_rec vari in
+    let compute_same = compute_variance_rec env vari in
     match ty.desc with
-      Tarrow (_, ty1, ty2, _) ->
+      Tarrow (arr_flag, ty1, ty2, _) ->
         let open Variance in
         let v = conjugate vari in
         let v1 =
           if mem May_pos v || mem May_neg v
           then set May_weak true v else v
         in
-        compute_variance_rec v1 ty1;
-        compute_same ty2
+        compute_variance_rec env v1 ty1;
+        let env = match arr_flag with
+            Tarr_implicit m -> Ctype.bind_implicit_arg m ty1 env
+          | _ -> env
+        in
+        compute_variance_rec env vari ty2;
     | Ttuple tl ->
         List.iter compute_same tl
     | Tconstr (path, tl, _) ->
@@ -635,7 +639,7 @@ let compute_variance env visited vari ty =
                 let strict =
                   cvari Inv && cv Inj || (cvari Pos || cvari Neg) && cv Inv
                 in
-                if strict then compute_variance_rec full ty else
+                if strict then compute_variance_rec env full ty else
                 let p1 = inter v vari
                 and n1 = inter v (conjugate vari) in
                 let v1 =
@@ -646,10 +650,12 @@ let compute_variance env visited vari ty =
                   (cvari May_pos || cvari May_neg) && cv May_weak
                 in
                 let v2 = set May_weak weak v1 in
-                compute_variance_rec v2 ty)
+                compute_variance_rec env v2 ty)
               tl decl.type_variance
           with Not_found ->
-            List.iter (compute_variance_rec may_inv) tl
+            Printf.fprintf stderr "variance not found for %s\n"
+              (Path.name path);
+            List.iter (compute_variance_rec env may_inv) tl
         end
     | Tobject (ty, _) ->
         compute_same ty
@@ -672,7 +678,7 @@ let compute_variance env visited vari ty =
                     null [May_pos; May_neg; May_weak]
                 in
                 let v = inter vari upper in
-                List.iter (compute_variance_rec v) tyl
+                List.iter (compute_variance_rec env v) tyl
             | _ -> ())
           row.row_fields;
         compute_same row.row_more
@@ -683,9 +689,9 @@ let compute_variance env visited vari ty =
         let v =
           Variance.(if mem Pos vari || mem Neg vari then full else may_inv)
         in
-        List.iter (compute_variance_rec v) tyl
+        List.iter (compute_variance_rec env v) tyl
   in
-  compute_variance_rec vari ty
+  compute_variance_rec env vari ty
 
 let make_variance ty = (ty, ref Variance.null)
 
