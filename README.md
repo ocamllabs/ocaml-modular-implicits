@@ -5,4 +5,4 @@
 A fork of [OCaml][ocaml] extended with [modular implicits][modimpl].
 
 [ocaml]: https://github.com/ocaml/ocaml
-[modimpl]: http://www.lpw25.net/ml2014.pdf
+[modimpl]: http://www.lpw25.net/papers/ml2014.pdf
