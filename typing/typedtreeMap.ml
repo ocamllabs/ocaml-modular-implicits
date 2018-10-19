@@ -131,6 +131,7 @@ module MakeMap(Map : MapArgument) = struct
         | Tstr_modtype mtd ->
           Tstr_modtype (map_module_type_declaration mtd)
         | Tstr_open od -> Tstr_open od
+        | Tstr_implicit id -> Tstr_implicit id
         | Tstr_class list ->
           let list =
             List.map
@@ -382,6 +383,7 @@ module MakeMap(Map : MapArgument) = struct
         Texp_poly (Some ( map_core_type ct )), loc, attrs
       | Texp_newtype _
       | Texp_open _
+      | Texp_implicit _
       | Texp_poly None -> exp_extra
 
 
@@ -418,6 +420,7 @@ module MakeMap(Map : MapArgument) = struct
         | Tsig_modtype mtd ->
           Tsig_modtype (map_module_type_declaration mtd)
         | Tsig_open _ -> item.sig_desc
+        | Tsig_implicit _ -> item.sig_desc
         | Tsig_include incl ->
           Tsig_include {incl with incl_mod = map_module_type incl.incl_mod}
         | Tsig_class list -> Tsig_class (List.map map_class_description list)

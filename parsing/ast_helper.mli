@@ -138,6 +138,8 @@ module Exp:
     val newtype: ?loc:loc -> ?attrs:attrs -> string -> expression -> expression
     val pack: ?loc:loc -> ?attrs:attrs -> module_expr -> expression
     val open_: ?loc:loc -> ?attrs:attrs -> open_flag -> lid -> expression -> expression
+    val implicit_:
+      ?loc:loc -> ?attrs:attrs -> implicit_description -> expression -> expression
     val extension: ?loc:loc -> ?attrs:attrs -> extension -> expression
 
     val case: pattern -> ?guard:expression -> expression -> case
@@ -217,6 +219,7 @@ module Sig:
     val rec_module: ?loc:loc -> module_declaration list -> signature_item
     val modtype: ?loc:loc -> module_type_declaration -> signature_item
     val open_: ?loc:loc -> open_description -> signature_item
+    val implicit_: ?loc:loc -> implicit_description -> signature_item
     val include_: ?loc:loc -> include_description -> signature_item
     val class_: ?loc:loc -> class_description list -> signature_item
     val class_type: ?loc:loc -> class_type_declaration list -> signature_item
@@ -239,6 +242,7 @@ module Str:
     val rec_module: ?loc:loc -> module_binding list -> structure_item
     val modtype: ?loc:loc -> module_type_declaration -> structure_item
     val open_: ?loc:loc -> open_description -> structure_item
+    val implicit_: ?loc:loc -> implicit_description -> structure_item
     val class_: ?loc:loc -> class_declaration list -> structure_item
     val class_type: ?loc:loc -> class_type_declaration list -> structure_item
     val include_: ?loc:loc -> include_declaration -> structure_item
@@ -270,10 +274,17 @@ module Opn:
     val mk: ?loc: loc -> ?attrs:attrs -> ?flag:open_flag -> lid -> open_description
   end
 
+(* Implicit bindings *)
+module Imp:
+  sig
+    val mk: ?loc: loc -> ?attrs:attrs -> implicit_kind -> lid -> implicit_description
+  end
+
 (* Includes *)
 module Incl:
   sig
-    val mk: ?loc: loc -> ?attrs:attrs -> 'a -> 'a include_infos
+    val mk:
+      ?loc: loc -> ?attrs:attrs -> ?flag:include_flag -> 'a -> 'a include_infos
   end
 
 (** Value bindings *)

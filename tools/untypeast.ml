@@ -71,6 +71,8 @@ and untype_structure_item item =
                    popen_attributes = od.open_attributes;
                    popen_loc = od.open_loc;
                   }
+    | Tstr_implicit imp ->
+        Pstr_implicit (untype_implicit_description imp)
     | Tstr_class list ->
         Pstr_class
           (List.map
@@ -83,6 +85,7 @@ and untype_structure_item item =
              list)
     | Tstr_include incl ->
         Pstr_include {pincl_mod = untype_module_expr incl.incl_mod;
+                      pincl_flag = incl.incl_flag;
                       pincl_attributes = incl.incl_attributes;
                       pincl_loc = incl.incl_loc;
                      }
@@ -191,6 +194,18 @@ and untype_extension_constructor ext =
     pext_attributes = ext.ext_attributes;
   }
 
+and untype_implicit_description imp =
+  {
+    pimp_lid = imp.imp_txt;
+    pimp_kind = untype_implicit_kind imp.imp_kind;
+    pimp_attributes = imp.imp_attributes;
+    pimp_loc = imp.imp_loc;
+  }
+
+and untype_implicit_kind = function
+  | Timp_implicit -> Pimp_implicit
+  | Timp_explicit -> Pimp_explicit
+
 and untype_pattern pat =
   let desc =
   match pat with
@@ -249,6 +264,7 @@ and untype_extra (extra, loc, attrs) sexp =
     | Texp_constraint cty ->
         Pexp_constraint (sexp, untype_core_type cty)
     | Texp_open (ovf, _path, lid, _) -> Pexp_open (ovf, lid, sexp)
+    | Texp_implicit (imp, _) -> Pexp_implicit (untype_implicit_description imp, sexp)
     | Texp_poly cto -> Pexp_poly (sexp, option untype_core_type cto)
     | Texp_newtype s -> Pexp_newtype (s, sexp)
   in
@@ -414,8 +430,11 @@ and untype_signature_item item =
                    popen_attributes = od.open_attributes;
                    popen_loc = od.open_loc;
                   }
+    | Tsig_implicit imp ->
+        Psig_implicit (untype_implicit_description imp)
     | Tsig_include incl ->
         Psig_include {pincl_mod = untype_module_type incl.incl_mod;
+                      pincl_flag = incl.incl_flag;
                       pincl_attributes = incl.incl_attributes;
                       pincl_loc = incl.incl_loc;
                      }

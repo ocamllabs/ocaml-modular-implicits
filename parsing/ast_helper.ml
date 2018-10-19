@@ -114,6 +114,7 @@ module Exp = struct
   let newtype ?loc ?attrs a b = mk ?loc ?attrs (Pexp_newtype (a, b))
   let pack ?loc ?attrs a = mk ?loc ?attrs (Pexp_pack a)
   let open_ ?loc ?attrs a b c = mk ?loc ?attrs (Pexp_open (a, b, c))
+  let implicit_ ?loc ?attrs a b = mk ?loc ?attrs (Pexp_implicit (a, b))
   let extension ?loc ?attrs a = mk ?loc ?attrs (Pexp_extension a)
 
   let case lhs ?guard rhs =
@@ -165,6 +166,7 @@ module Sig = struct
   let rec_module ?loc a = mk ?loc (Psig_recmodule a)
   let modtype ?loc a = mk ?loc (Psig_modtype a)
   let open_ ?loc a = mk ?loc (Psig_open a)
+  let implicit_ ?loc a = mk ?loc (Psig_implicit a)
   let include_ ?loc a = mk ?loc (Psig_include a)
   let class_ ?loc a = mk ?loc (Psig_class a)
   let class_type ?loc a = mk ?loc (Psig_class_type a)
@@ -185,6 +187,7 @@ module Str = struct
   let rec_module ?loc a = mk ?loc (Pstr_recmodule a)
   let modtype ?loc a = mk ?loc (Pstr_modtype a)
   let open_ ?loc a = mk ?loc (Pstr_open a)
+  let implicit_ ?loc a = mk ?loc (Pstr_implicit a)
   let class_ ?loc a = mk ?loc (Pstr_class a)
   let class_type ?loc a = mk ?loc (Pstr_class_type a)
   let include_ ?loc a = mk ?loc (Pstr_include a)
@@ -318,10 +321,21 @@ module Opn = struct
     }
 end
 
+module Imp = struct
+  let mk ?(loc = !default_loc) ?(attrs = []) kind lid =
+    {
+      pimp_lid = lid;
+      pimp_kind = kind;
+      pimp_loc = loc;
+      pimp_attributes = attrs;
+    }
+end
+
 module Incl = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) mexpr =
+  let mk ?(loc = !default_loc) ?(attrs = []) ?(flag = Include_all) mexpr =
     {
      pincl_mod = mexpr;
+     pincl_flag = flag;
      pincl_loc = loc;
      pincl_attributes = attrs;
     }

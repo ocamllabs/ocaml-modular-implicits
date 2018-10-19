@@ -370,6 +370,19 @@ let out_sig_item = ref (fun _ -> failwith "Oprint.out_sig_item")
 let out_signature = ref (fun _ -> failwith "Oprint.out_signature")
 let out_type_extension = ref (fun _ -> failwith "Oprint.out_type_extension")
 
+let print_implicit_flag ppf = function
+  | Asttypes.Nonimplicit -> ()
+  | Asttypes.Implicit -> fprintf ppf "implicit "
+
+let print_out_implicit_kind ppf = function
+  | Oimp_implicit -> fprintf ppf "implicit"
+  | Oimp_explicit -> fprintf ppf "explicit"
+
+let print_out_rec_status_module ppf = function
+  | Orec_not -> fprintf ppf "module"
+  | Orec_first -> fprintf ppf "module rec"
+  | Orec_next -> fprintf ppf "and"
+
 let rec print_out_functor ppf =
   function
   | Omty_functor (mparam, mty_res) ->
@@ -444,15 +457,14 @@ and print_out_sig_item ppf =
       fprintf ppf "@[<2>module type %s@]" name
   | Osig_modtype (name, mty) ->
       fprintf ppf "@[<2>module type %s =@ %a@]" name !out_module_type mty
-  | Osig_module (name, Omty_alias id, _, _) ->
-      fprintf ppf "@[<2>module %s =@ %a@]" name print_ident id
-  | Osig_module (name, mty, rs, i) ->
-      fprintf ppf "@[<2>%s%s %s :@ %a@]"
-        (match i with Asttypes.Nonimplicit -> ""
-                     | Asttypes.Implicit -> "implicit ")
-        (match rs with Orec_not -> "module"
-                     | Orec_first -> "module rec"
-                     | Orec_next -> "and")
+  | Osig_module (name, Omty_alias id, i, _) ->
+      fprintf ppf "@[<2>%amodule %s =@ %a@]"
+              print_implicit_flag i
+              name print_ident id
+  | Osig_module (name, mty, i, rs) ->
+      fprintf ppf "@[<2>%a%a %s :@ %a@]"
+        print_implicit_flag i
+        print_out_rec_status_module rs
         name !out_module_type mty
   | Osig_type(td, rs) ->
         print_out_type_decl
@@ -469,6 +481,11 @@ and print_out_sig_item ppf =
       in
       fprintf ppf "@[<2>%s %a :@ %a%a@]" kwd value_ident name !out_type
         ty pr_prims prims
+  | Osig_implicit (kind, name, Oimps_standalone) ->
+      fprintf ppf "@[<2>%a %a@]"
+              print_out_implicit_kind kind
+              print_ident name
+  | Osig_implicit (kind, name, Oimps_attached) -> ()
 
 and print_out_type_decl kwd ppf td =
   let print_constraints ppf =

@@ -86,6 +86,11 @@ let type_module =
 let type_open =
   ref (fun _ -> assert false)
 
+(* Forward declaration, to be filled in by Typemod.type_implicit *)
+
+let type_implicit =
+  ref (fun _ -> assert false)
+
 (* Forward declaration, to be filled in by Typemod.type_package *)
 
 let type_package =
@@ -144,6 +149,7 @@ let iter_expression f e =
     | Pexp_record (iel, eo) ->
         may expr eo; List.iter (fun (_, e) -> expr e) iel
     | Pexp_open (_, _, e)
+    | Pexp_implicit (_, e)
     | Pexp_newtype (_, e)
     | Pexp_poly (e, _)
     | Pexp_lazy e
@@ -195,6 +201,7 @@ let iter_expression f e =
     | Pstr_exception _
     | Pstr_modtype _
     | Pstr_open _
+    | Pstr_implicit _
     | Pstr_class_type _
     | Pstr_attribute _
     | Pstr_extension _ -> ()
@@ -1454,7 +1461,8 @@ and is_nonexpansive_mod mexp =
       List.for_all
         (fun item -> match item.str_desc with
           | Tstr_eval _ | Tstr_primitive _ | Tstr_type _
-          | Tstr_modtype _ | Tstr_open _ | Tstr_class_type _  -> true
+          | Tstr_modtype _ | Tstr_open _
+          | Tstr_implicit _ | Tstr_class_type _  -> true
           | Tstr_value (_, pat_exp_list) ->
               List.for_all (fun vb -> is_nonexpansive vb.vb_expr) pat_exp_list
           | Tstr_module {mb_expr=m;_}
@@ -2765,6 +2773,14 @@ and type_expect_ ?in_function env sexp ty_expected =
       let exp = type_expect newenv e ty_expected in
       { exp with
         exp_extra = (Texp_open (ovf, path, lid, newenv), loc,
+                     sexp.pexp_attributes) ::
+                      exp.exp_extra;
+      }
+  | Pexp_implicit (imp, e) ->
+      let (imp, _, newenv) = !type_implicit env imp in
+      let exp = type_expect newenv e ty_expected in
+      { exp with
+        exp_extra = (Texp_implicit (imp, newenv), loc,
                      sexp.pexp_attributes) ::
                       exp.exp_extra;
       }

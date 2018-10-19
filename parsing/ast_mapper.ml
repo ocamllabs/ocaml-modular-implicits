@@ -47,6 +47,7 @@ type mapper = {
                          -> extension_constructor;
   include_declaration: mapper -> include_declaration -> include_declaration;
   include_description: mapper -> include_description -> include_description;
+  implicit_description: mapper -> implicit_description -> implicit_description;
   label_declaration: mapper -> label_declaration -> label_declaration;
   location: mapper -> Location.t -> Location.t;
   module_binding: mapper -> module_binding -> module_binding;
@@ -259,6 +260,8 @@ module MT = struct
     | Psig_extension (x, attrs) ->
         extension ~loc (sub.extension sub x) ~attrs:(sub.attributes sub attrs)
     | Psig_attribute x -> attribute ~loc (sub.attribute sub x)
+    | Psig_implicit x -> implicit_ ~loc (sub.implicit_description sub x)
+
 end
 
 
@@ -315,6 +318,7 @@ module M = struct
     | Pstr_extension (x, attrs) ->
         extension ~loc (sub.extension sub x) ~attrs:(sub.attributes sub attrs)
     | Pstr_attribute x -> attribute ~loc (sub.attribute sub x)
+    | Pstr_implicit x -> implicit_ ~loc (sub.implicit_description sub x)
 end
 
 module E = struct
@@ -386,6 +390,7 @@ module E = struct
     | Pexp_pack me -> pack ~loc ~attrs (sub.module_expr sub me)
     | Pexp_open (ovf, lid, e) ->
         open_ ~loc ~attrs ovf (map_loc sub lid) (sub.expr sub e)
+    | Pexp_implicit (imp, e) -> implicit_ ~loc ~attrs imp e
     | Pexp_extension x -> extension ~loc ~attrs (sub.extension sub x)
 end
 
@@ -565,19 +570,27 @@ let default_mapper =
 
 
     include_description =
-      (fun this {pincl_mod; pincl_attributes; pincl_loc} ->
+      (fun this {pincl_mod; pincl_flag; pincl_attributes; pincl_loc} ->
          Incl.mk (this.module_type this pincl_mod)
+           ~flag:pincl_flag
            ~loc:(this.location this pincl_loc)
            ~attrs:(this.attributes this pincl_attributes)
       );
 
     include_declaration =
-      (fun this {pincl_mod; pincl_attributes; pincl_loc} ->
+      (fun this {pincl_mod; pincl_flag; pincl_attributes; pincl_loc} ->
          Incl.mk (this.module_expr this pincl_mod)
+           ~flag:pincl_flag
            ~loc:(this.location this pincl_loc)
            ~attrs:(this.attributes this pincl_attributes)
       );
 
+    implicit_description =
+      (fun this {pimp_lid; pimp_kind; pimp_attributes; pimp_loc} ->
+         Imp.mk pimp_kind (map_loc this pimp_lid)
+           ~loc:(this.location this pimp_loc)
+           ~attrs:(this.attributes this pimp_attributes)
+      );
 
     value_binding =
       (fun this {pvb_pat; pvb_expr; pvb_attributes; pvb_loc} ->

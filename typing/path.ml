@@ -17,6 +17,8 @@ type t =
 
 let nopos = -1
 
+let dummy = Pident Ident.dummy
+
 let rec same p1 p2 =
   match (p1, p2) with
     (Pident id1, Pident id2) -> Ident.same id1 id2
@@ -66,6 +68,8 @@ let rec to_longident = function
   | Pdot(p, s, _) -> Longident.Ldot (to_longident p, s)
   | Papply (p1, p2, i) ->
       Longident.Lapply (to_longident p1, to_longident p2, i)
+
+let to_string p = Longident.to_string (to_longident p)
 
 let rec flatten acc = function
   | Pident id -> id, acc

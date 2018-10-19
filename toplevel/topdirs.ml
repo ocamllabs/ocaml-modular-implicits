@@ -336,9 +336,9 @@ let trim_signature = function
       Mty_signature
         (List.map
            (function
-               Sig_module (id, md, rs) ->
+               Sig_module (id, md, is, rs) ->
                  Sig_module (id, {md with md_type = trim_modtype md.md_type},
-                             rs)
+                             is, rs)
              (*| Sig_modtype (id, Modtype_manifest mty) ->
                  Sig_modtype (id, Modtype_manifest (trim_modtype mty))*)
              | item -> item)
@@ -412,7 +412,7 @@ let () =
     (fun env loc id lid ->
        let path, md = Typetexp.find_module env loc lid in
        [ Sig_module (id, {md with md_type = trim_signature md.md_type},
-                     Trec_not) ]
+                     Asttypes.Nonimplicit, Trec_not) ]
     )
 
 let () =

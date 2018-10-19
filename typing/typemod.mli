@@ -66,6 +66,7 @@ type error =
   | Scoping_pack of Longident.t * type_expr
   | Recursive_module_require_explicit_type
   | Argument_mismatch of Types.module_parameter * Parsetree.module_argument
+  | Invalid_implicit_include of module_type
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error

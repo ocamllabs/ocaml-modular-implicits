@@ -129,6 +129,11 @@ val type_module:
 val type_open:
     (open_flag -> Env.t -> Location.t -> Longident.t loc -> Path.t * Env.t)
     ref
+(* Forward declaration, to be filled in by Typemod.type_implicit *)
+val type_implicit:
+    (Env.t -> Parsetree.implicit_description ->
+     Typedtree.implicit_description * Types.implicit_description * Env.t)
+    ref
 (* Forward declaration, to be filled in by Typeclass.class_structure *)
 val type_object:
   (Env.t -> Location.t -> Parsetree.class_structure ->

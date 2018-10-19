@@ -99,6 +99,7 @@ type type_iterators =
     it_modtype_declaration: type_iterators -> modtype_declaration -> unit;
     it_class_declaration: type_iterators -> class_declaration -> unit;
     it_class_type_declaration: type_iterators -> class_type_declaration -> unit;
+    it_implicit_description: type_iterators -> implicit_description -> unit;
     it_module_type: type_iterators -> module_type -> unit;
     it_module_parameter : type_iterators -> Types.module_parameter -> unit;
     it_class_type: type_iterators -> class_type -> unit;

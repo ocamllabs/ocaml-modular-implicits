@@ -50,6 +50,10 @@ val tree_of_extension_constructor:
     Ident.t -> extension_constructor -> ext_status -> out_sig_item
 val extension_constructor:
     Ident.t -> formatter -> extension_constructor -> unit
+val tree_of_implicit_description:
+  implicit_description -> imp_status -> out_sig_item
+val implicit_description:
+  formatter -> implicit_description -> unit
 val tree_of_module: Ident.t -> ?implicit_:Asttypes.implicit_flag -> module_type -> rec_status -> out_sig_item
 val modtype: formatter -> module_type -> unit
 val signature: formatter -> signature -> unit
@@ -65,6 +69,7 @@ val class_declaration: Ident.t -> formatter -> class_declaration -> unit
 val tree_of_cltype_declaration:
     Ident.t -> class_type_declaration -> rec_status -> out_sig_item
 val cltype_declaration: Ident.t -> formatter -> class_type_declaration -> unit
+val implicit_kind : formatter -> implicit_kind -> unit
 val type_expansion: type_expr -> Format.formatter -> type_expr -> unit
 val prepare_expansion: type_expr * type_expr -> type_expr * type_expr
 val trace:

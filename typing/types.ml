@@ -275,6 +275,17 @@ type class_type_declaration =
     clty_attributes: Parsetree.attributes;
   }
 
+type implicit_kind =
+  | Imp_implicit
+  | Imp_explicit
+
+type implicit_description =
+  { imp_kind : implicit_kind;
+    imp_path : Path.t;
+    imp_loc: Location.t;
+    imp_attributes: Parsetree.attributes;
+  }
+
 (* Type expressions for the module language *)
 
 type module_type =
@@ -294,17 +305,17 @@ and signature_item =
     Sig_value of Ident.t * value_description
   | Sig_type of Ident.t * type_declaration * rec_status
   | Sig_typext of Ident.t * extension_constructor * ext_status
-  | Sig_module of Ident.t * module_declaration * rec_status
+  | Sig_module of Ident.t * module_declaration * implicit_flag * rec_status
   | Sig_modtype of Ident.t * modtype_declaration
   | Sig_class of Ident.t * class_declaration * rec_status
   | Sig_class_type of Ident.t * class_type_declaration * rec_status
+  | Sig_implicit of implicit_description * imp_status
 
 and module_declaration =
   {
     md_type: module_type;
     md_attributes: Parsetree.attributes;
     md_loc: Location.t;
-    md_implicit: implicit_flag;
   }
 
 and modtype_declaration =
@@ -323,3 +334,7 @@ and ext_status =
     Text_first                     (* first constructor of an extension *)
   | Text_next                      (* not first constructor of an extension *)
   | Text_exception                 (* an exception *)
+
+and imp_status =
+  | Timps_standalone               (* A stand-alone implicit statement *)
+  | Timps_attached                 (* Part of an implicit module declaration *)

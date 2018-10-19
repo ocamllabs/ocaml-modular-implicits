@@ -90,6 +90,10 @@ let open_flag = function
   | Open_all x -> override x
   | Open_implicit -> " implicit"
 
+let include_flag = function
+  | Include_all -> ""
+  | Include_implicit -> " implicit"
+
 let implicit_flag = function
   | Nonimplicit -> ""
   | Implicit -> " implicit"
@@ -640,7 +644,16 @@ class printer  ()= object(self:'self)
         pp f "@[<hov2>(!poly!@ %a@ : %a)@]" self#simple_expr e self#core_type ct
     | Pexp_open (ovf, lid, e) ->
         pp f "@[<2>let open%s %a in@;%a@]" (open_flag ovf) self#longident_loc lid
-          self#expression  e
+          self#expression e
+    | Pexp_implicit(imp, e) ->
+        let kind =
+          match imp.pimp_kind with
+          | Pimp_implicit -> "implicit"
+          | Pimp_explicit -> "explicit"
+        in
+        pp f "@[<2>let %s %a in@;%a@]"
+           kind self#longident_loc imp.pimp_lid
+           self#expression e
     | Pexp_variant (l,Some eo) ->
         pp f "@[<2>`%s@;%a@]" l  self#simple_expr eo
     | Pexp_extension e -> self#extension f e
@@ -1036,7 +1049,8 @@ class printer  ()= object(self:'self)
            self#longident_loc od.popen_lid
            self#item_attributes od.popen_attributes
     | Psig_include incl ->
-        pp f "@[<hov2>include@ %a@]%a"
+        pp f "@[<hov2>include%s@ %a@]%a"
+          (include_flag incl.pincl_flag)
           self#module_type incl.pincl_mod
           self#item_attributes incl.pincl_attributes
     | Psig_modtype {pmtd_name=s; pmtd_type=md; pmtd_attributes=attrs} ->
@@ -1071,6 +1085,17 @@ class printer  ()= object(self:'self)
     | Psig_extension(e, a) ->
         self#item_extension f e;
         self#item_attributes f a
+    | Psig_implicit imp ->
+        let kind =
+          match imp.pimp_kind with
+          | Pimp_implicit -> "implicit"
+          | Pimp_explicit -> "explicit"
+        in
+          pp f "@[<hov2>%s@ %a@]%a"
+             kind
+             self#longident_loc imp.pimp_lid
+             self#item_attributes imp.pimp_attributes
+
   end
   method module_expr f x =
     if x.pmod_attributes <> [] then begin
@@ -1230,7 +1255,8 @@ class printer  ()= object(self:'self)
           self#value_description vd
           self#item_attributes vd.pval_attributes
     | Pstr_include incl ->
-        pp f "@[<hov2>include@ %a@]%a"
+        pp f "@[<hov2>include%s@ %a@]%a"
+           (include_flag incl.pincl_flag)
           self#module_expr incl.pincl_mod
           self#item_attributes incl.pincl_attributes
     | Pstr_recmodule decls -> (* 3.07 *)
@@ -1256,6 +1282,16 @@ class printer  ()= object(self:'self)
     | Pstr_extension(e, a) ->
         self#item_extension f e;
         self#item_attributes f a
+    | Pstr_implicit imp ->
+        let kind =
+          match imp.pimp_kind with
+          | Pimp_implicit -> "implicit"
+          | Pimp_explicit -> "explicit"
+        in
+          pp f "@[<hov2>%s@ %a@]%a"
+             kind
+             self#longident_loc imp.pimp_lid
+             self#item_attributes imp.pimp_attributes
   end
   method type_param f (ct, a) =
     pp f "%s%a" (type_variance a) self#core_type ct

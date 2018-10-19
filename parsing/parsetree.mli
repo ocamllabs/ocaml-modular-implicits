@@ -331,6 +331,7 @@ and expression_desc =
            let! open M in E
            let open implicit M in E
         *)
+  | Pexp_implicit of implicit_description * expression
   | Pexp_extension of extension
         (* [%id] *)
 
@@ -681,6 +682,8 @@ and signature_item_desc =
         (* [@@@id] *)
   | Psig_extension of extension * attributes
         (* [%%id] *)
+  | Psig_implicit of implicit_description
+        (* implicit Path *)
 
 and module_declaration =
     {
@@ -715,9 +718,22 @@ and open_description =
    open  X - popen_override = Fresh
  *)
 
+and implicit_description =
+  {
+    pimp_lid: Longident.t loc;
+    pimp_kind: implicit_kind;
+    pimp_loc: Location.t;
+    pimp_attributes: attributes;
+  }
+
+and implicit_kind =
+  | Pimp_implicit
+  | Pimp_explicit
+
 and 'a include_infos =
     {
      pincl_mod: 'a;
+     pincl_flag: include_flag;
      pincl_loc: Location.t;
      pincl_attributes: attributes;
     }
@@ -821,6 +837,8 @@ and structure_item_desc =
         (* [@@@id] *)
   | Pstr_extension of extension * attributes
         (* [%%id] *)
+  | Pstr_implicit of implicit_description
+        (* implicit Path.t *)
 
 and value_binding =
   {

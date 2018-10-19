@@ -53,6 +53,8 @@ let used_constructors :
 
 let prefixed_sg = Hashtbl.create 113
 
+let prefixed_imps = Hashtbl.create 113
+
 type error =
   | Illegal_renaming of string * string * string
   | Inconsistent_import of string * string * string
@@ -112,6 +114,8 @@ type summary =
   | Env_class of summary * Ident.t * class_declaration
   | Env_cltype of summary * Ident.t * class_type_declaration
   | Env_open of summary * Path.t
+  | Env_open_implicit of summary * Path.t
+  | Env_implicit of summary * implicit_description
   | Env_functor_arg of summary * Ident.t
 
 module EnvTbl =
@@ -291,8 +295,8 @@ let strengthen =
   ref ((fun env mty path -> assert false) :
          t -> module_type -> Path.t -> module_type)
 
-let md ?(implicit_ = Asttypes.Nonimplicit) md_type =
-  {md_type; md_attributes=[]; md_loc=Location.none; md_implicit = implicit_}
+let md md_type =
+  {md_type; md_attributes=[]; md_loc=Location.none;}
 
 (* The name of the compilation unit currently compiled.
    "" if outside a compilation unit. *)
@@ -393,7 +397,8 @@ let reset_cache () =
   Hashtbl.clear value_declarations;
   Hashtbl.clear type_declarations;
   Hashtbl.clear used_constructors;
-  Hashtbl.clear prefixed_sg
+  Hashtbl.clear prefixed_sg;
+  Hashtbl.clear prefixed_imps
 
 let reset_cache_toplevel () =
   (* Delete 'missing cmi' entries from the cache. *)
@@ -406,7 +411,8 @@ let reset_cache_toplevel () =
   Hashtbl.clear value_declarations;
   Hashtbl.clear type_declarations;
   Hashtbl.clear used_constructors;
-  Hashtbl.clear prefixed_sg
+  Hashtbl.clear prefixed_sg;
+  Hashtbl.clear prefixed_imps
 
 
 let set_unit_name name =
@@ -1109,6 +1115,37 @@ let rec scrape_alias env ?path mty =
 
 let scrape_alias env mty = scrape_alias env mty
 
+(* Follow all aliases in a path *)
+
+(* CR-someday lwhite: why is this different from normalize path?
+   In fact why are they even necessery? Really aliases in the path
+   should be reflected (by strengthening) as aliases on the item
+   pointed to by the path.
+ *)
+let rec canonical_path env path =
+  try
+    let md = find_module path env in
+    match md.Types.md_type with
+    | Mty_alias path -> canonical_path env path
+    | _ -> match path with
+      | Path.Pident _ -> path
+      | Path.Pdot (p1,s,pos) ->
+          let p1' = canonical_path env p1 in
+          if p1 == p1' then
+            path
+          else
+            Path.Pdot (p1', s, pos)
+      | Path.Papply (p1, p2, i) ->
+          let p1' = canonical_path env p1
+          and p2' = canonical_path env p2 in
+          if p1' == p1 && p2 == p2' then
+            path
+          else
+            Path.Papply (p1', p2', i)
+  with Not_found ->
+    (*?!*)
+    path
+
 (* Compute constructor descriptions *)
 
 let constructors_of_type ty_path decl =
@@ -1143,24 +1180,30 @@ let signature_item_size = function
   | Sig_type _       -> 0
   | Sig_modtype _    -> 0
   | Sig_class_type _ -> 0
+  | Sig_implicit _   -> 0
 
 let signature_item_subst item p sub = match item with
   | Sig_type (id, _, _) -> Subst.add_type id p sub
-  | Sig_module (id, _, _) -> Subst.add_module id p sub
+  | Sig_module (id, _, _, _) -> Subst.add_module id p sub
   | Sig_modtype (id, _) -> Subst.add_modtype id (Mty_ident p) sub
-  | Sig_value _ | Sig_typext _ | Sig_class _ | Sig_class_type _ -> sub
+  | Sig_value _ | Sig_typext _ | Sig_implicit _
+  | Sig_class _ | Sig_class_type _ -> sub
 
 let signature_item_ident = function
   | Sig_value (id, _)     | Sig_typext (id, _, _)     | Sig_type (id, _, _)
-  | Sig_module (id, _, _) | Sig_modtype (id, _)
+  | Sig_module (id, _, _, _) | Sig_modtype (id, _)
   | Sig_class (id, _, _)  | Sig_class_type (id, _, _) ->
       id
+  | Sig_implicit _ -> assert false
 
 (* Given a signature and a root path, prefix all idents in the signature
    by the root path and build the corresponding substitution. *)
 
 let rec prefix_idents root pos sub = function
-    [] -> ([], sub)
+  | [] -> ([], sub)
+  | Sig_implicit _ :: rem ->
+      let (pl, final_sub) = prefix_idents root pos sub rem in
+      (Path.dummy :: pl, final_sub)
   | item :: rem ->
       let id   = signature_item_ident item in
       let size = signature_item_size item in
@@ -1181,14 +1224,16 @@ let subst_signature sub sg =
           Sig_type(id, Subst.type_declaration sub decl, x)
       | Sig_typext(id, ext, es) ->
           Sig_typext (id, Subst.extension_constructor sub ext, es)
-      | Sig_module(id, mty, x) ->
-          Sig_module(id, Subst.module_declaration sub mty,x)
+      | Sig_module(id, mty, x, y) ->
+          Sig_module(id, Subst.module_declaration sub mty, x, y)
       | Sig_modtype(id, decl) ->
           Sig_modtype(id, Subst.modtype_declaration sub decl)
       | Sig_class(id, decl, x) ->
           Sig_class(id, Subst.class_declaration sub decl, x)
       | Sig_class_type(id, decl, x) ->
           Sig_class_type(id, Subst.cltype_declaration sub decl, x)
+      | Sig_implicit(imp, x) ->
+          Sig_implicit (Subst.implicit_description sub imp, x)
     )
     sg
 
@@ -1216,10 +1261,41 @@ let prefix_idents_and_subst root sub sg =
   else
     prefix_idents_and_subst root sub sg
 
-let register_if_implicit path md env =
-  match md.md_implicit with
-  | Asttypes.Nonimplicit -> env
-  | Asttypes.Implicit ->
+let prefixed_implicits root sg =
+  let (_, sub) = prefix_idents root 0 Subst.identity sg in
+  let rev_imps =
+    List.fold_left
+      (fun acc item ->
+         match item with
+         | Sig_implicit(imp, _) ->
+             let imp = Subst.implicit_description sub imp in
+               imp :: acc
+         | _ -> acc)
+      [] sg
+  in
+  let imps = List.rev rev_imps in
+    imps
+
+let prefixed_implicits root sg =
+  let sgs =
+    try
+      Hashtbl.find prefixed_imps root
+    with Not_found ->
+      let sgs = ref [] in
+      Hashtbl.add prefixed_imps root sgs;
+      sgs
+  in
+  try
+    List.assq sg !sgs
+  with Not_found ->
+    let r = prefixed_implicits root sg in
+    sgs := (sg, r) :: !sgs;
+    r
+
+let register_as_implicit path env =
+  let path = canonical_path env path in
+    try
+      let md = find_module path env in
       let mty = !strengthen env md.md_type path in
       let rec add acc params mty =
         let acc = ((path, List.rev params, mty) :: acc) in
@@ -1231,6 +1307,28 @@ let register_if_implicit path md env =
       in
       let implicit_instances = add env.implicit_instances [] mty in
         {env with implicit_instances}
+    with Not_found ->
+      (* Can happen if the environment is ill-formed (e.g. whilst printing types).
+         In these cases we do not care about the implicit scope anyway. *)
+         env
+
+
+let unregister_as_implicit path env =
+  let path = canonical_path env path in
+  let implicit_instances =
+    List.filter
+      (fun (p, _, _) -> not (Path.same path p))
+      env.implicit_instances
+  in
+    {env with implicit_instances}
+
+let add_implicit imp env =
+  let env =
+    match imp.imp_kind with
+    | Imp_implicit -> register_as_implicit imp.imp_path env
+    | Imp_explicit -> unregister_as_implicit imp.imp_path env
+  in
+    { env with summary = Env_implicit(env.summary, imp) }
 
 (* Compute structure descriptions *)
 
@@ -1289,7 +1387,7 @@ and components_of_module_maker (env, sub, path, mty) =
             c.comp_constrs <-
               add_to_tbl (Ident.name id) (descr, !pos) c.comp_constrs;
             incr pos
-        | Sig_module(id, md, _) ->
+        | Sig_module(id, md, _, _) ->
             let mty = md.md_type in
             let mty' = EnvLazy.create (sub, mty) in
             c.comp_modules <-
@@ -1312,7 +1410,8 @@ and components_of_module_maker (env, sub, path, mty) =
         | Sig_class_type(id, decl, _) ->
             let decl' = Subst.cltype_declaration sub decl in
             c.comp_cltypes <-
-              Tbl.add (Ident.name id) (decl', !pos) c.comp_cltypes)
+              Tbl.add (Ident.name id) (decl', !pos) c.comp_cltypes
+        | Sig_implicit _ -> ())
         sg pl;
         Structure_comps c
   | Mty_functor(param, ty_res) ->
@@ -1451,17 +1550,14 @@ and store_extension ~check slot id path ext env renv =
     summary = Env_extension(env.summary, id, ext) }
 
 and store_module slot id path md env renv =
-  let env =
-    { env with
-      modules = EnvTbl.add "module" slot id (path, md) env.modules renv.modules;
-      components =
-        EnvTbl.add "module" slot id
-          (path, components_of_module env Subst.identity path md.md_type)
-          env.components renv.components;
-      summary = Env_module(env.summary, id, md);
-    }
-  in
-  register_if_implicit path md env
+  { env with
+    modules = EnvTbl.add "module" slot id (path, md) env.modules renv.modules;
+    components =
+      EnvTbl.add "module" slot id
+        (path, components_of_module env Subst.identity path md.md_type)
+        env.components renv.components;
+    summary = Env_module(env.summary, id, md);
+  }
 
 and store_modtype slot id path info env renv =
   { env with
@@ -1560,8 +1656,8 @@ and add_class id ty env =
 and add_cltype id ty env =
   store_cltype None id (Pident id) ty env env
 
-let add_module ?arg ?implicit_ id mty env =
-  add_module_declaration ?arg id (md ?implicit_ mty) env
+let add_module ?arg id mty env =
+  add_module_declaration ?arg id (md mty) env
 
 let add_local_constraint id info elv env =
   match info with
@@ -1591,7 +1687,17 @@ and enter_class = enter store_class
 and enter_cltype = enter store_cltype
 
 let enter_module ?arg ~implicit_ s mty env =
-  enter_module_declaration ?arg s (md ~implicit_ mty) env
+  let id, env = enter_module_declaration ?arg s (md mty) env in
+    match implicit_ with
+    | Nonimplicit -> id, env
+    | Implicit ->
+        let path = Pident id in
+        let imp =
+          {imp_path = path; imp_kind = Imp_implicit;
+           imp_attributes=[]; imp_loc=Location.none;}
+        in
+          let env = add_implicit imp env in
+          id, env
 
 (* Insertion of all components of a signature *)
 
@@ -1600,10 +1706,11 @@ let add_item comp env =
     Sig_value(id, decl)     -> add_value id decl env
   | Sig_type(id, decl, _)   -> add_type ~check:false id decl env
   | Sig_typext(id, ext, _)  -> add_extension ~check:false id ext env
-  | Sig_module(id, md, _)  -> add_module_declaration id md env
+  | Sig_module(id, md, _, _)  -> add_module_declaration id md env
   | Sig_modtype(id, decl)   -> add_modtype id decl env
   | Sig_class(id, decl, _)  -> add_class id decl env
   | Sig_class_type(id, decl, _) -> add_cltype id decl env
+  | Sig_implicit(imp, _) -> add_implicit imp env
 
 let rec add_signature sg env =
   match sg with
@@ -1629,7 +1736,7 @@ let open_signature slot root sg env0 =
             store_type ~check:false slot (Ident.hide id) p decl env env0
         | Sig_typext(id, ext, _) ->
             store_extension ~check:false slot (Ident.hide id) p ext env env0
-        | Sig_module(id, mty, _) ->
+        | Sig_module(id, mty, _, _) ->
             store_module slot (Ident.hide id) p mty env env0
         | Sig_modtype(id, decl) ->
             store_modtype slot (Ident.hide id) p decl env env0
@@ -1637,6 +1744,8 @@ let open_signature slot root sg env0 =
             store_class slot (Ident.hide id) p decl env env0
         | Sig_class_type(id, decl, _) ->
             store_cltype slot (Ident.hide id) p decl env env0
+        | Sig_implicit(imp, _) ->
+            add_implicit imp env
       )
       env0 sg pl in
   { newenv with summary = Env_open(env0.summary, root) }
@@ -1678,18 +1787,13 @@ let open_signature ?(loc = Location.none) ?(toplevel = false) ovf root sg env =
   else open_signature None root sg env
 
 let open_implicit root sg env =
-  let env, _pos = List.fold_left
-      (fun (env,pos) item ->
-         let env = match item with
-           | Sig_module(id, md, _) ->
-               register_if_implicit (Pdot (root, Ident.name id, pos)) md env
-           | _ -> env
-         in
-         let next = pos + signature_item_size item in
-         env, next)
-      (env,0) sg
+  let imps = prefixed_implicits root sg in
+  let newenv =
+    List.fold_left
+      (fun env imp -> add_implicit imp env)
+      env imps
   in
-  env
+  { newenv with summary = Env_open_implicit(env.summary, root) }
 
 (* Read a signature from a file *)
 

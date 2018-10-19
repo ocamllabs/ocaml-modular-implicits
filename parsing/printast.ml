@@ -88,6 +88,12 @@ let fmt_open_flag f x =
   | Open_implicit -> fprintf f "Open_implicit";
 ;;
 
+let fmt_include_flag f x =
+  match x with
+  | Include_all -> fprintf f "Include_all";
+  | Include_implicit -> fprintf f "Include_implicit";
+;;
+
 let fmt_closed_flag f x =
   match x with
   | Closed -> fprintf f "Closed"
@@ -382,6 +388,10 @@ and expression i ppf x =
   | Pexp_open (ovf, m, e) ->
       line i ppf "Pexp_open %a \"%a\"\n" fmt_open_flag ovf
         fmt_longident_loc m;
+      expression i ppf e
+  | Pexp_implicit (imp, e) ->
+      line i ppf "Pexp_implicit \"%a\"\n" fmt_longident_loc imp.pimp_lid;
+      implicit_kind i ppf imp.pimp_kind;
       expression i ppf e
   | Pexp_extension (s, arg) ->
       line i ppf "Pexp_extension \"%s\"\n" s.txt;
@@ -693,7 +703,8 @@ and signature_item i ppf x =
         fmt_longident_loc od.popen_lid;
       attributes i ppf od.popen_attributes
   | Psig_include incl ->
-      line i ppf "Psig_include\n";
+      line i ppf "Psig_include %a\n"
+           fmt_include_flag incl.pincl_flag;
       module_type i ppf incl.pincl_mod;
       attributes i ppf incl.pincl_attributes
   | Psig_class (l) ->
@@ -709,6 +720,11 @@ and signature_item i ppf x =
   | Psig_attribute (s, arg) ->
       line i ppf "Psig_attribute \"%s\"\n" s.txt;
       payload i ppf arg
+  | Psig_implicit imp ->
+      line i ppf "Psig_implicit %a\n"
+        fmt_longident_loc imp.pimp_lid;
+      implicit_kind i ppf imp.pimp_kind;
+      attributes i ppf imp.pimp_attributes
 
 and modtype_declaration i ppf = function
   | None -> line i ppf "#abstract"
@@ -828,7 +844,8 @@ and structure_item i ppf x =
       line i ppf "Pstr_class_type\n";
       list i class_type_declaration ppf l;
   | Pstr_include incl ->
-      line i ppf "Pstr_include";
+      line i ppf "Pstr_include %a"
+           fmt_include_flag incl.pincl_flag;
       attributes i ppf incl.pincl_attributes;
       module_expr i ppf incl.pincl_mod
   | Pstr_extension ((s, arg), attrs) ->
@@ -838,6 +855,11 @@ and structure_item i ppf x =
   | Pstr_attribute (s, arg) ->
       line i ppf "Pstr_attribute \"%s\"\n" s.txt;
       payload i ppf arg
+  | Pstr_implicit imp ->
+      line i ppf "Pstr_implicit %a\n"
+        fmt_longident_loc imp.pimp_lid;
+      implicit_kind i ppf imp.pimp_kind;
+      attributes i ppf imp.pimp_attributes
 
 and module_declaration i ppf pmd =
   string_loc i ppf pmd.pmd_name;
@@ -850,6 +872,11 @@ and module_binding i ppf pmb =
   line i ppf "%a\n" fmt_implicit_flag pmb.pmb_implicit;
   attributes i ppf pmb.pmb_attributes;
   module_expr (i+1) ppf pmb.pmb_expr
+
+and implicit_kind i ppf kind =
+  match kind with
+  | Pimp_implicit -> line i ppf "Pimp_implicit"
+  | Pimp_explicit -> line i ppf "Pimp_explicit"
 
 and core_type_x_core_type_x_location i ppf (ct1, ct2, l) =
   line i ppf "<constraint> %a\n" fmt_location l;

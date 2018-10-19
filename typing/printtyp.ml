@@ -1158,6 +1158,18 @@ let tree_of_cltype_declaration id cl rs =
 let cltype_declaration id ppf cl =
   !Oprint.out_sig_item ppf (tree_of_cltype_declaration id cl Trec_first)
 
+let tree_of_implicit_kind = function
+  | Imp_implicit -> Oimp_implicit
+  | Imp_explicit -> Oimp_explicit
+
+let implicit_kind ppf = function
+  | Imp_implicit -> fprintf ppf "implicit"
+  | Imp_explicit -> fprintf ppf "explicit"
+
+let tree_of_implicit_status = function
+  | Timps_standalone -> Oimps_standalone
+  | Timps_attached -> Oimps_attached
+
 (* Print a module type *)
 
 let wrap_env fenv ftree arg =
@@ -1197,6 +1209,15 @@ let hide_rec_items = function
            (fun id -> Env.add_type ~check:false (Ident.rename id) dummy)
            ids !printing_env)
   | _ -> ()
+
+let tree_of_implicit_description imp is =
+  let kind = tree_of_implicit_kind imp.imp_kind in
+  let path = tree_of_path imp.imp_path in
+  let is = tree_of_implicit_status is in
+    Osig_implicit (kind, path, is)
+
+let implicit_description ppf imp =
+  !Oprint.out_sig_item ppf (tree_of_implicit_description imp Timps_standalone)
 
 let rec tree_of_modtype = function
   | Mty_ident p ->
@@ -1245,15 +1266,17 @@ and tree_of_signature_rec env' = function
             [Osig_type(tree_of_type_decl id decl, tree_of_rec rs)]
         | Sig_typext(id, ext, es) ->
             [tree_of_extension_constructor id ext es]
-        | Sig_module(id, md, rs) ->
+        | Sig_module(id, md, is, rs) ->
             [Osig_module (Ident.name id, tree_of_modtype md.md_type,
-                          tree_of_rec rs, md.md_implicit)]
+                          is, tree_of_rec rs)]
         | Sig_modtype(id, decl) ->
             [tree_of_modtype_declaration id decl]
         | Sig_class(id, decl, rs) ->
             [tree_of_class_declaration id decl rs]
         | Sig_class_type(id, decl, rs) ->
             [tree_of_cltype_declaration id decl rs]
+        | Sig_implicit(imp, is) ->
+            [tree_of_implicit_description imp is]
       in
       let env' = Env.add_signature (item :: sg) env' in
       trees @ tree_of_signature_rec env' rem
@@ -1267,7 +1290,7 @@ and tree_of_modtype_declaration id decl =
   Osig_modtype (Ident.name id, mty)
 
 let tree_of_module id ?(implicit_ = Nonimplicit) mty rs =
-  Osig_module (Ident.name id, tree_of_modtype mty, tree_of_rec rs, implicit_)
+  Osig_module (Ident.name id, tree_of_modtype mty, implicit_, tree_of_rec rs)
 
 let modtype ppf mty = !Oprint.out_module_type ppf (tree_of_modtype mty)
 let modtype_declaration id ppf decl =

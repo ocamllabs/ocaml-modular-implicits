@@ -316,12 +316,19 @@ let extension_constructor s ext =
     cleanup_types ();
     ext
 
+let implicit_description s imp =
+  { imp_kind = imp.imp_kind;
+    imp_path = module_path s imp.imp_path;
+    imp_loc = loc s imp.imp_loc;
+    imp_attributes = attrs s imp.imp_attributes;
+   }
+
 let rec rename_bound_idents s idents = function
     [] -> (List.rev idents, s)
   | Sig_type(id, d, _) :: sg ->
       let id' = Ident.rename id in
       rename_bound_idents (add_type id (Pident id') s) (id' :: idents) sg
-  | Sig_module(id, mty, _) :: sg ->
+  | Sig_module(id, mty, _, _) :: sg ->
       let id' = Ident.rename id in
       rename_bound_idents (add_module id (Pident id') s) (id' :: idents) sg
   | Sig_modtype(id, d) :: sg ->
@@ -332,6 +339,8 @@ let rec rename_bound_idents s idents = function
      Sig_class(id, _, _) | Sig_class_type(id, _, _)) :: sg ->
       let id' = Ident.rename id in
       rename_bound_idents s (id' :: idents) sg
+  | Sig_implicit _ :: sg ->
+      rename_bound_idents s (Ident.dummy :: idents) sg
 
 let rec modtype s = function
     Mty_ident p as mty ->
@@ -377,21 +386,22 @@ and signature_component s comp newid =
       Sig_type(newid, type_declaration s d, rs)
   | Sig_typext(id, ext, es) ->
       Sig_typext(newid, extension_constructor s ext, es)
-  | Sig_module(id, d, rs) ->
-      Sig_module(newid, module_declaration s d, rs)
+  | Sig_module(id, d, is, rs) ->
+      Sig_module(newid, module_declaration s d, is, rs)
   | Sig_modtype(id, d) ->
       Sig_modtype(newid, modtype_declaration s d)
   | Sig_class(id, d, rs) ->
       Sig_class(newid, class_declaration s d, rs)
   | Sig_class_type(id, d, rs) ->
       Sig_class_type(newid, cltype_declaration s d, rs)
+  | Sig_implicit(imp, is) ->
+      Sig_implicit(implicit_description s imp, is)
 
 and module_declaration s decl =
   {
     md_type = modtype s decl.md_type;
     md_attributes = attrs s decl.md_attributes;
     md_loc = loc s decl.md_loc;
-    md_implicit = decl.md_implicit;
   }
 
 and modtype_declaration s decl  =

@@ -140,6 +140,7 @@ module MakeIterator(Iter : IteratorArgument) : sig
         | Tstr_recmodule list -> List.iter iter_module_binding list
         | Tstr_modtype mtd -> iter_module_type_declaration mtd
         | Tstr_open _ -> ()
+        | Tstr_implicit _ -> ()
         | Tstr_class list ->
             List.iter (fun (ci, _, _) -> iter_class_declaration ci) list
         | Tstr_class_type list ->
@@ -244,6 +245,7 @@ module MakeIterator(Iter : IteratorArgument) : sig
         | Texp_coerce (cty1, cty2) ->
             option iter_core_type cty1; iter_core_type cty2
         | Texp_open (_, path, _, _) -> ()
+        | Texp_implicit _ -> ()
         | Texp_poly cto -> option iter_core_type cto
         | Texp_newtype s -> ())
         exp.exp_extra;
@@ -366,6 +368,7 @@ module MakeIterator(Iter : IteratorArgument) : sig
         | Tsig_modtype mtd ->
             iter_module_type_declaration mtd
         | Tsig_open _ -> ()
+        | Tsig_implicit _ -> ()
         | Tsig_include incl -> iter_module_type incl.incl_mod
         | Tsig_class list ->
             List.iter iter_class_description list

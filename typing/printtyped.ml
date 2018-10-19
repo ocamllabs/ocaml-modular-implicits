@@ -95,6 +95,11 @@ let fmt_open_flag f x =
   | Open_implicit -> fprintf f "Open_implicit";
 ;;
 
+let fmt_include_flag f x =
+  match x with
+  | Include_all -> fprintf f "Include_all";
+  | Include_implicit -> fprintf f "Include_implicit";
+;;
 
 let fmt_closed_flag f x =
   match x with
@@ -287,6 +292,10 @@ and expression_extra i ppf x attrs =
       core_type i ppf cto2;
   | Texp_open (ovf, m, _, _) ->
       line i ppf "Pexp_open %a \"%a\"\n" fmt_open_flag ovf fmt_path m;
+      attributes i ppf attrs;
+  | Texp_implicit (imp, _) ->
+      line i ppf "Pexp_implicit \"%a\"\n" fmt_path imp.imp_path;
+      implicit_kind i ppf imp.imp_kind;
       attributes i ppf attrs;
   | Texp_poly cto ->
       line i ppf "Pexp_poly\n";
@@ -611,6 +620,11 @@ and class_declaration i ppf x =
   line i ppf "pci_expr =\n";
   class_expr (i+1) ppf x.ci_expr;
 
+and implicit_kind i ppf kind =
+  match kind with
+  | Timp_implicit -> line i ppf "Pimp_implicit"
+  | Timp_explicit -> line i ppf "Pimp_explicit"
+
 and module_type i ppf x =
   line i ppf "module_type %a\n" fmt_location x.mty_loc;
   attributes i ppf x.mty_attributes;
@@ -668,9 +682,14 @@ and signature_item i ppf x =
            fmt_path od.open_path;
       attributes i ppf od.open_attributes
   | Tsig_include incl ->
-      line i ppf "Psig_include\n";
+      line i ppf "Psig_include %a\n"
+           fmt_include_flag incl.incl_flag;
       attributes i ppf incl.incl_attributes;
       module_type i ppf incl.incl_mod
+  | Tsig_implicit imp ->
+      line i ppf "Psig_implicit %a\n" fmt_path imp.imp_path;
+      implicit_kind i ppf imp.imp_kind;
+      attributes i ppf imp.imp_attributes
   | Tsig_class (l) ->
       line i ppf "Psig_class\n";
       list i class_description ppf l;
@@ -803,9 +822,15 @@ and structure_item i ppf x =
       line i ppf "Pstr_class_type\n";
       list i class_type_declaration ppf (List.map (fun (_, _, cl) -> cl) l);
   | Tstr_include incl ->
-      line i ppf "Pstr_include";
+      line i ppf "Pstr_include %a"
+           fmt_include_flag incl.incl_flag;
       attributes i ppf incl.incl_attributes;
       module_expr i ppf incl.incl_mod;
+  | Tstr_implicit imp ->
+      line i ppf "Pstr_implicit %a\n"
+        fmt_path imp.imp_path;
+      implicit_kind i ppf imp.imp_kind;
+      attributes i ppf imp.imp_attributes
   | Tstr_attribute (s, arg) ->
       line i ppf "Pstr_attribute \"%s\"\n" s.txt;
       Printast.payload i ppf arg

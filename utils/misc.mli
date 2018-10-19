@@ -39,6 +39,7 @@ val samelist: ('a -> 'a -> bool) -> 'a list -> 'a list -> bool
 
 val may: ('a -> unit) -> 'a option -> unit
 val may_map: ('a -> 'b) -> 'a option -> 'b option
+val opt_value: 'a option -> 'a
 
 val find_in_path: string list -> string -> string
         (* Search a file in a list of directories. *)

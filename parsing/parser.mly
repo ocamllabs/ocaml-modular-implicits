@@ -326,6 +326,7 @@ let mkctf_attrs d attrs =
 %token EOF
 %token EQUAL
 %token EXCEPTION
+%token EXPLICIT
 %token EXTERNAL
 %token FALSE
 %token <string> FLOAT
@@ -670,12 +671,14 @@ structure_item:
       { mkstr(Pstr_modtype (Mtd.mk (mkrhs $3 3)
                               ~typ:$5 ~attrs:$6 ~loc:(symbol_rloc()))) }
   | open_statement { mkstr(Pstr_open $1) }
+  | implicit_statement { mkstr(Pstr_implicit $1) }
   | CLASS class_declarations
       { mkstr(Pstr_class (List.rev $2)) }
   | CLASS TYPE class_type_declarations
       { mkstr(Pstr_class_type (List.rev $3)) }
-  | INCLUDE module_expr post_item_attributes
-      { mkstr(Pstr_include (Incl.mk $2 ~attrs:$3 ~loc:(symbol_rloc()))) }
+  | INCLUDE include_flag module_expr post_item_attributes
+      { mkstr(Pstr_include
+                (Incl.mk $3 ~flag:$2 ~attrs:$4 ~loc:(symbol_rloc()))) }
   | item_extension post_item_attributes
       { mkstr(Pstr_extension ($1, $2)) }
   | floating_attribute
@@ -704,6 +707,12 @@ module_binding:
   | IMPLICIT MODULE UIDENT module_binding_body post_item_attributes
       { Mb.mk (mkrhs $3 3) $4 ~implicit_:Implicit
           ~attrs:$5 ~loc:(symbol_rloc ()) }
+;
+implicit_statement:
+  | IMPLICIT mod_longident post_item_attributes
+      { Imp.mk Pimp_implicit (mkrhs $2 2) ~attrs:$3 ~loc:(symbol_rloc()) }
+  | EXPLICIT mod_longident post_item_attributes
+      { Imp.mk Pimp_explicit (mkrhs $2 2) ~attrs:$3 ~loc:(symbol_rloc()) }
 ;
 
 /* Module types */
@@ -783,8 +792,11 @@ signature_item:
                               ~attrs:$6)) }
   | open_statement
       { mksig(Psig_open $1) }
-  | INCLUDE module_type post_item_attributes %prec below_WITH
-      { mksig(Psig_include (Incl.mk $2 ~attrs:$3 ~loc:(symbol_rloc()))) }
+  | implicit_statement
+      { mksig(Psig_implicit $1) }
+  | INCLUDE include_flag module_type post_item_attributes %prec below_WITH
+      { mksig(Psig_include
+                (Incl.mk $3 ~flag:$2 ~attrs:$4 ~loc:(symbol_rloc()))) }
   | CLASS class_descriptions
       { mksig(Psig_class (List.rev $2)) }
   | CLASS TYPE class_type_declarations
@@ -1120,6 +1132,12 @@ expr:
       { mkexp (Pexp_letmodule($2, $4)) (* FIXME: no attributes *) }
   | LET OPEN open_flag ext_attributes mod_longident IN seq_expr
       { mkexp_attrs (Pexp_open($3, mkrhs $5 5, $7)) $4 }
+  | LET IMPLICIT ext_attributes mod_longident IN seq_expr
+      { mkexp_attrs
+          (Pexp_implicit (Imp.mk Pimp_implicit (mkrhs $4 4), $6)) $3 }
+  | LET EXPLICIT ext_attributes mod_longident IN seq_expr
+      { mkexp_attrs
+          (Pexp_implicit (Imp.mk Pimp_explicit (mkrhs $4 4), $6)) $3 }
   | FUNCTION ext_attributes opt_bar match_cases
       { mkexp_attrs (Pexp_function(List.rev $4)) $2 }
   | FUN ext_attributes labeled_simple_pattern fun_def
@@ -2131,6 +2149,10 @@ private_virtual_flags:
 open_flag:
   | IMPLICIT                                    { Open_implicit }
   | override_flag                               { Open_all $1 }
+;
+include_flag:
+  | /* empty */                                 { Include_all }
+  | IMPLICIT                                    { Include_implicit }
 ;
 override_flag:
     /* empty */                                 { Fresh }

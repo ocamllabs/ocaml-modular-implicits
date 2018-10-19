@@ -15,6 +15,7 @@
 type t = { stamp: int; name: string; mutable flags: int }
 
 val create: string -> t
+val dummy: t
 val create_persistent: string -> t
 val create_predef_exn: string -> t
 val rename: t -> t
